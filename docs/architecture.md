@@ -102,21 +102,42 @@ requirement. Deactivation returns to close/release because EtherLab destroys
 domains and slave configurations; reconfiguration currently requires a new
 control session.
 
-## Process image and DC
+## Process image, domains, and DC
 
-The complete EtherLab domain is the stable byte/bit offset namespace. API 0.11
-copies it into a bounded double-buffered read-only snapshot. Output updates use
-a domain-sized data array plus per-bit update mask; the kernel intersects this
-with a mask derived from entries under output Sync Managers.
+API 0.11 has one EtherLab domain and therefore one global WC/validity boundary.
+That compatibility behavior remains available for existing configurations.
+The next UAPI increment adds explicit user-defined domains; the kernel must
+never infer grouping from vendor, product, topology, or device type.
 
-Per-configured-slave status is keyed by stable configuration ID. Its
-conservative `data_valid` requires that slave online and operational, a
-published input snapshot, and complete global domain WC.
+A domain is an availability and data-validity boundary, not automatically a
+slave boundary. The recommended machine layout is one domain for
+always-powered Beckhoff I/O and another for switchable drives. Split drives
+further only when independent axes need independent validity or output fault
+containment. Every configured slave belongs to exactly one declared domain.
 
-When configured, the cyclic order is receive, domain process, input snapshot,
-reference/DC processing, health evaluation, gated output application,
-application-time/slave synchronization, domain queue, and master send.
+Domain declaration order defines stable, contiguous segments in the copied
+user-space process image. Entry offsets remain global: an entry's returned
+offset is its EtherLab domain-local offset plus its segment base. This retains
+one bounded snapshot and one stable entry-ID namespace while allowing each
+domain to report its own WC and validity.
+
+Per-configured-slave status is keyed by stable configuration ID. In explicit
+mode its conservative `data_valid` requires that slave online and operational,
+a published input snapshot, and complete WC for that slave's assigned domain.
+One incomplete switchable-drive domain must not invalidate an independently
+complete always-powered-I/O domain.
+
+The master still has one cyclic task and one datagram cadence. The cyclic order
+is receive; process every domain; assemble the input snapshot; reference/DC
+processing; evaluate per-domain health and output gates; apply outputs;
+application-time/slave synchronization; queue every domain; and send once.
 Application policy and object interpretation never enter the kernel.
+
+Output safety state is ultimately per domain: health, current and latched
+faults, arm state, re-arm requirement, and fresh-publication epoch. The first
+multi-domain increment may retain the existing conservative all-domain output
+control ioctls while the domain-specific control ABI is added, but it must not
+claim independent output availability until those controls exist.
 
 Detailed concurrency and recovery rules are in
 `process-image-exchange.md`; DC behavior is in `distributed-clocks.md`.

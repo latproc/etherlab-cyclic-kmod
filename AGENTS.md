@@ -286,6 +286,21 @@ testing, safety, and build documents.
   shared domain has incomplete WC and cannot certify it independently.
   EtherLab has only domain-level WC; independently recoverable groups require
   separate domains rather than weakened validity.
-- Next step: select the next independently testable kernel-safety blocker.
+- API 0.11 represents mandatory PDO padding explicitly. A mixed
+  present-EL5152/absent-ED3L test proved that a shared domain's incomplete WC
+  invalidates both devices even though the encoder remains in OP with live
+  data.
+- Confirmed domain policy: user space explicitly declares availability/
+  validity domains and assigns every slave. Do not infer domains. Preserve an
+  implicit single-domain compatibility mode when no domains are declared.
+  Domain declaration order defines concatenated global process-image segments;
+  per-slave validity follows its assigned domain WC.
+- Recommended machine grouping is always-powered Beckhoff I/O separately from
+  switchable drives, splitting drives further only for independently required
+  validity or fault containment.
+- Next step: implement explicit domain records, assignment, per-domain WC
+  status, and multi-domain cyclic processing as an independently testable UAPI
+  increment. Retain conservative global output controls until per-domain
+  output gating is implemented and proven.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

@@ -146,3 +146,11 @@ commands, outputs, and design details.
   conservative validity correctly remained false for both. EtherLab exposes
   WC per domain, not per slave; independent validity requires separate
   domains.
+- Selected the general multi-domain architecture after that result. User space
+  explicitly declares availability/validity domains and slave assignments;
+  the kernel does not infer grouping. Existing configurations retain one
+  implicit compatibility domain. Declared domains form ordered segments in one
+  copied global process image, and per-slave validity will follow the assigned
+  domain's WC. The recommended machine policy is always-powered Beckhoff I/O
+  separate from switchable drives, with further splits only where independent
+  validity or fault containment is required.

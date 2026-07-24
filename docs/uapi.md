@@ -225,6 +225,31 @@ user-supplied `entry_id` to its domain byte offset, bit position, and bit
 length. Unknown IDs return `ENOENT`. Domain creation does not activate the
 master, obtain the process-data pointer, or send traffic.
 
+## Confirmed multi-domain direction
+
+The API following 0.11 will add explicit user-defined domain records and
+explicit slave-to-domain assignment. Domain IDs are stable, nonzero
+configuration IDs. In explicit mode every configured slave must resolve to
+exactly one declared domain; duplicate IDs, duplicate assignments, missing
+assignments, and references to unknown domains or slaves are errors.
+
+Domain declaration order defines the order of contiguous segments in the
+single copied process image. `CW_EC_IOC_GET_ENTRY_OFFSET` continues to return a
+global byte/bit offset, calculated from the assigned domain's segment base plus
+the EtherLab-local entry offset. The kernel does not infer domains from vendor,
+product, position, PDO layout, or online state.
+
+For compatibility, a configuration containing no domain declarations uses one
+implicit domain containing all configured slaves. Mixing implicit and explicit
+assignment is invalid. This preserves existing API 0.11 configuration files
+and tools without making inferred grouping part of the new policy.
+
+Each domain will expose its own WC, health, current/latched fault state, output
+arm state, re-arm requirement, process-image segment, and sequence context.
+Per-slave `data_valid` will depend on the WC of the slave's assigned domain.
+Aggregate status remains conservative for callers using the legacy global
+status API.
+
 ## Initial cyclic lifecycle
 
 API 0.4 adds:
