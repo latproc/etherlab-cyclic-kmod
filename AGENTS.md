@@ -38,8 +38,10 @@ decisions, risks, commands, or next steps change.
   and synchronously joins before deactivation. It intentionally has no
   process-image writer or DC configuration yet. Position 29 has reached OP
   with complete working counter under motion inhibit.
-- API 0.5 adds transactional DC records and reference policy. It does not yet
-  run the DC synchronization controller and rejects DC-configured activation.
+- API 0.5 adds transactional DC records, reference policy, the IOD-compatible
+  reference-led controller, cyclic slave synchronization, monitoring, and a
+  bounded status ioctl. Four motion-inhibited position-29 runs reached complete
+  WC with valid reference reads, monitor results, and zero cycle errors.
 - A provisional bounded ad-hoc SDO batch exists for commissioning and
   decision-gate tests. It is not the persistent production setup mechanism.
 - Bounded SDO upload is hardware-proven against ED3L `0x6060:00`; no write has
@@ -277,14 +279,12 @@ testing, safety, and build documents.
   still permits an ED3L Sync Manager watchdog event when traffic stops before
   the asynchronous PREOP transition.
 - API 0.5 accepts and applies bounded per-slave DC parameters and
-  disabled/automatic/explicit reference policy. DC-configured activation is
-  intentionally blocked until the reference-led controller and status
-  snapshot are implemented and tested.
+  disabled/automatic/explicit reference policy. Its reference-led controller
+  and status snapshot are hardware-proven on position 29. Short initial
+  synchrony convergence remains visible and timing acceptance is not claimed.
 - The ED3L DC fixture values are `AssignActivate 0x0300`, SYNC0 equal to the
   application period, and zero shift. These remain user-space policy.
-- Next implementation: preserve IOD's DC receive/reference/controller/
-  application-time/sync/monitor ordering in the cyclic thread, add bounded
-  status fields and no-hardware tests, then run the motion-inhibited hardware
-  comparison.
+- Next step: add no-hardware rollover/controller-boundary tests, then design
+  safe copied process-image exchange before the architecture review gate.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

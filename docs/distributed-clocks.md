@@ -5,11 +5,13 @@
 Distributed clocks are mandatory for the kernel backend when enabled by user
 configuration.
 
-API 0.5 now accepts, validates, and applies generic per-slave DC parameters
-plus disabled/automatic/explicit reference policy. DC-configured activation is
-deliberately rejected with `EOPNOTSUPP` until the controller and status
-snapshot described below are implemented. No DC hardware run has yet been
-performed through this API.
+API 0.5 accepts, validates, and applies generic per-slave DC parameters plus
+disabled/automatic/explicit reference policy. The kernel now implements the
+reference-led IOD controller, cyclic slave synchronization, synchrony
+monitoring, and a bounded status snapshot. It builds, passes non-activating ABI
+checks, and has completed four motion-inhibited position-29 hardware runs with
+complete working counter, valid reference reads, and successful synchrony
+monitoring. See `testing.md` for exact results and limitations.
 
 The installed Clockwork build enables `USE_DC` for both `iod` and `iod_sdo`:
 
@@ -155,7 +157,7 @@ per-cycle logging.
 
 ## Kernel ownership and locking
 
-The kernel cyclic thread will own all mutable DC controller state:
+The kernel cyclic thread owns all mutable DC controller state:
 
 - application time;
 - last difference;

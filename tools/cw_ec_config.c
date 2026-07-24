@@ -517,6 +517,10 @@ static int cycle(const char *path, uint32_t period_ns,
 		.struct_size = sizeof(status),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	struct cw_ec_dc_status dc_status = {
+		.struct_size = sizeof(dc_status),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
 	struct cw_ec_cycle_deactivate deactivate = {
 		.struct_size = sizeof(deactivate),
 		.api_major = CW_EC_API_VERSION_MAJOR,
@@ -558,6 +562,31 @@ static int cycle(const char *path, uint32_t period_ns,
 	       (uint64_t)status.maximum_lateness_ns,
 	       status.working_counter, status.working_counter_state,
 	       status.last_cycle_result);
+	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_DC_STATUS, &dc_status) < 0) {
+		fprintf(stderr, "cw_ec_config: DC status failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	if (dc_status.enabled) {
+		printf("DC status: reference_valid=%u reference_result=%" PRId32
+		       " difference=%" PRId32 " ns adjustment=%" PRId32
+		       " ns monitor_pending=%u deviation=%" PRIu32
+		       " ns maximum_deviation=%" PRIu32
+		       " ns read_errors=%" PRIu64 " resumptions=%" PRIu64
+		       " monitor_results=%" PRIu64 " monitor_timeouts=%" PRIu64
+		       "\n",
+		       dc_status.reference_valid,
+		       dc_status.last_reference_result,
+		       dc_status.last_difference_ns,
+		       dc_status.cycle_adjustment_ns,
+		       dc_status.monitor_pending,
+		       dc_status.last_maximum_deviation_ns,
+		       dc_status.maximum_deviation_ns,
+		       (uint64_t)dc_status.reference_read_error_count,
+		       (uint64_t)dc_status.reference_resume_count,
+		       (uint64_t)dc_status.monitor_success_count,
+		       (uint64_t)dc_status.monitor_timeout_count);
+	}
 	if (ioctl(fd, CW_EC_IOC_CYCLE_DEACTIVATE, &deactivate) < 0) {
 		fprintf(stderr, "cw_ec_config: deactivation failed: %s\n",
 			strerror(errno));

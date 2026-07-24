@@ -181,12 +181,9 @@ automatic EtherLab selection or an explicit slave configuration ID. An
 explicit reference must itself have a DC record.
 
 Apply calls `ecrt_slave_config_dc()` for each record and selects the requested
-reference before activation. These are idle, blocking configuration calls.
-Until the reference-led cyclic correction and monitoring implementation is
-present, activation of any DC-configured transaction returns `EOPNOTSUPP`.
-This prevents configured SYNC0 operation with an incomplete cyclic controller.
-At activation, the configured SYNC0 period must also equal the requested
-application cycle period.
+reference before activation. These are idle, blocking configuration calls. At
+activation, every configured SYNC0 period must equal the requested application
+cycle period.
 
 `CONFIG_APPLY` constructs persistent EtherLab slave configurations and copies
 the submitted hierarchy through the granular Sync Manager, PDO-assignment, and
@@ -227,6 +224,12 @@ CW_EC_IOC_CYCLE_GET_STATUS
 CW_EC_IOC_CYCLE_DEACTIVATE
 ```
 
+API 0.5 additionally provides `CW_EC_IOC_CYCLE_GET_DC_STATUS` without changing
+the API 0.4 cycle-status structure. The DC snapshot reports enable/reference/
+monitor state, the last reference result and phase difference, bounded cycle
+adjustment, last/maximum synchrony deviation, reference read errors and
+resumptions, and monitor results/timeouts.
+
 Activation requires an applied configuration and registered domain. The caller
 supplies a cycle period from 100 microseconds through one second; flags must be
 zero. The kernel activates EtherLab, obtains the internal domain memory,
@@ -244,7 +247,14 @@ blocking mailbox operation, or user-space callback.
 Application time is initialized to monotonic time rounded to the configured
 period before activation and advanced once per cycle before queue/send. This
 prevents EtherLab from activating without application time and establishes the
-required ordering for the later explicit DC policy.
+required DC initialization ordering.
+
+When DC is configured, the receive half reads and normalizes the reference
+phase after domain processing, updates IOD's 1024-sample bounded controller,
+and processes a pending synchrony monitor. The send half advances corrected
+application time, calls `ecrt_master_sync_slave_clocks()`, queues a monitor
+approximately once per second, then queues the domain and sends. Reference read
+failure is tracked separately and does not stop cyclic exchange.
 
 Deactivation first stops and joins the cycle thread, then calls
 `ecrt_master_deactivate()`. Before deactivation it waits one bounded cycle

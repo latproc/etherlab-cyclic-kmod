@@ -245,6 +245,33 @@ EtherLab warnings remained in the retained kernel log; this run did not
 capture a before/after log cursor, so it is not claimed as a strict
 no-new-warning comparison.
 
+## API 0.5 DC hardware smoke test
+
+With motion safely inhibited, the separate ED3L DC fixture configured position
+29 with `AssignActivate 0x0300`, 1,000,000 ns SYNC0, zero shift, and automatic
+reference selection. A five-second run completed:
+
+- 5,000 cycles, WC 3/complete;
+- zero cycle API errors and zero full-period overruns;
+- 83,781 ns maximum scheduling lateness;
+- valid reference with zero reference-read errors/resumptions;
+- five successful synchrony-monitor results and zero timeouts;
+- 4,095 ns maximum observed slave deviation.
+
+Three immediate three-second repetitions each completed 3,000 cycles with WC
+complete, zero cycle errors/overruns, valid reference, three monitor results,
+and zero read errors/timeouts. Maximum scheduling lateness was 65,220 ns,
+55,516 ns, and 154,930 ns. Short-run maximum synchrony deviation was
+1,507,327 ns, 1,404,927 ns, and 73,471 ns respectively, showing that initial
+convergence can dominate a short sample. These figures are functional smoke
+evidence, not deterministic timing acceptance.
+
+After every close the master returned Idle with 34 slaves and link up. The
+first stop reported that position 29 had reached SAFEOP+ERROR before the idle
+transition observed it; each repetition then logged ED3L AL `0x001b` Sync
+Manager watchdog. This is the already documented public-deactivation
+limitation and remains unresolved.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

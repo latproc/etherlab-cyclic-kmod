@@ -62,6 +62,27 @@ struct cw_ec_file {
 	atomic_t working_counter;
 	atomic_t working_counter_state;
 	atomic_t last_cycle_result;
+	s64 dc_cycle_adjustment_ns;
+	s64 dc_difference_total_ns;
+	s64 dc_delta_total_ns;
+	s32 dc_last_difference_ns;
+	u32 dc_filter_count;
+	u32 dc_monitor_countdown;
+	u32 dc_monitor_wait_cycles;
+	bool dc_reference_valid;
+	bool dc_monitor_pending;
+	int dc_last_reference_result;
+	atomic_t dc_status_reference_valid;
+	atomic_t dc_status_monitor_pending;
+	atomic_t dc_status_last_reference_result;
+	atomic_t dc_status_last_difference_ns;
+	atomic_t dc_status_cycle_adjustment_ns;
+	atomic_t dc_status_last_maximum_deviation_ns;
+	atomic64_t dc_status_maximum_deviation_ns;
+	atomic64_t dc_reference_read_error_count;
+	atomic64_t dc_reference_resume_count;
+	atomic64_t dc_monitor_success_count;
+	atomic64_t dc_monitor_timeout_count;
 	bool active;
 };
 
@@ -197,6 +218,115 @@ static void cw_ec_update_maximum(atomic64_t *maximum, u64 value)
 	}
 }
 
+static int cw_ec_dc_process_receive(struct cw_ec_file *ctx)
+{
+	u32 reference = 0;
+	int ret;
+
+	ret = ecrt_master_reference_clock_time(ctx->master, &reference);
+	if (!ret) {
+		s32 difference = (s32)((u32)ctx->application_time_ns -
+				       reference);
+		s64 normalized = (s64)difference % ctx->cycle_period_ns;
+
+		if (normalized > ctx->cycle_period_ns / 2)
+			normalized -= ctx->cycle_period_ns;
+		if (normalized < -(s64)ctx->cycle_period_ns / 2)
+			normalized += ctx->cycle_period_ns;
+		difference = normalized;
+
+		if (ctx->dc_reference_valid) {
+			ctx->dc_difference_total_ns += difference;
+			ctx->dc_delta_total_ns +=
+				(s64)difference - ctx->dc_last_difference_ns;
+			if (++ctx->dc_filter_count >= 1024) {
+				ctx->dc_cycle_adjustment_ns +=
+					div_s64(ctx->dc_delta_total_ns, 1024);
+				ctx->dc_cycle_adjustment_ns +=
+					(ctx->dc_difference_total_ns > 0) -
+					(ctx->dc_difference_total_ns < 0);
+				ctx->dc_cycle_adjustment_ns =
+					clamp_t(s64,
+						ctx->dc_cycle_adjustment_ns,
+						-1000, 1000);
+				ctx->dc_difference_total_ns = 0;
+				ctx->dc_delta_total_ns = 0;
+				ctx->dc_filter_count = 0;
+			}
+		}
+		ctx->dc_last_difference_ns = difference;
+		ctx->dc_reference_valid = true;
+		if (ctx->dc_last_reference_result)
+			atomic64_inc(&ctx->dc_reference_resume_count);
+	} else {
+		ctx->dc_reference_valid = false;
+		atomic64_inc(&ctx->dc_reference_read_error_count);
+	}
+	ctx->dc_last_reference_result = ret;
+	atomic_set(&ctx->dc_status_reference_valid,
+		   ctx->dc_reference_valid);
+	atomic_set(&ctx->dc_status_last_reference_result, ret);
+	atomic_set(&ctx->dc_status_last_difference_ns,
+		   ctx->dc_last_difference_ns);
+	atomic_set(&ctx->dc_status_cycle_adjustment_ns,
+		   ctx->dc_cycle_adjustment_ns);
+
+	if (ctx->dc_monitor_pending) {
+		u32 deviation =
+			ecrt_master_sync_monitor_process(ctx->master);
+
+		if (deviation != U32_MAX) {
+			atomic_set(&ctx->dc_status_last_maximum_deviation_ns,
+				   deviation);
+			cw_ec_update_maximum(
+				&ctx->dc_status_maximum_deviation_ns,
+				deviation);
+			atomic64_inc(&ctx->dc_monitor_success_count);
+			ctx->dc_monitor_pending = false;
+			ctx->dc_monitor_wait_cycles = 0;
+		} else if (++ctx->dc_monitor_wait_cycles >= 10) {
+			atomic64_inc(&ctx->dc_monitor_timeout_count);
+			ctx->dc_monitor_pending = false;
+			ctx->dc_monitor_wait_cycles = 0;
+		}
+		atomic_set(&ctx->dc_status_monitor_pending,
+			   ctx->dc_monitor_pending);
+	}
+	return 0;
+}
+
+static int cw_ec_dc_prepare_send(struct cw_ec_file *ctx)
+{
+	s64 phase_step = (ctx->dc_last_difference_ns > 0) -
+			 (ctx->dc_last_difference_ns < 0);
+	int ret;
+	int operation_result;
+
+	ctx->application_time_ns +=
+		ctx->cycle_period_ns - ctx->dc_cycle_adjustment_ns - phase_step;
+	ret = ecrt_master_application_time(ctx->master,
+					  ctx->application_time_ns);
+	operation_result = ecrt_master_sync_slave_clocks(ctx->master);
+	if (operation_result && !ret)
+		ret = operation_result;
+
+	if (!ctx->dc_monitor_pending &&
+	    ctx->dc_monitor_countdown-- == 0) {
+		operation_result =
+			ecrt_master_sync_monitor_queue(ctx->master);
+		if (!operation_result) {
+			ctx->dc_monitor_pending = true;
+			ctx->dc_monitor_wait_cycles = 0;
+			atomic_set(&ctx->dc_status_monitor_pending, 1);
+		} else if (!ret) {
+			ret = operation_result;
+		}
+		ctx->dc_monitor_countdown =
+			DIV_ROUND_UP(1000000000U, ctx->cycle_period_ns);
+	}
+	return ret;
+}
+
 static int cw_ec_cycle_thread(void *data)
 {
 	struct cw_ec_file *ctx = data;
@@ -235,6 +365,12 @@ static int cw_ec_cycle_thread(void *data)
 		operation_result = ecrt_domain_process(ctx->domain);
 		if (operation_result && !cycle_result)
 			cycle_result = operation_result;
+		if (ctx->config_dc_count)
+			operation_result = cw_ec_dc_process_receive(ctx);
+		else
+			operation_result = 0;
+		if (operation_result && !cycle_result)
+			cycle_result = operation_result;
 		operation_result = ecrt_domain_state(ctx->domain, &domain_state);
 		if (operation_result && !cycle_result) {
 			cycle_result = operation_result;
@@ -244,9 +380,13 @@ static int cw_ec_cycle_thread(void *data)
 			atomic_set(&ctx->working_counter_state,
 				   domain_state.wc_state);
 		}
-		ctx->application_time_ns += ctx->cycle_period_ns;
-		operation_result = ecrt_master_application_time(
-			ctx->master, ctx->application_time_ns);
+		if (ctx->config_dc_count) {
+			operation_result = cw_ec_dc_prepare_send(ctx);
+		} else {
+			ctx->application_time_ns += ctx->cycle_period_ns;
+			operation_result = ecrt_master_application_time(
+				ctx->master, ctx->application_time_ns);
+		}
 		if (operation_result && !cycle_result)
 			cycle_result = operation_result;
 		operation_result = ecrt_domain_queue(ctx->domain);
@@ -369,6 +509,17 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	atomic_set(&ctx->working_counter, 0);
 	atomic_set(&ctx->working_counter_state, EC_WC_ZERO);
 	atomic_set(&ctx->last_cycle_result, 0);
+	atomic_set(&ctx->dc_status_reference_valid, 0);
+	atomic_set(&ctx->dc_status_monitor_pending, 0);
+	atomic_set(&ctx->dc_status_last_reference_result, 0);
+	atomic_set(&ctx->dc_status_last_difference_ns, 0);
+	atomic_set(&ctx->dc_status_cycle_adjustment_ns, 0);
+	atomic_set(&ctx->dc_status_last_maximum_deviation_ns, 0);
+	atomic64_set(&ctx->dc_status_maximum_deviation_ns, 0);
+	atomic64_set(&ctx->dc_reference_read_error_count, 0);
+	atomic64_set(&ctx->dc_reference_resume_count, 0);
+	atomic64_set(&ctx->dc_monitor_success_count, 0);
+	atomic64_set(&ctx->dc_monitor_timeout_count, 0);
 	file->private_data = ctx;
 	nonseekable_open(inode, file);
 
@@ -901,15 +1052,6 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 			goto out;
 		}
 	}
-	/*
-	 * DC metadata/application is API 0.5's independently testable first
-	 * increment. Do not start SYNC0 until the reference-led cyclic
-	 * controller and status snapshot are present.
-	 */
-	if (ctx->config_dc_count) {
-		ret = -EOPNOTSUPP;
-		goto out;
-	}
 	domain_size = ecrt_domain_size(ctx->domain);
 	if (domain_size > U32_MAX) {
 		ret = -EOVERFLOW;
@@ -951,6 +1093,27 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	atomic_set(&ctx->working_counter, 0);
 	atomic_set(&ctx->working_counter_state, EC_WC_ZERO);
 	atomic_set(&ctx->last_cycle_result, 0);
+	ctx->dc_cycle_adjustment_ns = 0;
+	ctx->dc_difference_total_ns = 0;
+	ctx->dc_delta_total_ns = 0;
+	ctx->dc_last_difference_ns = 0;
+	ctx->dc_filter_count = 0;
+	ctx->dc_monitor_countdown = 0;
+	ctx->dc_monitor_wait_cycles = 0;
+	ctx->dc_reference_valid = false;
+	ctx->dc_monitor_pending = false;
+	ctx->dc_last_reference_result = 0;
+	atomic_set(&ctx->dc_status_reference_valid, 0);
+	atomic_set(&ctx->dc_status_monitor_pending, 0);
+	atomic_set(&ctx->dc_status_last_reference_result, 0);
+	atomic_set(&ctx->dc_status_last_difference_ns, 0);
+	atomic_set(&ctx->dc_status_cycle_adjustment_ns, 0);
+	atomic_set(&ctx->dc_status_last_maximum_deviation_ns, 0);
+	atomic64_set(&ctx->dc_status_maximum_deviation_ns, 0);
+	atomic64_set(&ctx->dc_reference_read_error_count, 0);
+	atomic64_set(&ctx->dc_reference_resume_count, 0);
+	atomic64_set(&ctx->dc_monitor_success_count, 0);
+	atomic64_set(&ctx->dc_monitor_timeout_count, 0);
 	ctx->cycle_thread = kthread_run(cw_ec_cycle_thread, ctx,
 					"cw_ec_cycle");
 	if (IS_ERR(ctx->cycle_thread)) {
@@ -1034,6 +1197,53 @@ static long cw_ec_cycle_deactivate(struct cw_ec_file *ctx, void __user *argp)
 		ret = -EFAULT;
 	mutex_unlock(&ctx->lock);
 	return ret;
+}
+
+static long cw_ec_cycle_get_dc_status(struct cw_ec_file *ctx,
+				      void __user *argp)
+{
+	struct cw_ec_dc_status result;
+	int ret;
+
+	if (copy_from_user(&result, argp, sizeof(result)))
+		return -EFAULT;
+	ret = cw_ec_check_header(result.struct_size, result.api_major,
+				 sizeof(result));
+	if (ret)
+		return ret;
+
+	memset(&result, 0, sizeof(result));
+	result.struct_size = sizeof(result);
+	result.api_major = CW_EC_API_VERSION_MAJOR;
+	mutex_lock(&ctx->lock);
+	result.enabled = !!ctx->config_dc_count;
+	result.reference_valid =
+		atomic_read(&ctx->dc_status_reference_valid);
+	result.monitor_pending =
+		atomic_read(&ctx->dc_status_monitor_pending);
+	result.last_reference_result =
+		atomic_read(&ctx->dc_status_last_reference_result);
+	result.last_difference_ns =
+		atomic_read(&ctx->dc_status_last_difference_ns);
+	result.cycle_adjustment_ns =
+		atomic_read(&ctx->dc_status_cycle_adjustment_ns);
+	result.last_maximum_deviation_ns =
+		atomic_read(&ctx->dc_status_last_maximum_deviation_ns);
+	result.maximum_deviation_ns =
+		atomic64_read(&ctx->dc_status_maximum_deviation_ns);
+	result.reference_read_error_count =
+		atomic64_read(&ctx->dc_reference_read_error_count);
+	result.reference_resume_count =
+		atomic64_read(&ctx->dc_reference_resume_count);
+	result.monitor_success_count =
+		atomic64_read(&ctx->dc_monitor_success_count);
+	result.monitor_timeout_count =
+		atomic64_read(&ctx->dc_monitor_timeout_count);
+	mutex_unlock(&ctx->lock);
+
+	if (copy_to_user(argp, &result, sizeof(result)))
+		return -EFAULT;
+	return 0;
 }
 
 #define CW_EC_CONFIG_ADD_CHILD(function_name, node_type, cfg_member, list_name, \
@@ -1627,6 +1837,8 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return cw_ec_cycle_get_status(ctx, argp);
 	case CW_EC_IOC_CYCLE_DEACTIVATE:
 		return cw_ec_cycle_deactivate(ctx, argp);
+	case CW_EC_IOC_CYCLE_GET_DC_STATUS:
+		return cw_ec_cycle_get_dc_status(ctx, argp);
 	default:
 		break;
 	}

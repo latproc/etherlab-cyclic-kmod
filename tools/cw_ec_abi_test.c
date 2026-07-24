@@ -135,6 +135,10 @@ int main(int argc, char **argv)
 		.struct_size = sizeof(cycle_deactivate),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	struct cw_ec_dc_status dc_status = {
+		.struct_size = sizeof(dc_status),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
 	unsigned long unknown_ioctl = _IO(CW_EC_IOC_MAGIC, 0x7f);
 	int failures = 0;
 	int second_fd;
@@ -438,6 +442,19 @@ int main(int argc, char **argv)
 				 ioctl(fd, CW_EC_IOC_CYCLE_DEACTIVATE,
 				       &cycle_deactivate),
 				 EINVAL);
+	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_DC_STATUS, &dc_status) < 0) {
+		fprintf(stderr, "FAIL: get inactive DC status: %s\n",
+			strerror(errno));
+		failures++;
+	} else if (!dc_status.enabled || dc_status.reference_valid ||
+		   dc_status.monitor_pending ||
+		   dc_status.reference_read_error_count ||
+		   dc_status.monitor_success_count) {
+		fprintf(stderr, "FAIL: initial DC status is inconsistent\n");
+		failures++;
+	} else {
+		printf("PASS: configured inactive DC status is clean\n");
+	}
 	cycle_activate.cycle_period_ns = CW_EC_CYCLE_PERIOD_MIN_NS - 1;
 	errno = 0;
 	failures += expect_errno("cycle period below minimum",
@@ -457,12 +474,6 @@ int main(int argc, char **argv)
 				 ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE,
 				       &cycle_activate),
 				 EINVAL);
-	cycle_activate.flags = 0;
-	errno = 0;
-	failures += expect_errno("DC activation before controller",
-				 ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE,
-				       &cycle_activate),
-				 EOPNOTSUPP);
 
 	if (close(fd) < 0) {
 		fprintf(stderr, "FAIL: close: %s\n", strerror(errno));

@@ -294,6 +294,24 @@ struct cw_ec_cycle_deactivate {
 	__u32 reserved1;
 };
 
+struct cw_ec_dc_status {
+	__u16 struct_size;
+	__u16 api_major;
+	__u8 enabled;
+	__u8 reference_valid;
+	__u8 monitor_pending;
+	__u8 reserved0;
+	__s32 last_reference_result;
+	__s32 last_difference_ns;
+	__s32 cycle_adjustment_ns;
+	__u32 last_maximum_deviation_ns;
+	__u32 maximum_deviation_ns;
+	__u64 reference_read_error_count;
+	__u64 reference_resume_count;
+	__u64 monitor_success_count;
+	__u64 monitor_timeout_count;
+};
+
 #define CW_EC_IOC_MAGIC 0xec
 
 #define CW_EC_IOC_GET_API_VERSION \
@@ -340,5 +358,7 @@ struct cw_ec_cycle_deactivate {
 	_IOWR(CW_EC_IOC_MAGIC, 0x31, struct cw_ec_cycle_status)
 #define CW_EC_IOC_CYCLE_DEACTIVATE \
 	_IOWR(CW_EC_IOC_MAGIC, 0x32, struct cw_ec_cycle_deactivate)
+#define CW_EC_IOC_CYCLE_GET_DC_STATUS \
+	_IOWR(CW_EC_IOC_MAGIC, 0x33, struct cw_ec_dc_status)
 
 #endif /* CW_ETHERCAT_UAPI_H */

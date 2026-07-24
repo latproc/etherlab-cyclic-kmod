@@ -45,5 +45,7 @@ commands, outputs, and design details.
   values: `AssignActivate 0x0300`, SYNC0 equal to the application period, and
   zero shift.
 - Added API 0.5 transactional per-slave DC metadata and automatic/explicit
-  reference policy. Hardware activation remains blocked until the
-  reference-led cyclic controller and status snapshot are implemented.
+  reference policy, followed by the IOD-compatible reference-led cyclic
+  controller and bounded DC status snapshot. Four motion-inhibited position-29
+  runs reached complete WC with valid reference reads, successful monitoring,
+  and zero cycle errors/overruns. The known stop-path watchdog remains.
