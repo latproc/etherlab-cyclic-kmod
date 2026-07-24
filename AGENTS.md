@@ -361,3 +361,11 @@ Update this section during work. Use dated entries for facts that may change.
   syntax/dependency-graph checker passed, and a repeat converter audit reports
   zero pending changes. Live IOD binding and IO-value validation remain before
   an SVN commit.
+- 2026-07-24: Corrected selectors passed live binding with no missing or
+  ambiguous entry errors. Representative EL5152, EL3124, EL1809, and ED3L
+  points resolved to the intended objects, all examined modules reached OP,
+  and EL5152 values were plausible. Ten pre-existing warnings identified
+  missing initial values on the five ED3L control-word and target-velocity
+  outputs. The SVN working files now specify `default:0` for deterministic
+  disable/no-motion startup; syntax/graph and repeat conversion checks pass.
+  Restart validation of those defaults remains before the SVN commit.
