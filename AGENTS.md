@@ -392,3 +392,7 @@ Update this section during work. Use dated entries for facts that may change.
   `prod-experimental-mqtt-fix` contains the five LatProc implementation
   commits through `51af5222` and is five commits ahead of its remote; it has
   not yet been pushed.
+- 2026-07-24: Publication is complete. `origin/prod-experimental-mqtt-fix`
+  and the local production branch both resolve to
+  `51af5222213ea49353982dafc31c456394baf27d` with zero divergence. Machine
+  configuration remains committed at SVN revision 20001.
