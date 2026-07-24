@@ -318,3 +318,9 @@ Update this section during work. Use dated entries for facts that may change.
   This is not yet evidence that the drive accepts declarative mapping or
   recovers after a power cycle; activation and cyclic pumping are still
   required for that decision gate.
+- 2026-07-24: LatProc was isolated on branch
+  `feature/ethercat-entry-selectors` before Clockwork changes. The baseline
+  checker passed. The branch now has explicit `(index, subindex)` EtherCAT
+  entry resolution with optional PDO disambiguation, legacy `pos` preserved,
+  and a dry-run-by-default conversion/audit tool with focused tests. IOD
+  builds successfully; no live runtime or bus action was performed.
