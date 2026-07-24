@@ -14,8 +14,8 @@ decisions, risks, commands, or next steps change.
 
 ## Current Status
 
-- Current phase: Phase 2 complete; Phase 3 decision gate, implementing the
-  bounded zero-output declarative PDO activation test path.
+- Current phase: standalone Phase 3 transport work; implementing distributed
+  clocks before process-image exchange and the architecture review gate.
 - The implementation plan has been read in full.
 - A minimal kernel probe, DKMS-aware build, environment documentation, and
   lifecycle test script exist.
@@ -26,31 +26,30 @@ decisions, risks, commands, or next steps change.
   Phase 2 device: ownership attempts return `EBUSY` without disturbing IOD.
 - Versioned UAPI 0.1, `/dev/cw_ethercat0`, `cw_ec_bus`, ABI tests, and a
   repeatable topology comparison exist.
-- All 29 physical slave identity records matched `ethercat slaves -v`; topology
-  was unchanged after release. An additional 120 open/scan/close lifecycle
-  iterations completed, with the final 20 adding no kernel warning.
-- No persistent configuration, PDO/domain, process-image, or cyclic code
-  exists.
-- API 0.3 now accepts and validates a bounded pending
-  slave/Sync/PDO/PDO-entry hierarchy and can construct the corresponding
-  persistent EtherLab configuration objects and register a domain without
-  activation. Stable user entry IDs resolve to byte/bit offsets. It does not
-  yet activate or cycle.
+- All then-present 29 physical slave identity records matched
+  `ethercat slaves -v`; topology was unchanged after release. An additional
+  120 open/scan/close lifecycle iterations completed, with the final 20 adding
+  no kernel warning.
+- API 0.3 accepts and validates a bounded pending slave/Sync/PDO/PDO-entry
+  hierarchy, constructs persistent EtherLab configuration objects, registers
+  a domain, and resolves stable entry IDs to byte/bit offsets.
 - API 0.4 builds a configurable-period cyclic pump around an applied domain,
   zeroes the image before its first send, reports basic timing/send counters,
   and synchronously joins before deactivation. It intentionally has no
   process-image writer or DC configuration yet. Position 29 has reached OP
   with complete working counter under motion inhibit.
+- API 0.5 adds transactional DC records and reference policy. It does not yet
+  run the DC synchronization controller and rejects DC-configured activation.
 - A provisional bounded ad-hoc SDO batch exists for commissioning and
   decision-gate tests. It is not the persistent production setup mechanism.
 - Bounded SDO upload is hardware-proven against ED3L `0x6060:00`; no write has
   been issued. Post-power-up readback showed all five drives in the default
   two-entry position PDO layout, not the planned velocity layout. Confirm the
   legacy restart/recipe baseline before writing.
-- Installed `iod.sh` confirms the recovery gap: it configures only ED3Ls visible
-  during startup. The installed `sdo.sh` exactly matches the planned velocity
-  recipe. Running it is the next decision-gate step and requires motion safely
-  inhibited plus explicit approval because it mutates all five drives.
+- Installed `iod.sh` confirms the recovery gap: it configures only ED3Ls
+  visible during startup. The installed `sdo.sh` matches the velocity recipe;
+  its behavior has been captured and a cleaned strict position-29 batch was
+  verified.
 - Test A legacy mapping is captured on all five drives. The legacy script
   reaches the right final state but ignores aborts from unnecessary zero-entry
   writes. A cleaned strict 21-write kernel batch succeeded on position 29 with
@@ -58,8 +57,8 @@ decisions, risks, commands, or next steps change.
 - Installed `iod` and `iod_sdo` both compile with `USE_DC`. Preserve the
   documented reference selection, application-time steering, cycle ordering,
   monitoring, and adjustment algorithm in the eventual kernel cyclic thread.
-- Phase 2 acceptance is complete. Current work is Phase 3 investigation and
-  bounded ordered setup-SDO design.
+- Phase 2 acceptance is complete. Current work is the standalone cyclic/DC
+  portion of Phase 3.
 - Servo-off startup and live power-loss/restoration without restarting IOD are
   now mandatory requirements. Recovery must gate stale outputs until user
   space explicitly permits re-arm.
@@ -264,162 +263,28 @@ unrecoverable EtherLab master.
 - Record exact commands and results for environment discoveries and acceptance
   tests in the relevant documentation.
 
-## Living Notes
+## Living Status
 
-Update this section during work. Use dated entries for facts that may change.
+Keep this section concise. Historical milestones and validation evidence are in
+`docs/project-history.md`; focused details belong in the relevant design,
+testing, safety, and build documents.
 
-- 2026-07-24: Repository contains `Implementation_Plan.md`, `.gitignore`, and
-  `LICENSE`; implementation has not started.
-- 2026-07-24: Full implementation plan reviewed. Phase 0 and the minimal
-  master-acquisition experiment were selected as the first work.
-- 2026-07-24: Target confirmed as Debian kernel `6.1.0-49-rt-amd64`,
-  PREEMPT_RT enabled, with EtherLab DKMS 1.6.9. Exact `ecrt.h` and matching
-  per-kernel `Module.symvers` paths are documented.
-- 2026-07-24: Minimal probe built successfully with matching modversions and an
-  `ec_master` dependency. Ten live load/acquire/release/unload iterations
-  passed with Clockwork stopped; `ethercat master` remained usable and reported
-  29 slaves/link up. This is not evidence of contention safety.
-- 2026-07-24: Probe contention test passed with IOD running: load was rejected
-  with `EBUSY`, while IOD retained active Operation state, 29 slaves, and link
-  up.
-- 2026-07-24: Phase 2 character device and `cw_ec_bus` reported all 29 slaves
-  in physical order with identities matching EtherLab CLI. Malformed ABI,
-  exclusive-open, release, and repeated lifecycle smoke tests passed.
-- 2026-07-24: Exact Phase 2 contention test completed: module registration
-  succeeded while IOD ran, `cw_ec_bus` received `EBUSY`, and IOD retained
-  active Operation state with 29 slaves/link up.
-- 2026-07-24: Phase 3 commissioning support was committed as `fb3ac46`. A
-  cleaned 21-write explicit ED3L recipe succeeded on position 29 and readback
-  matched the desired layout.
-- 2026-07-24: The installed EtherLab 1.6.9 `ecrt.h` confirms configuration SDOs
-  are retained and replayed after slave power loss, but PDO assignment and
-  mapping SDOs must instead be represented through
-  `ecrt_slave_config_pdos()`. The next implementation is the generic
-  declarative PDO decision-gate path.
-- 2026-07-24: API 0.3 pending declarative configuration validation built and
-  passed its live ABI suite with IOD stopped. The test performed no EtherLab
-  configuration, activation, or slave write; unload produced no recent kernel
-  warning/error.
-- 2026-07-24: API 0.3 can now apply validated metadata to EtherLab-owned slave,
-  Sync Manager, PDO-assignment, and mapping objects. A fictitious absent-slave
-  apply/release test passed without activation, bus traffic, or kernel
-  warning/error. Nonzero revision constraints are rejected because the target
-  EtherLab configuration matcher does not accept revision.
-- 2026-07-24: Offline domain creation and position-based PDO-entry
-  registration passed using a fictitious absent slave. Stable entry ID lookup,
-  unknown-ID rejection, repeated-call rejection, release, and unload passed
-  without activation, bus traffic, or kernel warning/error. Next: add the
-  standalone declarative configuration tool and ED3L fixture before any
-  activation.
-- 2026-07-24: `/tmp/ecat.log` and the current Clockwork
-  `EtherCATSetup.cpp` confirm POINT/ANALOGINPUT-style machines select entries
-  by flattened `pos`. Preserve this for unconverted systems, add explicit
-  `(index, subindex)` selection for converted systems, and provide a dry-run
-  conversion tool rather than changing selector meaning in place.
-- 2026-07-24: Added standalone `cw_ec_config` and an ED3L position-29 velocity
-  fixture. Syntax validation and live no-activation preparation passed,
-  producing the expected contiguous 28-byte domain layout for ten stable
-  object entries. Release/unload produced no recent kernel warning/error.
-  This is not yet evidence that the drive accepts declarative mapping or
-  recovers after a power cycle; activation and cyclic pumping are still
-  required for that decision gate.
-- 2026-07-24: LatProc was isolated on branch
-  `feature/ethercat-entry-selectors` before Clockwork changes. The baseline
-  checker passed. The branch now has explicit `(index, subindex)` EtherCAT
-  entry resolution with optional PDO disambiguation, legacy `pos` preserved,
-  and a dry-run-by-default conversion/audit tool with focused tests. IOD
-  builds successfully; no live runtime or bus action was performed.
-- 2026-07-24: LatProc commit `df10983e` changed converted Clockwork selectors
-  to the explicit positional form `module,index,subindex[,pdo][,settings]`.
-  Both Linux EtherCAT binaries built and installed. A captured matching
-  `/tmp/ecat.log` converted 212 declarations in `core_io.lpc` and
-  `grab_io.lpc`; timestamped backups were created, the converted files passed
-  the mandatory syntax/graph checker, and a repeat dry run reported zero
-  changes. Machine configuration under `code/*` is ignored by the LatProc Git
-  repository and tracked separately by the SVN working copy rooted at
-  `/opt/latproc/code/config` (revision 19989); the two converted files are
-  modified there but not yet committed. IOD is stopped and live machine I/O
-  is not yet tested.
-- 2026-07-24: The first live start with positional selectors reproducibly
-  segfaulted in `generateIOComponentModules()`. Core analysis showed
-  XML-configured modules store PDO arrays under each Sync Manager and
-  intentionally leave `module->pdos` null. LatProc commit `4d757047` now
-  resolves flattened PDO identities through checked Sync Manager metadata and
-  reports inconsistent metadata as a configuration error. Both Linux IOD
-  targets rebuilt/installed and the syntax checker passed; live retest is
-  pending.
-- 2026-07-24: The first conversion source was found invalid for XML-configured
-  modules. EtherLab discovery coalesces adjacent `0x0000:00` alignment entries,
-  while legacy Clockwork `pos` addresses IOD's uncoalesced configured XML
-  entry array. This shifted EL5152 identities and produced invalid padding
-  selectors. LatProc now exports a separate `configured_sync_managers` view;
-  the converter requires it for `config_file` modules and rejects padding
-  entries. The old `/tmp/ecat.log` is deliberately rejected. Capture a fresh
-  topology with the rebuilt IOD, restore the two LPC files from their
-  pre-conversion backups, and rerun the dry-run conversion before any live IO
-  validation.
-- 2026-07-24: A fresh rebuilt-IOD capture exported the configured PDO view for
-  both EL5152 revisions. It proved configured `pos 2` is `0x7000:03` in PDO
-  `0x1600` and configured `pos 24` is `0x6000:11` in PDO `0x1A00`. The two
-  SVN-controlled LPC files were restored to pristine content and reconverted:
-  212 declarations changed one-for-one, no selector targets `0x0000:00`, the
-  syntax/dependency-graph checker passed, and a repeat converter audit reports
-  zero pending changes. Live IOD binding and IO-value validation remain before
-  an SVN commit.
-- 2026-07-24: Corrected selectors passed live binding with no missing or
-  ambiguous entry errors. Representative EL5152, EL3124, EL1809, and ED3L
-  points resolved to the intended objects, all examined modules reached OP,
-  and EL5152 values were plausible. Ten pre-existing warnings identified
-  missing initial values on the five ED3L control-word and target-velocity
-  outputs. The SVN working files now specify `default:0` for deterministic
-  disable/no-motion startup; syntax/graph and repeat conversion checks pass.
-  Restart validation of those defaults remains before the SVN commit.
-- 2026-07-24: LatProc `prod-experimental-mqtt-fix` was fast-forwarded to
-  `51af5222`; both EtherCAT binaries and converter tests build/pass from that
-  exact branch. Live legacy-`pos` A/B testing used the same merged binary and
-  produced the same 290-byte image, OP state, object names, byte/bit offsets,
-  and representative values as object selectors. An offline audit proved all
-  212 legacy positions round-trip uniquely through the converted selectors.
-  The exact converted SVN diff was restored afterward and matches its
-  pre-test saved patch byte-for-byte; syntax/graph and conversion checks pass.
-  Do not SVN-commit until the remaining full validation is explicitly accepted.
-- 2026-07-24: Final post-A/B object-selector startup passed from the restored
-  SVN working files. Runtime parameters prove object mode was active; sampled
-  EL5152, EL3124, EL1809, and ED3L objects retained the exact legacy byte/bit
-  offsets, modules were OP, zero target-velocity defaults were present, and no
-  missing/ambiguous selector errors occurred. The focused C++ resolver suite
-  passed 4/4 tests in an isolated `RUN_TESTS=ON` build. The local production
-  Git branch is merged but not pushed; the two SVN files remain uncommitted
-  pending explicit operator approval.
-- 2026-07-24: The validated `core_io.lpc` and `grab_io.lpc` object-selector
-  conversion plus zero servo defaults were committed to the machine's SVN
-  configuration as revision 20001. The working files are clean. Local
-  `prod-experimental-mqtt-fix` contains the five LatProc implementation
-  commits through `51af5222` and is five commits ahead of its remote; it has
-  not yet been pushed.
-- 2026-07-24: Publication is complete. `origin/prod-experimental-mqtt-fix`
-  and the local production branch both resolve to
-  `51af5222213ea49353982dafc31c456394baf27d` with zero divergence. Machine
-  configuration remains committed at SVN revision 20001.
-- 2026-07-24: API 0.4 zero-output cyclic activation builds against the exact
-  RT kernel and EtherLab 1.6.9 artifacts. Exact source inspection proved that
-  deactivation destroys domain/configuration objects, so applied pointers and
-  entry offsets are invalidated after stop. The target does not export
-  `ecrt_master_set_send_interval()`. Hardware validation is pending; leave IOD
-  running until the prepared module and tests require master 0.
-- 2026-07-24: Declarative API 0.4 activation on ED3L position 29 reached OP
-  with WC 3/complete, exact 28-byte mapping, zero cycle API errors, and exact
-  typed mapping readback. Application time is now initialized and advanced.
-  Rapid deactivate/reacquire is not accepted: EtherLab's asynchronous
-  post-deactivation PREOP transition can race reacquisition and the enabled
-  drive output watchdog can expire after cyclic traffic stops. Do not hide
-  this by disabling the watchdog. Deactivation now has a provisional bounded
-  five-second poll requiring configured slaves to leave SAFEOP/OP before
-  reuse. Five immediate hardware repetitions added no unmatched or
-  failed/skipped AL-state datagrams, but four stops still reported ED3L Sync
-  Manager watchdog `0x001b`.
-- 2026-07-24: The installed ED3L ESI DC-enabled operation mode specifies
-  `AssignActivate 0x0300`, SYNC0 equal to one application cycle, and zero
-  SYNC0 shift. The first generic DC fixture should therefore use a 1,000,000 ns
-  SYNC0 cycle at the current 1 ms test period; the values remain user-space
-  policy.
+- Current API: 0.5.
+- API 0.4 zero-output cyclic activation is hardware-proven on ED3L position 29
+  with complete working counter and exact 28-byte PDO layout.
+- Deactivation waits for configured slaves to leave SAFEOP/OP and invalidates
+  EtherLab-owned configuration/domain pointers. The public EtherLab lifecycle
+  still permits an ED3L Sync Manager watchdog event when traffic stops before
+  the asynchronous PREOP transition.
+- API 0.5 accepts and applies bounded per-slave DC parameters and
+  disabled/automatic/explicit reference policy. DC-configured activation is
+  intentionally blocked until the reference-led controller and status
+  snapshot are implemented and tested.
+- The ED3L DC fixture values are `AssignActivate 0x0300`, SYNC0 equal to the
+  application period, and zero shift. These remain user-space policy.
+- Next implementation: preserve IOD's DC receive/reference/controller/
+  application-time/sync/monitor ordering in the cyclic thread, add bounded
+  status fields and no-hardware tests, then run the motion-inhibited hardware
+  comparison.
+- Do not begin IOD integration before the standalone architecture and
+  acceptance review required by `Implementation_Plan.md`.
