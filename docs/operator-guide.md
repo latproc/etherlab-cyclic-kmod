@@ -1,16 +1,15 @@
 # Standalone Operator Guide
 
 This guide covers the current experimental standalone transport. It does not
-install or start IOD/Clockwork and does not authorize machine motion or nonzero
-EtherCAT output.
+install or start a user-space control system and does not authorize machine
+motion or nonzero EtherCAT output.
 
 ## Preconditions
 
 - Use the recorded target kernel/EtherLab build or explicitly supply matching
   paths as described in
   `docs/building/etherlab-dkms-environment.md`.
-- Stop IOD and every other EtherLab application. Master 0 has one application
-  owner.
+- Stop every other EtherLab application. Master 0 has one application owner.
 - Confirm hardware motion inhibition using the site's commissioning procedure.
 - Run privileged hardware commands as root.
 - Confirm the working tree and selected fixture are the intended versions.
@@ -18,7 +17,7 @@ EtherCAT output.
 ## Build and verify the contract
 
 Optional cyclic scheduler controls are immutable module parameters. For the
-tested target's installed-IOD baseline, load with:
+tested target's existing control-system baseline, load with:
 
 ```sh
 sudo insmod kernel/cw_ethercat.ko cycle_cpu=1 cycle_fifo_priority=70

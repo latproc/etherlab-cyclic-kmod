@@ -8,9 +8,9 @@ PDO entries, setup SDOs, Distributed Clocks, and validity domains. The module
 validates that description, configures EtherLab, runs one cyclic exchange, and
 provides bounded copied process images through a versioned ioctl API.
 
-The transport contains no machine, servo, CiA 402, XML, or Clockwork policy.
-Those decisions remain in user space, so the same module can support different
-devices and control systems without recompiling kernel code.
+The transport contains no machine, servo, CiA 402, XML, or control-system
+policy. Those decisions remain in user space, so the same module can support
+different devices and control systems without recompiling kernel code.
 
 > **Development status:** experimental API 0.13. The standalone documentation
 > gate passes, but the kernel-safety and production timing gates remain open.
@@ -46,8 +46,8 @@ application policy in the kernel:
 - **Observable timing:** coherent cycle identity, scheduled/actual wake times,
   input and consumed-output generations, stale reuse, missed deadlines, WC,
   and interruptible cycle notification are available without per-cycle logs.
-- **Testable without Clockwork:** standalone discovery, configuration, ABI,
-  stress, lifecycle, timing, and zero-output tools are included.
+- **Standalone validation:** discovery, configuration, ABI, stress, lifecycle,
+  timing, and zero-output tools are included.
 
 The design is also being prepared for optional delegated domain controllers:
 one process may own ordinary machine I/O while a dedicated motion service owns
@@ -150,9 +150,9 @@ sequence, follow the [standalone operator guide](docs/operator-guide.md).
 
 ## First safe test
 
-Stop IOD and every other EtherLab application first; master 0 has one
-application owner. Confirm the machine's physical motion inhibition before
-running any hardware test.
+Stop every other EtherLab application first; master 0 has one application
+owner. Confirm the machine's physical motion inhibition before running any
+hardware test.
 
 Start with the minimal acquire/release probe:
 
