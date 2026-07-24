@@ -450,5 +450,17 @@ testing, safety, and build documents.
   correctly aborted because EL5152 position 4 remained SAFEOP. Do not claim a
   2 kHz full-topology pass yet; test continuous load phases in one activation
   and investigate the repeated-activation boundary.
+- Continuous single-activation rate screens pass 2 and 2.5 kHz across
+  baseline, same-CPU, and all-CPU phases with zero errors/overruns; maximum
+  lateness was 13,160 ns and 12,518 ns. Approximately 3 and 4 kHz abort before
+  timing because EL5152 position 4 refuses OP with Sync Manager watchdog
+  `0x001b`. Both EL5152s have the same approximately 100 ms ESC watchdog and
+  advertise much shorter minimum cycles, so this is an activation/FSM
+  limitation rather than a hardware-rate finding.
+- Target EtherLab 1.6.9 declares `ecrt_master_set_send_interval()` but its
+  kernel module does not implement/export it; only the cdev ioctl reaches the
+  internal setter. Do not carry an EtherLab fork for this. Keep the selected
+  user-space activation period, document the external limitation, and avoid
+  claiming that EtherLab's operation-FSM interval was changed.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

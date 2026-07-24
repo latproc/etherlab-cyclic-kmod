@@ -135,7 +135,17 @@ submission order, result checking, domains, padding, and offset resolution.
 ## Activate and follow the cycle
 
 Activate with a validated cycle period. If DC is configured, its cycle
-settings must agree with the activation period.
+settings must agree with the activation period. User space selects
+`cw_ec_cycle_activate.cycle_period_ns` for each activation; the value is
+immutable until deactivation.
+
+On the current target, EtherLab 1.6.9 declares
+`ecrt_master_set_send_interval()` in `ecrt.h`, but `ec_master.ko` does not
+implement or export it. The equivalent character-device ioctl exists for
+ordinary user-space EtherLab applications. Consequently, this external module
+uses the requested period for its own cyclic timer but cannot claim to update
+EtherLab's separate operation-FSM interval. Do not patch around missing kernel
+symbols; detect and document the installed API.
 
 `CW_EC_IOC_CYCLE_WAIT` provides an interruptible, bounded sleep for a record
 newer than a supplied cycle index. The returned coherent record includes:

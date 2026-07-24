@@ -289,6 +289,13 @@ CW_EC_IOC_CYCLE_GET_STATUS
 CW_EC_IOC_CYCLE_DEACTIVATE
 ```
 
+The caller selects `cycle_period_ns` on every activation within the published
+hard bounds. It is immutable while active; changing rate requires deactivation
+and another activation. Configured DC SYNC0 periods must exactly match it.
+This controls the transport's cyclic timer. It does not claim to configure a
+separate EtherLab operation-FSM interval when the installed EtherLab kernel
+module lacks its declared `ecrt_master_set_send_interval()` symbol.
+
 API 0.5 additionally provides `CW_EC_IOC_CYCLE_GET_DC_STATUS` without changing
 the API 0.4 cycle-status structure. The DC snapshot reports enable/reference/
 monitor state, the last reference result and phase difference, bounded cycle

@@ -144,6 +144,12 @@ prints new kernel warning/error lines; the target EtherLab lifecycle can log
 Sync Manager watchdog transitions after deactivation even when the master
 subsequently returns idle.
 
+For a short rate screen that keeps all load phases inside one activation, set
+`CW_EC_TEST_CONTINUOUS_PHASES=YES`. This avoids conflating the known
+re-activation transition boundary with cyclic timing, but reports one
+aggregate maximum-lateness value for all phases. It is characterization, not
+the default multi-trial acceptance gate.
+
 ## Zero-only arm and teardown checks
 
 These tests never request nonzero output but still require motion inhibition:

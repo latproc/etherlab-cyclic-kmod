@@ -2199,6 +2199,16 @@ cycle_period_ns = 500000
 
 Prefer period in nanoseconds over frequency if that simplifies timing and avoids division ambiguity.
 
+The selected period is user-space policy supplied at activation and is
+immutable until deactivation. If DC is configured, submitted SYNC0 periods
+must agree with it. Keep the transport timer distinct from EtherLab's own
+operation-FSM send interval: the target 1.6.9 header declares
+`ecrt_master_set_send_interval()`, but the installed kernel module does not
+implement/export that symbol. Do not add an unmaintainable EtherLab fork or
+call an internal unexported symbol. Detect and document the installed
+capability, and do not claim the FSM interval changed when its supported
+kernel API is absent.
+
 ## CPU affinity and priority
 
 The existing system already has:

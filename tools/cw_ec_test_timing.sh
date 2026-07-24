@@ -18,6 +18,7 @@ repeat=${CW_EC_TEST_REPEAT:-3}
 cycle_cpu=${CW_EC_TEST_CPU:-1}
 fifo_priority=${CW_EC_TEST_FIFO_PRIORITY:-70}
 maximum_lateness=${CW_EC_TEST_MAXIMUM_LATENESS_NS:-250000}
+continuous_phases=${CW_EC_TEST_CONTINUOUS_PHASES:-NO}
 
 positive_integer()
 {
@@ -41,6 +42,13 @@ positive_integer CW_EC_TEST_PERIOD_NS "$period"
 positive_integer CW_EC_TEST_DURATION "$duration"
 positive_integer CW_EC_TEST_REPEAT "$repeat"
 positive_integer CW_EC_TEST_MAXIMUM_LATENESS_NS "$maximum_lateness"
+case "$continuous_phases" in
+YES|NO) ;;
+*)
+	echo "error: CW_EC_TEST_CONTINUOUS_PHASES must be YES or NO" >&2
+	exit 2
+	;;
+esac
 case "$cycle_cpu" in
 	''|*[!0-9]*)
 		echo "error: CW_EC_TEST_CPU must be a non-negative integer" >&2
@@ -168,6 +176,50 @@ print_failed_slaves()
 			}'
 }
 
+start_strict_controller()
+{
+	log=$1
+	run_duration=$2
+
+	"$project_dir/tools/cw_ec_config" cycle-strict \
+		"$config" "$period" "$run_duration" "$device" >"$log" &
+	controller_pid=$!
+	ready_attempts=0
+	while ! grep -q '^READY: strict-health' "$log"; do
+		if ! kill -0 "$controller_pid" 2>/dev/null; then
+			wait "$controller_pid" || true
+			controller_pid=
+			echo "error: strict timing startup failed in $log" >&2
+			print_failed_slaves "$log" >&2
+			return 1
+		fi
+		if [ "$ready_attempts" -ge 120 ]; then
+			echo "error: strict timing readiness timed out in $log" >&2
+			return 1
+		fi
+		sleep 0.05
+		ready_attempts=$((ready_attempts + 1))
+	done
+}
+
+finish_strict_controller()
+{
+	log=$1
+
+	if ! wait "$controller_pid"; then
+		controller_pid=
+		stop_load
+		echo "error: strict timing cycle failed in $log" >&2
+		grep -E '^(cycle status:|IO status:|domain status:)' \
+			"$log" >&2 || true
+		print_failed_slaves "$log" >&2
+		return 1
+	fi
+	controller_pid=
+	stop_load
+	check_run "$log"
+}
+
 check_run()
 {
 	log=$1
@@ -228,46 +280,50 @@ echo "Timing criteria: errors=0 overruns=0 maximum_lateness<=${maximum_lateness}
 echo "  aggregate/domain WC complete, every domain valid, all configured slaves operational"
 echo "  period=${period}ns duration=${duration}s repeat=$repeat CPU=$cycle_cpu FIFO=$fifo_priority"
 
-for mode in baseline same-cpu system; do
+if [ "$continuous_phases" = YES ]; then
 	i=1
 	while [ "$i" -le "$repeat" ]; do
-		log="$tmp_dir/$mode-$i.log"
-		echo "$mode trial $i/$repeat"
-		"$project_dir/tools/cw_ec_config" cycle-strict \
-			"$config" "$period" "$duration" "$device" >"$log" &
-		controller_pid=$!
-		ready_attempts=0
-		while ! grep -q '^READY: strict-health' "$log"; do
-			if ! kill -0 "$controller_pid" 2>/dev/null; then
-				wait "$controller_pid" || true
-				controller_pid=
-				echo "error: strict timing startup failed in $log" >&2
-				print_failed_slaves "$log" >&2
-				exit 1
-			fi
-			if [ "$ready_attempts" -ge 120 ]; then
-				echo "error: strict timing readiness timed out in $log" >&2
-				exit 1
-			fi
-			sleep 0.05
-			ready_attempts=$((ready_attempts + 1))
-		done
-		start_load "$mode"
-		if ! wait "$controller_pid"; then
-			controller_pid=
-			stop_load
-			echo "error: strict timing cycle failed in $log" >&2
-			grep -E '^(cycle status:|IO status:|domain status:)' \
-				"$log" >&2 || true
-			print_failed_slaves "$log" >&2
+		log="$tmp_dir/continuous-$i.log"
+		total_duration=$((duration * 3))
+		echo "continuous trial $i/$repeat: baseline, same-cpu, system"
+		start_strict_controller "$log" "$total_duration"
+		echo "  baseline phase"
+		sleep "$duration"
+		if ! kill -0 "$controller_pid" 2>/dev/null; then
+			finish_strict_controller "$log"
 			exit 1
 		fi
-		controller_pid=
+		echo "  same-cpu phase"
+		start_load same-cpu
+		sleep "$duration"
 		stop_load
-		check_run "$log"
+		if ! kill -0 "$controller_pid" 2>/dev/null; then
+			finish_strict_controller "$log"
+			exit 1
+		fi
+		echo "  system phase"
+		start_load system
+		sleep "$duration"
+		finish_strict_controller "$log"
 		i=$((i + 1))
 	done
-done
+else
+	for mode in baseline same-cpu system; do
+		i=1
+		while [ "$i" -le "$repeat" ]; do
+			log="$tmp_dir/$mode-$i.log"
+			echo "$mode trial $i/$repeat"
+			start_strict_controller "$log" "$duration"
+			start_load "$mode"
+			if ! finish_strict_controller "$log"; then
+				controller_pid=
+			stop_load
+				exit 1
+			fi
+			i=$((i + 1))
+		done
+	done
+fi
 
 rmmod "$module_name"
 "$project_dir/tools/cw_ec_capture_topology.sh" >"$tmp_dir/slaves-after.txt"

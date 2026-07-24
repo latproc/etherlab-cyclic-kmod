@@ -591,6 +591,30 @@ Therefore 2 kHz is promising cyclic-loop evidence, not a passed multi-trial
 full-topology rate gate. A continuous single-activation load-phase test and
 the repeated-activation cause remain outstanding.
 
+`CW_EC_TEST_CONTINUOUS_PHASES=YES` performs the three load phases inside one
+strict-health activation. This rate-screening mode reports one aggregate
+maximum-lateness value rather than one value per phase. On 2026-07-24:
+
+- 500,000 ns (2 kHz) completed 32,404 cycles with zero errors/overruns and
+  13,160 ns maximum lateness; and
+- 400,000 ns (2.5 kHz) completed 40,254 cycles with zero errors/overruns and
+  12,518 ns maximum lateness.
+
+Both retained complete/valid domains and all 34 slaves OP at the final
+snapshot. Attempts at 333,333 ns and 250,000 ns aborted before timing because
+EL5152 position 4 refused OP with AL `0x001b`. Its reported minimum cycle is
+62 us, versus 85 us at position 3, and both ESCs had identical approximately
+100 ms process-data watchdog settings (divider 2498, intervals 1000). This is
+therefore an activation/error-recovery limitation, not an accepted EL5152
+speed limit.
+
+The target EtherLab 1.6.9 header declares
+`ecrt_master_set_send_interval()`, but the installed kernel module neither
+implements nor exports it; only the character-device ioctl reaches the
+internal setter. No EtherLab source was changed. Until a supported kernel API
+exists, the transport must document this dependency and must not claim that
+its selected period also controls EtherLab's operation-FSM interval.
+
 ## Zero-armed controller death
 
 `tools/cw_ec_test_controller_death.sh` starts `cycle-zero-hold`, waits until an
