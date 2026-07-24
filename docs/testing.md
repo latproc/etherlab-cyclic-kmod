@@ -615,6 +615,70 @@ internal setter. No EtherLab source was changed. Until a supported kernel API
 exists, the transport must document this dependency and must not claim that
 its selected period also controls EtherLab's operation-FSM interval.
 
+API 0.15 therefore adds a transport-local, acknowledged period transition for
+active non-DC sessions while outputs are disarmed. The timing harness accepts
+`CW_EC_TEST_START_PERIOD_NS`; when it differs from the measured period, it
+reaches strict health at the start period, applies the new period at a reported
+completed-cycle boundary, and starts load only after acknowledgement. This
+separates the cyclic-rate screen from the known fast-rate activation/FSM
+failure without modifying EtherLab.
+
+The first staged full-topology screens activated at 1,000,000 ns and then
+changed period while disarmed. Each run kept one activation across baseline,
+same-CPU load, and all-online-CPU load:
+
+- 333,333 ns completed 46,826 cycles in 15 seconds with zero cycle errors or
+  overruns and 37,806 ns maximum lateness;
+- 250,000 ns completed 62,021 cycles in 15 seconds with zero cycle errors or
+  overruns and 39,388 ns maximum lateness;
+- 200,000 ns completed 77,227 cycles in 15 seconds with zero cycle errors or
+  overruns and 42,391 ns maximum lateness; and
+- 100,000 ns completed 92,740 cycles in 9 seconds with zero cycle errors or
+  overruns and 36,847 ns maximum lateness.
+
+Every final snapshot had all 34 configured slaves online/OP, both explicit
+domains complete and valid, and outputs disarmed. Topology was unchanged and
+master 0 returned idle after each run. EtherLab emitted its already-known
+post-deactivation Sync Manager watchdog messages on some slaves. These short
+screens demonstrate that conservative activation followed by a cycle-boundary
+rate change avoids the fast-activation failure and that the cyclic transport
+ran at the API's current 100 us minimum under the declared loads. They are not
+long-duration timing acceptance or DC evidence.
+
+A subsequent 600-second 100,000 ns staged soak completed 6,002,674 aggregate
+cycles with zero cycle errors/overruns and 33,793 ns maximum kernel wake
+lateness. All 34 slaves and both domains remained operational/valid across
+baseline, same-CPU, and system-load phases. This is stronger kernel-loop
+evidence, but the controller did not exchange an image on every cycle.
+
+The first `cycle-exchange-rate` run then exercised the user/kernel boundary for
+60 seconds at 100,000 ns. On every observed cycle it copied the 290-byte input
+image and published a 290-byte all-zero output image while outputs stayed
+disarmed:
+
+- 599,620 user exchanges were completed and 381 intermediate cycle
+  notifications were skipped (about 0.064%);
+- kernel wake lateness was 2,368.5 ns mean, 2,500 ns median, 3,500 ns p99,
+  5,500 ns p99.9, and 24,614 ns maximum in the observed records;
+- user-space observation lateness was 10,049.8 ns mean, 9,500 ns median,
+  15,500 ns p99, 24,500 ns p99.9, and 274,992 ns maximum; and
+- the kernel completed with zero errors/overruns, all 34 slaves OP, both
+  domains complete/valid, outputs disarmed, and master 0 idle after teardown.
+
+Thus the process image remained coherent and latest after a missed wake, but
+this ordinary user-space process did not observe every 10 kHz cycle. Do not
+equate the successful kernel bus rate with a guaranteed one-wake-per-cycle
+user-space control rate.
+
+The follow-up clock-metric verification covered exactly 100,000 target
+intervals at 100,000 ns. Expected and scheduled spans were both
+10,000,000,000 ns (`grid_error=0`), while the mean interval between the
+recorded actual kernel wakes was 99,999.975 ns. Kernel lateness remained near
+the earlier distribution (2.5 us median and 5.5 us p99.9). The deadline grid
+therefore showed no drift in this sample; execution and user observation
+jitter occurred around that grid. The user process skipped 86 intermediate
+notifications during its 99,915 exchanges.
+
 ## Zero-armed controller death
 
 `tools/cw_ec_test_controller_death.sh` starts `cycle-zero-hold`, waits until an

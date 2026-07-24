@@ -12,7 +12,7 @@ The transport contains no machine, servo, CiA 402, XML, or control-system
 policy. Those decisions remain in user space, so the same module can support
 different devices and control systems without recompiling kernel code.
 
-> **Development status:** experimental API 0.14. The standalone documentation
+> **Development status:** experimental API 0.15. The standalone documentation
 > gate passes, but the kernel-safety and production timing gates remain open.
 > Kernel faults can crash the host and EtherCAT outputs can move machinery.
 > Always use the site's hardware safety and commissioning procedures.
@@ -73,7 +73,7 @@ timeline. This delegation is planned, not part of API 0.14.
 
 ## What is implemented?
 
-API 0.14 currently includes:
+API 0.15 currently includes:
 
 - exclusive EtherLab master lifecycle and raw bus discovery;
 - ordered typed setup SDOs;

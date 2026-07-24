@@ -1,7 +1,7 @@
 # User-Space Controller Developer Guide
 
 This guide describes how to build a controller against the current
-experimental API 0.14. The normative structure and ioctl semantics are in
+experimental API 0.15. The normative structure and ioctl semantics are in
 [`uapi.md`](uapi.md); use the shared
 [`cw_ethercat_uapi.h`](../include/cw_ethercat_uapi.h) definitions rather than
 duplicating numeric commands or layouts.
@@ -85,7 +85,7 @@ then call `CW_EC_IOC_GET_CAPABILITIES`. Minor versions are additive, but a
 controller must not call an optional operation merely because it was compiled
 from a newer header.
 
-API 0.14 reports coherent copied process images, cycle timing,
+API 0.15 reports coherent copied process images, cycle timing,
 wait-for-cycle, DC diagnostics, and optional output leases. It does not report
 scheduled outputs or delegated domain connections.
 

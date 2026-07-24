@@ -150,6 +150,13 @@ re-activation transition boundary with cyclic timing, but reports one
 aggregate maximum-lateness value for all phases. It is characterization, not
 the default multi-trial acceptance gate.
 
+To activate conservatively and begin the measured phases only after a live,
+acknowledged period change, also set `CW_EC_TEST_START_PERIOD_NS`. For example,
+`CW_EC_TEST_START_PERIOD_NS=1000000` with
+`CW_EC_TEST_PERIOD_NS=333333` first reaches the strict-health gate at 1 kHz,
+then changes the disarmed non-DC session at a cycle boundary. The harness
+aborts if either OP/valid health or the period acknowledgement fails.
+
 ## Zero-only arm and teardown checks
 
 These tests never request nonzero output but still require motion inhibition:

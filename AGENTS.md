@@ -16,11 +16,11 @@ decisions, risks, commands, or next steps change.
 
 - Current phase: standalone Phase 3 hardening after the first architecture
   review. IOD integration remains blocked.
-- Current UAPI is 0.14. It covers discovery, ordered setup SDOs, declarative
+- Current UAPI is 0.15. It covers discovery, ordered setup SDOs, declarative
   PDO/DC configuration, domain registration, cyclic pumping, copied input and
   masked output images, explicit arm/disarm, health, timing/DC statistics, and
   per-configured-slave validity, coherent cycle timing, capability discovery,
-  and interruptible cycle notification.
+  interruptible cycle notification, and acknowledged disarmed period updates.
 - Target is Debian RT kernel `6.1.0-49-rt-amd64` with EtherLab DKMS 1.6.9.
   Exact build artifacts are documented.
 - Master contention, discovery, lifecycle, declarative PDO mapping, DC,
@@ -79,7 +79,7 @@ decisions, risks, commands, or next steps change.
   `docs/developer-guide.md` gives the user-space controller lifecycle and
   points to the normative UAPI and reference tools.
 - The API 0.12 documentation acceptance gate passed after the multi-domain
-  audit. API 0.14 timing/lease documentation must be re-audited after live
+  audit. API 0.15 timing/lease/rate documentation must be re-audited after live
   validation. The kernel-safety gate remains open, so IOD integration is
   still blocked.
 - Do not modify Clockwork/IOD behavior in this repository.
@@ -275,7 +275,7 @@ Keep this section concise. Historical milestones and validation evidence are in
 `docs/project-history.md`; focused details belong in the relevant design,
 testing, safety, and build documents.
 
-- Current API: 0.14.
+- Current API: 0.15.
 - Deactivation synchronously gates outputs and joins the cyclic thread, then
   waits for configured slaves to leave SAFEOP/OP before invalidating
   EtherLab-owned pointers. The public EtherLab lifecycle can still expose
@@ -439,6 +439,26 @@ testing, safety, and build documents.
   fresh zero publication, and returned master 0 idle. A subsequent
   lease-disabled zero-arm lifecycle also passed after one transient
   post-teardown health-wait failure.
+- API 0.15 adds an acknowledged non-DC cycle-period update at a completed-cycle
+  boundary. The operation requires the active generation and disarmed outputs;
+  DC sessions are rejected until a coherent DC transition contract exists.
+  `cycle-rate` starts at a conservative rate, waits for strict bus health,
+  applies the target period, and begins measurement only after acknowledgement.
+- Staged disarmed full-topology screens activated at 1 ms and then ran at
+  333,333, 250,000, 200,000, and 100,000 ns across baseline, same-CPU, and
+  system load. All four ended with zero errors/overruns, 34/34 OP, and both
+  domains valid; maximum lateness was 37,806, 39,388, 42,391, and 36,847 ns.
+  This is short non-DC characterization, not production timing acceptance.
+- A 600-second 100 us staged soak completed 6,002,674 kernel cycles with zero
+  errors/overruns and 33,793 ns maximum lateness. A separate 60-second
+  end-to-end user-space exchange completed 599,620 image reads/zero
+  publications, skipped 381 intermediate cycle notifications, and measured
+  kernel/user median latency of 2.5/9.5 us and p99.9 of 5.5/24.5 us. The
+  274,992 ns user outlier proves 10 kHz cycling does not guarantee one
+  user-space wake per cycle.
+- A follow-up 100,000-interval 10 kHz exchange measured an exact 10 s
+  scheduled span (`grid_error=0`) and 99,999.975 ns mean actual wake interval.
+  The kernel deadline grid did not drift in that sample.
 - `cw_ec_entry_offset.global_offset` is now the preferred name for the global
   concatenated-image byte offset. The old `domain_offset` member remains an
   ABI-neutral deprecated union alias.

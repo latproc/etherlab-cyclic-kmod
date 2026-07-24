@@ -13,6 +13,7 @@ module_name=cw_ethercat
 config=${CW_EC_CONFIG:-"$project_dir/tools/configs/all34_captured_topology.conf"}
 device=${CW_EC_DEVICE:-/dev/cw_ethercat0}
 period=${CW_EC_TEST_PERIOD_NS:-1000000}
+start_period=${CW_EC_TEST_START_PERIOD_NS:-$period}
 duration=${CW_EC_TEST_DURATION:-30}
 repeat=${CW_EC_TEST_REPEAT:-3}
 cycle_cpu=${CW_EC_TEST_CPU:-1}
@@ -39,6 +40,7 @@ if [ "${CW_EC_MOTION_INHIBITED:-}" != YES ]; then
 	exit 2
 fi
 positive_integer CW_EC_TEST_PERIOD_NS "$period"
+positive_integer CW_EC_TEST_START_PERIOD_NS "$start_period"
 positive_integer CW_EC_TEST_DURATION "$duration"
 positive_integer CW_EC_TEST_REPEAT "$repeat"
 positive_integer CW_EC_TEST_MAXIMUM_LATENESS_NS "$maximum_lateness"
@@ -181,8 +183,14 @@ start_strict_controller()
 	log=$1
 	run_duration=$2
 
-	"$project_dir/tools/cw_ec_config" cycle-strict \
-		"$config" "$period" "$run_duration" "$device" >"$log" &
+	if [ "$start_period" -eq "$period" ]; then
+		"$project_dir/tools/cw_ec_config" cycle-strict \
+			"$config" "$period" "$run_duration" "$device" >"$log" &
+	else
+		"$project_dir/tools/cw_ec_config" cycle-rate \
+			"$config" "$start_period" "$period" "$run_duration" \
+			"$device" >"$log" &
+	fi
 	controller_pid=$!
 	ready_attempts=0
 	while ! grep -q '^READY: strict-health' "$log"; do
@@ -228,13 +236,15 @@ check_run()
 	errors=$(field "$cycle_line" errors)
 	overruns=$(field "$cycle_line" overruns)
 	lateness=$(field "$cycle_line" maximum_lateness)
+	actual_period=$(field "$cycle_line" period)
 	wc_state=$(field "$cycle_line" wc_state)
 	healthy=$(field "$io_line" healthy)
 	armed=$(field "$io_line" armed)
 	operational=$(field "$io_line" operational)
 	configured=$(field "$io_line" configured)
 
-	if [ "$errors" -ne 0 ] || [ "$overruns" -ne 0 ] ||
+	if [ "$actual_period" -ne "$period" ] ||
+	    [ "$errors" -ne 0 ] || [ "$overruns" -ne 0 ] ||
 	    [ "$lateness" -gt "$maximum_lateness" ] ||
 	    [ "$wc_state" -ne 2 ] || [ "$healthy" -ne 1 ] ||
 	    [ "$armed" -ne 0 ] || [ "$operational" -ne "$configured" ]; then

@@ -4603,6 +4603,27 @@ HMI activity
 
 Do not use only an idle-system benchmark.
 
+### Live cycle-period transition
+
+The generic controller may activate at a conservative period, establish the
+required OP/domain-valid state, and then request its operating period without
+rebuilding the EtherLab configuration. The transition is owned by this
+transport, not by a private EtherLab patch:
+
+- it is permitted only while outputs are disarmed;
+- it is generation-bound and acknowledged at an exact completed-cycle
+  boundary;
+- one period governs the whole receive/process/application-time/queue/send
+  cycle, and the new period begins with the following cycle;
+- it is rejected for DC-configured sessions until application-time, Sync0,
+  phase-controller, and user-space timeline changes have one coherent
+  transition contract; and
+- user space must re-check slave/domain health and timing after the change.
+
+This does not replace EtherLab's optional master send-interval hint. The target
+DKMS 1.6.9 build does not export that API, and this project must not carry an
+EtherLab fork merely to obtain it.
+
 ---
 
 # 29. Migration / fallback strategy

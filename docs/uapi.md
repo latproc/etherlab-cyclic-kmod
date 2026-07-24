@@ -2,14 +2,14 @@
 
 ## Status
 
-The current experimental API is version 0.14. It supports discovery, a
+The current experimental API is version 0.15. It supports discovery, a
 provisional bounded commissioning SDO batch, transactional
 slave/Sync/PDO/entry/DC configuration, domain registration, configurable
 cyclic pumping, copied process images, distributed clocks, health/fault
 status, explicit output arm/disarm, per-configured-slave validity, mandatory
 PDO padding, explicit multiple validity domains, coherent per-cycle timing,
 capability discovery, interruptible cycle notification, and optional
-authority-scoped output leases.
+authority-scoped output leases, and disarmed cycle-boundary period updates.
 
 ## Ownership and lifecycle
 
@@ -50,7 +50,9 @@ Minor versions add:
 - 0.13: capability discovery, coherent cycle timing/generation records, and
   interruptible wait-for-cycle; and
 - 0.14: optional armed-cycle output lease configuration, renewal, status,
-  deterministic expiry, and a distinct stale-controller fault.
+  deterministic expiry, and a distinct stale-controller fault; and
+- 0.15: acknowledged cycle-boundary period changes while outputs are disarmed
+  and distributed clocks are not configured.
 
 Input/output structures that accept caller fields include `struct_size` and
 `api_major`. The kernel rejects an unexpected size with `EINVAL` and an
@@ -66,10 +68,10 @@ Returns `struct cw_ec_api_version`.
 
 ### `CW_EC_IOC_GET_CAPABILITIES`
 
-Returns `struct cw_ec_capabilities`. API 0.14 reports only implemented,
+Returns `struct cw_ec_capabilities`. API 0.15 reports only implemented,
 documented features: coherent copied process images, cycle timing,
-wait-for-cycle, DC diagnostics, and output leases. Scheduled output and
-delegated domain connections are not currently reported.
+wait-for-cycle, DC diagnostics, output leases, and cycle-period updates.
+Scheduled output and delegated domain connections are not currently reported.
 
 ### `CW_EC_IOC_GET_MASTER_INFO`
 
@@ -464,6 +466,24 @@ scheduler lateness contributes to the maximum, but only lateness of at least
 one full period is an overrun. There is no normal-cycle logging, allocation,
 blocking mailbox operation, or user-space callback.
 
+### `CW_EC_IOC_CYCLE_SET_PERIOD`
+
+API 0.15 permits a controller to activate conservatively, wait for its required
+slaves and domains to reach OP/valid, and then change the non-DC cyclic period
+without rebuilding the EtherLab configuration. The caller supplies the active
+configuration generation and a period within the activation limits. Outputs
+must be disarmed. A DC-configured session returns `EOPNOTSUPP`; an armed
+session returns `EBUSY`; a stale generation returns `ESTALE`.
+
+The cyclic thread uses one immutable period for each complete
+receive/process/application-time/queue/send cycle. It publishes that cycle's
+coherent timing record, then installs a pending period for the next deadline.
+The ioctl waits for this boundary and returns `applied_period_ns` and
+`effective_after_cycle`; the new period governs the cycle following that
+number. This is a scheduling-rate change, not a promise that slaves will
+remain operational at the requested rate. User space must continue monitoring
+per-slave/domain status and timing.
+
 Application time is initialized to monotonic time rounded to the configured
 period before activation and advanced once per cycle before queue/send. This
 prevents EtherLab from activating without application time and establishes the
@@ -533,6 +553,15 @@ descriptor is also a kernel-enforced cleanup path if status or explicit
 deactivation fails. All cycle commands
 change EtherCAT slave PDO configuration during activation and are hardware
 commissioning operations; neither requests a nonzero transmitted output.
+`cycle-rate CONFIG START_PERIOD_NS TARGET_PERIOD_NS DURATION_SECONDS [DEVICE]`
+uses the strict health gate at the start period, requests the acknowledged
+boundary change, and only then emits the timed-interval readiness marker.
+`cycle-exchange-rate` adds a continuous user-space loop: it waits for each
+published cycle record, copies the latest complete input image, and publishes
+an all-zero output image while remaining disarmed. It reports skipped cycle
+notifications and fixed-histogram kernel-wake/user-observation latency
+statistics. This distinguishes kernel bus-cycle capacity from the rate at
+which a particular user process actually observes every cycle.
 
 `cw_ec_sdo stage FILE` parses and submits an ordered SDO batch to the pending
 kernel transaction, then closes without applying it. It is intended for

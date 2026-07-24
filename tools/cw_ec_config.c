@@ -11,12 +11,95 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "cw_ethercat_uapi.h"
 
 #define LINE_MAX_BYTES 1024U
 #define TOKEN_MAX 10U
+#define LATENCY_BUCKET_WIDTH_NS 1000LL
+#define LATENCY_BUCKET_LIMIT_NS 1000000LL
+#define LATENCY_BUCKET_COUNT 2003U
+
+struct latency_stats {
+	uint64_t count;
+	int64_t total_ns;
+	int64_t minimum_ns;
+	int64_t maximum_ns;
+	uint64_t buckets[LATENCY_BUCKET_COUNT];
+};
+
+static void latency_add(struct latency_stats *stats, int64_t value_ns)
+{
+	unsigned int bucket;
+
+	if (!stats->count) {
+		stats->minimum_ns = value_ns;
+		stats->maximum_ns = value_ns;
+	} else {
+		if (value_ns < stats->minimum_ns)
+			stats->minimum_ns = value_ns;
+		if (value_ns > stats->maximum_ns)
+			stats->maximum_ns = value_ns;
+	}
+	stats->count++;
+	stats->total_ns += value_ns;
+	if (value_ns < -LATENCY_BUCKET_LIMIT_NS)
+		bucket = 0;
+	else if (value_ns >= LATENCY_BUCKET_LIMIT_NS)
+		bucket = LATENCY_BUCKET_COUNT - 1U;
+	else
+		bucket = (unsigned int)
+			((value_ns + LATENCY_BUCKET_LIMIT_NS) /
+			 LATENCY_BUCKET_WIDTH_NS) +
+			 1U;
+	stats->buckets[bucket]++;
+}
+
+static int64_t latency_percentile(const struct latency_stats *stats,
+				  uint64_t numerator,
+				  uint64_t denominator)
+{
+	uint64_t target;
+	uint64_t seen = 0;
+	unsigned int bucket;
+
+	if (!stats->count)
+		return 0;
+	target = (stats->count * numerator + denominator - 1U) /
+		 denominator;
+	for (bucket = 0; bucket < LATENCY_BUCKET_COUNT; bucket++) {
+		seen += stats->buckets[bucket];
+		if (seen < target)
+			continue;
+		if (!bucket)
+			return -LATENCY_BUCKET_LIMIT_NS;
+		if (bucket == LATENCY_BUCKET_COUNT - 1U)
+			return LATENCY_BUCKET_LIMIT_NS;
+		return -LATENCY_BUCKET_LIMIT_NS +
+		       (int64_t)(bucket - 1U) * LATENCY_BUCKET_WIDTH_NS +
+		       LATENCY_BUCKET_WIDTH_NS / 2;
+	}
+	return stats->maximum_ns;
+}
+
+static void print_latency_stats(const char *name,
+				const struct latency_stats *stats)
+{
+	printf("%s latency: samples=%" PRIu64
+	       " mean=%.1f ns median=%" PRId64
+	       " ns p99=%" PRId64 " ns p99.9=%" PRId64
+	       " ns min=%" PRId64 " ns max=%" PRId64 " ns\n",
+	       name, stats->count,
+	       stats->count ?
+		       (double)stats->total_ns / (double)stats->count :
+		       0.0,
+	       latency_percentile(stats, 500, 1000),
+	       latency_percentile(stats, 990, 1000),
+	       latency_percentile(stats, 999, 1000),
+	       stats->minimum_ns, stats->maximum_ns);
+}
 
 enum record_kind {
 	RECORD_EMPTY,
@@ -62,6 +145,8 @@ static void usage(const char *program)
 		"  %s prepare CONFIG [DEVICE]\n"
 		"  %s cycle CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-strict CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
+		"  %s cycle-rate CONFIG START_PERIOD_NS TARGET_PERIOD_NS DURATION_SECONDS [DEVICE]\n"
+		"  %s cycle-exchange-rate CONFIG START_PERIOD_NS TARGET_PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-zero-arm CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-zero-lease CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-zero-hold CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
@@ -69,7 +154,7 @@ static void usage(const char *program)
 		"  %s cycle-abi CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s pulse-entry CONFIG PERIOD_NS ENTRY_ID PULSE_MS [DEVICE]\n",
 		program, program, program, program, program, program, program,
-		program, program, program);
+		program, program, program, program, program);
 }
 
 static int expect_ioctl_errno(int fd, unsigned long request, void *argument,
@@ -967,7 +1052,8 @@ out:
 static int cycle(const char *path, uint32_t period_ns,
 		 unsigned int duration_seconds, bool arm_zero,
 		 bool lease_zero, bool hold_zero, bool monitor, bool active_abi,
-		 bool require_healthy, const char *device)
+		 bool require_healthy, uint32_t target_period_ns,
+		 bool exchange_each_wake, const char *device)
 {
 	struct cw_ec_config_validate validate;
 	struct cw_ec_cycle_activate activate = {
@@ -1115,7 +1201,7 @@ static int cycle(const char *path, uint32_t period_ns,
 	       (uint64_t)cycle_wait.cycle.stale_output_cycles,
 	       (uint64_t)cycle_wait.cycle.missed_deadlines);
 	if (hold_zero || arm_zero || lease_zero || monitor || active_abi ||
-	    require_healthy) {
+	    require_healthy || target_period_ns) {
 		unsigned int attempts;
 
 		for (attempts = 0; attempts < 100; attempts++) {
@@ -1141,10 +1227,36 @@ static int cycle(const char *path, uint32_t period_ns,
 					"cw_ec_config: failed to report slave status\n");
 			goto out;
 		}
-		if (require_healthy) {
-			printf("READY: strict-health timing interval started\n");
-			fflush(stdout);
+	}
+	if (target_period_ns) {
+		struct cw_ec_cycle_period_update update = {
+			.struct_size = sizeof(update),
+			.api_major = CW_EC_API_VERSION_MAJOR,
+			.config_generation = io_status.config_generation,
+			.cycle_period_ns = target_period_ns,
+		};
+
+		if (ioctl(fd, CW_EC_IOC_CYCLE_SET_PERIOD, &update) < 0) {
+			fprintf(stderr,
+				"cw_ec_config: cycle period update failed: %s\n",
+				strerror(errno));
+			goto out;
 		}
+		if (update.applied_period_ns != target_period_ns) {
+			fprintf(stderr,
+				"cw_ec_config: kernel acknowledged unexpected period %" PRIu32 " ns\n",
+				update.applied_period_ns);
+			goto out;
+		}
+		period_ns = target_period_ns;
+		printf("cycle period changed at boundary after cycle=%" PRIu64
+		       " to %" PRIu32 " ns\n",
+		       (uint64_t)update.effective_after_cycle,
+		       update.applied_period_ns);
+	}
+	if (require_healthy) {
+		printf("READY: strict-health timing interval started\n");
+		fflush(stdout);
 	}
 	if (hold_zero) {
 		output_data = calloc(activate.domain_size, 1);
@@ -1227,6 +1339,13 @@ static int cycle(const char *path, uint32_t period_ns,
 				io_status.config_generation - 1U,
 			.timeout_ms = 100,
 		};
+		struct cw_ec_cycle_period_update invalid_period_update = {
+			.struct_size = sizeof(invalid_period_update),
+			.api_major = CW_EC_API_VERSION_MAJOR,
+			.config_generation =
+				io_status.config_generation - 1U,
+			.cycle_period_ns = period_ns,
+		};
 
 		if (first_domain_id(path, &domain_id))
 			goto out;
@@ -1279,6 +1398,10 @@ static int cycle(const char *path, uint32_t period_ns,
 				       &invalid_cycle_wait, ESTALE,
 				       "stale cycle wait generation"))
 			goto out;
+		if (expect_ioctl_errno(fd, CW_EC_IOC_CYCLE_SET_PERIOD,
+				       &invalid_period_update, ESTALE,
+				       "stale period-update generation"))
+			goto out;
 		invalid_cycle_wait.config_generation =
 			io_status.config_generation;
 		invalid_cycle_wait.after_cycle_index = UINT64_MAX;
@@ -1314,7 +1437,164 @@ static int cycle(const char *path, uint32_t period_ns,
 		}
 		printf("PASS: active hostile-ABI checks left outputs disarmed\n");
 	}
-	if (monitor) {
+	if (exchange_each_wake) {
+		struct timespec now;
+		uint64_t end_ns;
+		uint64_t previous_cycle;
+		uint64_t wakes = 0;
+		uint64_t skipped = 0;
+		uint64_t first_cycle = 0;
+		uint64_t first_scheduled_ns = 0;
+		uint64_t first_actual_ns = 0;
+		uint64_t last_scheduled_ns = 0;
+		uint64_t last_actual_ns = 0;
+		struct latency_stats kernel_latency = { 0 };
+		struct latency_stats user_latency = { 0 };
+
+		snapshot_data = calloc(activate.domain_size, 1);
+		output_data = calloc(activate.domain_size, 1);
+		output_mask = malloc(activate.domain_size);
+		if (!snapshot_data || !output_data || !output_mask) {
+			fprintf(stderr,
+				"cw_ec_config: allocate exchange images: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		memset(output_mask, 0xff, activate.domain_size);
+		snapshot.data_ptr = (uintptr_t)snapshot_data;
+		snapshot.data_capacity = activate.domain_size;
+		output.data_ptr = (uintptr_t)output_data;
+		output.mask_ptr = (uintptr_t)output_mask;
+		output.data_size = activate.domain_size;
+		output.config_generation = io_status.config_generation;
+		memset(&cycle_info, 0, sizeof(cycle_info));
+		cycle_info.struct_size = sizeof(cycle_info);
+		cycle_info.api_major = CW_EC_API_VERSION_MAJOR;
+		if (ioctl(fd, CW_EC_IOC_CYCLE_GET_INFO,
+			  &cycle_info) < 0) {
+			fprintf(stderr,
+				"cw_ec_config: exchange initial cycle info failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		cycle_wait.config_generation = io_status.config_generation;
+		cycle_wait.timeout_ms = 1000;
+		cycle_wait.after_cycle_index = cycle_info.cycle_index;
+		previous_cycle = cycle_wait.after_cycle_index;
+		if (clock_gettime(CLOCK_MONOTONIC, &now) < 0) {
+			fprintf(stderr, "cw_ec_config: clock_gettime: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		end_ns = (uint64_t)now.tv_sec * 1000000000ULL +
+			 (uint64_t)now.tv_nsec +
+			 (uint64_t)duration_seconds * 1000000000ULL;
+		for (;;) {
+			int64_t observation_lateness;
+			uint64_t observation_ns;
+			uint64_t now_ns;
+
+			if (ioctl(fd, CW_EC_IOC_CYCLE_WAIT,
+				  &cycle_wait) < 0) {
+				fprintf(stderr,
+					"cw_ec_config: exchange cycle wait failed: %s\n",
+					strerror(errno));
+				goto out;
+			}
+			if (clock_gettime(CLOCK_MONOTONIC, &now) < 0) {
+				fprintf(stderr,
+					"cw_ec_config: exchange observation clock failed: %s\n",
+					strerror(errno));
+				goto out;
+			}
+			observation_ns =
+				(uint64_t)now.tv_sec * 1000000000ULL +
+				(uint64_t)now.tv_nsec;
+			observation_lateness =
+				observation_ns >=
+					 cycle_wait.cycle.scheduled_time_ns ?
+				(int64_t)(
+					observation_ns -
+					cycle_wait.cycle.scheduled_time_ns) :
+				-(int64_t)(
+					cycle_wait.cycle.scheduled_time_ns -
+					observation_ns);
+			latency_add(&kernel_latency,
+				    cycle_wait.cycle.wake_lateness_ns);
+			latency_add(&user_latency, observation_lateness);
+			if (!first_cycle) {
+				first_cycle = cycle_wait.cycle.cycle_index;
+				first_scheduled_ns =
+					cycle_wait.cycle.scheduled_time_ns;
+				first_actual_ns =
+					cycle_wait.cycle.actual_wake_time_ns;
+			}
+			last_scheduled_ns =
+				cycle_wait.cycle.scheduled_time_ns;
+			last_actual_ns =
+				cycle_wait.cycle.actual_wake_time_ns;
+			if (cycle_wait.cycle.cycle_index > previous_cycle + 1U)
+				skipped += cycle_wait.cycle.cycle_index -
+					   previous_cycle - 1U;
+			previous_cycle = cycle_wait.cycle.cycle_index;
+			cycle_wait.after_cycle_index = previous_cycle;
+			if (ioctl(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT,
+				  &snapshot) < 0) {
+				fprintf(stderr,
+					"cw_ec_config: exchange input snapshot failed: %s\n",
+					strerror(errno));
+				goto out;
+			}
+			if (ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT,
+				  &output) < 0) {
+				fprintf(stderr,
+					"cw_ec_config: disarmed exchange publication failed: %s\n",
+					strerror(errno));
+				goto out;
+			}
+			wakes++;
+			if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
+				goto out;
+			now_ns = (uint64_t)now.tv_sec * 1000000000ULL +
+				 (uint64_t)now.tv_nsec;
+			if (now_ns >= end_ns)
+				break;
+		}
+		printf("user exchange: wakes=%" PRIu64
+		       " skipped_cycles=%" PRIu64
+		       " last_cycle=%" PRIu64
+		       " input_sequence=%" PRIu64
+		       " output_sequence=%" PRIu64 " armed=0\n",
+		       wakes, skipped, previous_cycle,
+		       (uint64_t)snapshot.input_sequence,
+		       (uint64_t)output.output_sequence);
+		print_latency_stats("kernel wake", &kernel_latency);
+		print_latency_stats("user observation", &user_latency);
+		if (previous_cycle > first_cycle) {
+			uint64_t intervals = previous_cycle - first_cycle;
+			uint64_t expected_span =
+				intervals * (uint64_t)period_ns;
+			uint64_t scheduled_span =
+				last_scheduled_ns - first_scheduled_ns;
+			uint64_t actual_span =
+				last_actual_ns - first_actual_ns;
+			int64_t grid_error =
+				scheduled_span >= expected_span ?
+					(int64_t)(scheduled_span -
+						  expected_span) :
+					-(int64_t)(expected_span -
+						   scheduled_span);
+
+			printf("exchange clock: intervals=%" PRIu64
+			       " expected_span=%" PRIu64
+			       " ns scheduled_span=%" PRIu64
+			       " ns grid_error=%" PRId64
+			       " ns actual_mean_period=%.3f ns\n",
+			       intervals, expected_span, scheduled_span,
+			       grid_error,
+			       (double)actual_span / (double)intervals);
+		}
+	} else if (monitor) {
 		unsigned int samples = duration_seconds * 4U;
 		struct cw_ec_io_status previous = { 0 };
 		bool have_previous = false;
@@ -1364,7 +1644,7 @@ static int cycle(const char *path, uint32_t period_ns,
 			}
 			usleep(250000);
 		}
-	} else {
+	} else if (!exchange_each_wake) {
 		while (duration_seconds)
 			duration_seconds = sleep(duration_seconds);
 	}
@@ -1373,11 +1653,12 @@ static int cycle(const char *path, uint32_t period_ns,
 			strerror(errno));
 		goto out;
 	}
-	printf("cycle status: active=%u cycles=%" PRIu64
+	printf("cycle status: active=%u period=%" PRIu32 " ns cycles=%" PRIu64
 	       " errors=%" PRIu64 " overruns=%" PRIu64
 	       " maximum_lateness=%" PRIu64 " ns wc=%" PRIu32
 	       " wc_state=%u last_result=%" PRId32 "\n",
-	       status.active, (uint64_t)status.cycle_count,
+	       status.active, status.cycle_period_ns,
+	       (uint64_t)status.cycle_count,
 	       (uint64_t)status.cycle_error_count,
 	       (uint64_t)status.cycle_overrun_count,
 	       (uint64_t)status.maximum_lateness_ns,
@@ -1470,7 +1751,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		}
 		held_armed = false;
 		printf("held zero-output shadow synchronously disarmed\n");
-	} else {
+	} else if (!exchange_each_wake) {
 		output_data = malloc(activate.domain_size);
 		output_mask = malloc(activate.domain_size);
 		if (!output_data || !output_mask) {
@@ -1660,7 +1941,8 @@ static int cycle(const char *path, uint32_t period_ns,
 		}
 	}
 	usleep((useconds_t)(period_ns / 1000U) * 10U);
-	snapshot_data = calloc(activate.domain_size, 1);
+	if (!snapshot_data)
+		snapshot_data = calloc(activate.domain_size, 1);
 	if (!snapshot_data) {
 		fprintf(stderr, "cw_ec_config: allocate input snapshot: %s\n",
 			strerror(errno));
@@ -1715,6 +1997,7 @@ int main(int argc, char **argv)
 	uint64_t duration;
 	uint64_t entry_id;
 	uint64_t period;
+	uint64_t target_period;
 
 	if (argc < 3 || argc > 7) {
 		usage(argv[0]);
@@ -1753,6 +2036,25 @@ int main(int argc, char **argv)
 		return pulse_entry(argv[2], period, entry_id, duration,
 				   device);
 	}
+	if ((!strcmp(argv[1], "cycle-rate") ||
+	     !strcmp(argv[1], "cycle-exchange-rate")) &&
+	    (argc == 6 || argc == 7)) {
+		if (parse_u64(argv[3], CW_EC_CYCLE_PERIOD_MAX_NS, &period) ||
+		    period < CW_EC_CYCLE_PERIOD_MIN_NS ||
+		    parse_u64(argv[4], CW_EC_CYCLE_PERIOD_MAX_NS,
+			      &target_period) ||
+		    target_period < CW_EC_CYCLE_PERIOD_MIN_NS ||
+		    parse_u64(argv[5], 3600, &duration) || !duration) {
+			fprintf(stderr,
+				"cw_ec_config: invalid start period, target period, or duration\n");
+			return 2;
+		}
+		if (argc == 7)
+			device = argv[6];
+		return cycle(argv[2], period, duration, false, false, false,
+			     false, false, true, target_period,
+			     !strcmp(argv[1], "cycle-exchange-rate"), device);
+	}
 	if ((!strcmp(argv[1], "cycle") ||
 	     !strcmp(argv[1], "cycle-strict") ||
 	     !strcmp(argv[1], "cycle-zero-arm") ||
@@ -1775,7 +2077,8 @@ int main(int argc, char **argv)
 			     !strcmp(argv[1], "cycle-zero-hold"),
 			     !strcmp(argv[1], "cycle-monitor"),
 			     !strcmp(argv[1], "cycle-abi"),
-			     !strcmp(argv[1], "cycle-strict"), device);
+			     !strcmp(argv[1], "cycle-strict"), 0, false,
+			     device);
 	}
 	usage(argv[0]);
 	return 2;

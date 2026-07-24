@@ -11,7 +11,7 @@
 #endif
 
 #define CW_EC_API_VERSION_MAJOR 0U
-#define CW_EC_API_VERSION_MINOR 14U
+#define CW_EC_API_VERSION_MINOR 15U
 
 #define CW_EC_CYCLE_PERIOD_MIN_NS 100000U
 #define CW_EC_CYCLE_PERIOD_MAX_NS 1000000000U
@@ -35,6 +35,7 @@
 #define CW_EC_CAP_CYCLE_WAIT (1ULL << 2)
 #define CW_EC_CAP_DC_DIAGNOSTICS (1ULL << 3)
 #define CW_EC_CAP_OUTPUT_LEASE (1ULL << 4)
+#define CW_EC_CAP_CYCLE_PERIOD_UPDATE (1ULL << 5)
 
 enum cw_ec_sdo_type {
 	CW_EC_SDO_U8 = 1,
@@ -338,6 +339,16 @@ struct cw_ec_cycle_status {
 	__u64 maximum_lateness_ns;
 };
 
+struct cw_ec_cycle_period_update {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 config_generation;
+	__u32 cycle_period_ns;
+	__u32 applied_period_ns;
+	__u64 effective_after_cycle;
+};
+
 struct cw_ec_cycle_info {
 	__u16 struct_size;
 	__u16 api_major;
@@ -591,6 +602,8 @@ struct cw_ec_domain_status {
 	_IOWR(CW_EC_IOC_MAGIC, 0x34, struct cw_ec_cycle_info)
 #define CW_EC_IOC_CYCLE_WAIT \
 	_IOWR(CW_EC_IOC_MAGIC, 0x35, struct cw_ec_cycle_wait)
+#define CW_EC_IOC_CYCLE_SET_PERIOD \
+	_IOWR(CW_EC_IOC_MAGIC, 0x36, struct cw_ec_cycle_period_update)
 #define CW_EC_IOC_GET_IO_STATUS \
 	_IOWR(CW_EC_IOC_MAGIC, 0x40, struct cw_ec_io_status)
 #define CW_EC_IOC_GET_INPUT_SNAPSHOT \

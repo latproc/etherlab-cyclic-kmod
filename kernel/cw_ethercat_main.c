@@ -94,6 +94,11 @@ struct cw_ec_file {
 	u8 *domain_data;
 	u32 domain_size;
 	u32 cycle_period_ns;
+	atomic_t pending_cycle_period_ns;
+	atomic64_t period_request_sequence;
+	atomic64_t period_applied_sequence;
+	atomic64_t period_applied_cycle;
+	wait_queue_head_t period_wait;
 	u64 application_time_ns;
 	atomic64_t cycle_count;
 	atomic64_t cycle_error_count;
@@ -671,6 +676,7 @@ static u64 cw_ec_apply_outputs(struct cw_ec_file *ctx)
 }
 
 static void cw_ec_publish_cycle_info(struct cw_ec_file *ctx, u64 cycle_index,
+				     u32 cycle_period_ns,
 				     u64 scheduled_time_ns,
 				     u64 actual_wake_time_ns,
 				     s64 wake_lateness_ns,
@@ -682,7 +688,7 @@ static void cw_ec_publish_cycle_info(struct cw_ec_file *ctx, u64 cycle_index,
 		.api_major = CW_EC_API_VERSION_MAJOR,
 		.config_generation = ctx->config_generation,
 		.cycle_index = cycle_index,
-		.cycle_period_ns = ctx->cycle_period_ns,
+		.cycle_period_ns = cycle_period_ns,
 		.scheduled_time_ns = scheduled_time_ns,
 		.actual_wake_time_ns = actual_wake_time_ns,
 		.wake_lateness_ns = wake_lateness_ns,
@@ -722,11 +728,13 @@ static int cw_ec_cycle_thread(void *data)
 		u64 scheduled_time_ns;
 		u64 output_sequence_consumed;
 		u64 cycle_index;
+		u32 cycle_period_ns;
 		s64 wake_lateness;
 		int cycle_result = 0;
 		int operation_result;
 
-		deadline += ctx->cycle_period_ns;
+		cycle_period_ns = READ_ONCE(ctx->cycle_period_ns);
+		deadline += cycle_period_ns;
 		scheduled_time_ns = deadline;
 		expires = ns_to_ktime(deadline);
 		set_current_state(TASK_INTERRUPTIBLE);
@@ -745,7 +753,7 @@ static int cw_ec_cycle_thread(void *data)
 
 			cw_ec_update_maximum(&ctx->maximum_lateness_ns,
 					     lateness);
-			if (lateness >= ctx->cycle_period_ns) {
+			if (lateness >= cycle_period_ns) {
 				atomic64_inc(&ctx->cycle_overrun_count);
 				deadline = now;
 			}
@@ -805,7 +813,7 @@ static int cw_ec_cycle_thread(void *data)
 		if (ctx->config_dc_count) {
 			operation_result = cw_ec_dc_prepare_send(ctx);
 		} else {
-			ctx->application_time_ns += ctx->cycle_period_ns;
+			ctx->application_time_ns += cycle_period_ns;
 			operation_result = ecrt_master_application_time(
 				ctx->master, ctx->application_time_ns);
 		}
@@ -832,11 +840,26 @@ static int cw_ec_cycle_thread(void *data)
 			atomic64_inc(&ctx->cycle_error_count);
 		atomic_set(&ctx->last_cycle_result, cycle_result);
 		atomic64_set(&ctx->cycle_count, cycle_index);
-		cw_ec_publish_cycle_info(ctx, cycle_index,
+		cw_ec_publish_cycle_info(ctx, cycle_index, cycle_period_ns,
 					 scheduled_time_ns, now,
 					 wake_lateness,
 					 output_sequence_consumed,
 					 cycle_result);
+		if (atomic_read(&ctx->pending_cycle_period_ns)) {
+			u32 pending = atomic_xchg(
+				&ctx->pending_cycle_period_ns, 0);
+
+			if (pending) {
+				WRITE_ONCE(ctx->cycle_period_ns, pending);
+				atomic64_set(&ctx->period_applied_cycle,
+					     cycle_index);
+				atomic64_set(
+					&ctx->period_applied_sequence,
+					atomic64_read(
+						&ctx->period_request_sequence));
+				wake_up_interruptible(&ctx->period_wait);
+			}
+		}
 	}
 
 	return 0;
@@ -977,6 +1000,7 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	spin_lock_init(&ctx->cycle_info_lock);
 	init_waitqueue_head(&ctx->compat_output.gate_wait);
 	init_waitqueue_head(&ctx->cycle_wait);
+	init_waitqueue_head(&ctx->period_wait);
 	ctx->input_reader = -1;
 	ctx->compat_output.reader = -1;
 	INIT_LIST_HEAD(&ctx->setup_sdos);
@@ -992,6 +1016,10 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	atomic64_set(&ctx->cycle_overrun_count, 0);
 	atomic64_set(&ctx->maximum_lateness_ns, 0);
 	atomic64_set(&ctx->cycle_info_sequence, 0);
+	atomic_set(&ctx->pending_cycle_period_ns, 0);
+	atomic64_set(&ctx->period_request_sequence, 0);
+	atomic64_set(&ctx->period_applied_sequence, 0);
+	atomic64_set(&ctx->period_applied_cycle, 0);
 	memset(&ctx->cycle_info, 0, sizeof(ctx->cycle_info));
 	ctx->cycle_info.struct_size = sizeof(ctx->cycle_info);
 	ctx->cycle_info.api_major = CW_EC_API_VERSION_MAJOR;
@@ -1794,6 +1822,10 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	atomic64_set(&ctx->cycle_overrun_count, 0);
 	atomic64_set(&ctx->maximum_lateness_ns, 0);
 	atomic64_set(&ctx->cycle_info_sequence, 0);
+	atomic_set(&ctx->pending_cycle_period_ns, 0);
+	atomic64_set(&ctx->period_request_sequence, 0);
+	atomic64_set(&ctx->period_applied_sequence, 0);
+	atomic64_set(&ctx->period_applied_cycle, 0);
 	memset(&ctx->cycle_info, 0, sizeof(ctx->cycle_info));
 	ctx->cycle_info.struct_size = sizeof(ctx->cycle_info);
 	ctx->cycle_info.api_major = CW_EC_API_VERSION_MAJOR;
@@ -1910,6 +1942,101 @@ out:
 	return ret;
 }
 
+static long cw_ec_cycle_set_period(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_cycle_period_update result;
+	unsigned long timeout;
+	u64 request_sequence;
+	u32 requested_period;
+	int ret;
+
+	if (copy_from_user(&result, argp, sizeof(result)))
+		return -EFAULT;
+	ret = cw_ec_check_header(result.struct_size, result.api_major,
+				 sizeof(result));
+	if (ret)
+		return ret;
+	if (result.flags || result.applied_period_ns ||
+	    result.effective_after_cycle ||
+	    result.cycle_period_ns < CW_EC_CYCLE_PERIOD_MIN_NS ||
+	    result.cycle_period_ns > CW_EC_CYCLE_PERIOD_MAX_NS)
+		return -EINVAL;
+	requested_period = result.cycle_period_ns;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->active) {
+		ret = -EINVAL;
+		goto out;
+	}
+	if (result.config_generation != ctx->config_generation) {
+		ret = -ESTALE;
+		goto out;
+	}
+	if (ctx->config_dc_count) {
+		ret = -EOPNOTSUPP;
+		goto out;
+	}
+	if (atomic_read(&ctx->compat_output.armed)) {
+		ret = -EBUSY;
+		goto out;
+	}
+	if (requested_period == READ_ONCE(ctx->cycle_period_ns)) {
+		result.applied_period_ns = requested_period;
+		result.effective_after_cycle =
+			atomic64_read(&ctx->cycle_count);
+		ret = 0;
+		goto copy_result;
+	}
+
+	request_sequence =
+		atomic64_inc_return(&ctx->period_request_sequence);
+	atomic_set(&ctx->pending_cycle_period_ns, requested_period);
+	timeout = msecs_to_jiffies(
+		2U * DIV_ROUND_UP(
+			max(requested_period,
+			    READ_ONCE(ctx->cycle_period_ns)),
+			1000000U) +
+		100U);
+	if (!wait_event_timeout(
+		    ctx->period_wait,
+		    atomic64_read(&ctx->period_applied_sequence) >=
+			    request_sequence,
+		    timeout)) {
+		int pending;
+
+		/*
+		 * Remove an unconsumed request. If the task won that race, give
+		 * its boundary acknowledgement one more bounded wait so user
+		 * space never sees a timeout for a period that was applied.
+		 */
+		pending = atomic_cmpxchg(&ctx->pending_cycle_period_ns,
+					 requested_period, 0);
+		if (pending == requested_period) {
+			ret = -ETIMEDOUT;
+			goto out;
+		}
+		if (!wait_event_timeout(
+			    ctx->period_wait,
+			    atomic64_read(&ctx->period_applied_sequence) >=
+				    request_sequence,
+			    timeout)) {
+			ret = -EIO;
+			goto out;
+		}
+	}
+	result.applied_period_ns = READ_ONCE(ctx->cycle_period_ns);
+	result.effective_after_cycle =
+		atomic64_read(&ctx->period_applied_cycle);
+	ret = result.applied_period_ns == requested_period ? 0 : -EIO;
+
+copy_result:
+	if (!ret && copy_to_user(argp, &result, sizeof(result)))
+		ret = -EFAULT;
+out:
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
+
 static long cw_ec_cycle_get_status(struct cw_ec_file *ctx, void __user *argp)
 {
 	struct cw_ec_cycle_status result;
@@ -1930,7 +2057,7 @@ static long cw_ec_cycle_get_status(struct cw_ec_file *ctx, void __user *argp)
 	result.api_major = CW_EC_API_VERSION_MAJOR;
 	mutex_lock(&ctx->lock);
 	result.active = ctx->active;
-	result.cycle_period_ns = ctx->cycle_period_ns;
+	result.cycle_period_ns = READ_ONCE(ctx->cycle_period_ns);
 	result.domain_size = ctx->domain_size;
 	result.working_counter = atomic_read(&ctx->working_counter);
 	result.working_counter_state =
@@ -3287,7 +3414,8 @@ static long cw_ec_get_capabilities(void __user *argp)
 			CW_EC_CAP_CYCLE_TIMING |
 			CW_EC_CAP_CYCLE_WAIT |
 			CW_EC_CAP_DC_DIAGNOSTICS |
-			CW_EC_CAP_OUTPUT_LEASE,
+			CW_EC_CAP_OUTPUT_LEASE |
+			CW_EC_CAP_CYCLE_PERIOD_UPDATE,
 	};
 	int ret;
 
@@ -3398,6 +3526,8 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return cw_ec_cycle_get_info(ctx, argp);
 	case CW_EC_IOC_CYCLE_WAIT:
 		return cw_ec_cycle_wait(ctx, argp);
+	case CW_EC_IOC_CYCLE_SET_PERIOD:
+		return cw_ec_cycle_set_period(ctx, argp);
 	case CW_EC_IOC_GET_IO_STATUS:
 		return cw_ec_get_io_status(ctx, argp);
 	case CW_EC_IOC_GET_INPUT_SNAPSHOT:

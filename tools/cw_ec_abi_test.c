@@ -174,6 +174,11 @@ int main(int argc, char **argv)
 		.api_major = CW_EC_API_VERSION_MAJOR,
 		.timeout_ms = 1,
 	};
+	struct cw_ec_cycle_period_update period_update = {
+		.struct_size = sizeof(period_update),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.cycle_period_ns = 1000000,
+	};
 	struct cw_ec_cycle_deactivate cycle_deactivate = {
 		.struct_size = sizeof(cycle_deactivate),
 		.api_major = CW_EC_API_VERSION_MAJOR,
@@ -277,15 +282,17 @@ int main(int argc, char **argv)
 		    (CW_EC_CAP_COHERENT_PROCESS_IMAGE |
 		     CW_EC_CAP_CYCLE_TIMING | CW_EC_CAP_CYCLE_WAIT |
 		     CW_EC_CAP_DC_DIAGNOSTICS |
-		     CW_EC_CAP_OUTPUT_LEASE)) !=
+		     CW_EC_CAP_OUTPUT_LEASE |
+		     CW_EC_CAP_CYCLE_PERIOD_UPDATE)) !=
 		   (CW_EC_CAP_COHERENT_PROCESS_IMAGE |
 		    CW_EC_CAP_CYCLE_TIMING | CW_EC_CAP_CYCLE_WAIT |
 		    CW_EC_CAP_DC_DIAGNOSTICS |
-		    CW_EC_CAP_OUTPUT_LEASE)) {
+		    CW_EC_CAP_OUTPUT_LEASE |
+		    CW_EC_CAP_CYCLE_PERIOD_UPDATE)) {
 		fprintf(stderr, "FAIL: required capability bits missing\n");
 		failures++;
 	} else {
-		printf("PASS: API 0.14 capabilities reported\n");
+		printf("PASS: API 0.15 capabilities reported\n");
 	}
 
 	cycle_info.flags = 1;
@@ -318,6 +325,32 @@ int main(int argc, char **argv)
 	failures += expect_errno("inactive cycle wait",
 				 ioctl(fd, CW_EC_IOC_CYCLE_WAIT, &cycle_wait),
 				 EINVAL);
+	period_update.flags = 1;
+	errno = 0;
+	failures += expect_errno(
+		"cycle period update flags",
+		ioctl(fd, CW_EC_IOC_CYCLE_SET_PERIOD, &period_update),
+		EINVAL);
+	period_update.flags = 0;
+	period_update.cycle_period_ns = CW_EC_CYCLE_PERIOD_MIN_NS - 1U;
+	errno = 0;
+	failures += expect_errno(
+		"cycle period update below minimum",
+		ioctl(fd, CW_EC_IOC_CYCLE_SET_PERIOD, &period_update),
+		EINVAL);
+	period_update.cycle_period_ns = 1000000;
+	period_update.applied_period_ns = 1;
+	errno = 0;
+	failures += expect_errno(
+		"cycle period update output fields",
+		ioctl(fd, CW_EC_IOC_CYCLE_SET_PERIOD, &period_update),
+		EINVAL);
+	period_update.applied_period_ns = 0;
+	errno = 0;
+	failures += expect_errno(
+		"inactive cycle period update",
+		ioctl(fd, CW_EC_IOC_CYCLE_SET_PERIOD, &period_update),
+		EINVAL);
 
 	memset(&slave, 0, sizeof(slave));
 	slave.struct_size = sizeof(slave) - 1;
