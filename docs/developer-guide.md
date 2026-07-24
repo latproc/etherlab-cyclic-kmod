@@ -1,7 +1,7 @@
 # User-Space Controller Developer Guide
 
 This guide describes how to build a controller against the current
-experimental API 0.13. The normative structure and ioctl semantics are in
+experimental API 0.14. The normative structure and ioctl semantics are in
 [`uapi.md`](uapi.md); use the shared
 [`cw_ethercat_uapi.h`](../include/cw_ethercat_uapi.h) definitions rather than
 duplicating numeric commands or layouts.
@@ -85,9 +85,9 @@ then call `CW_EC_IOC_GET_CAPABILITIES`. Minor versions are additive, but a
 controller must not call an optional operation merely because it was compiled
 from a newer header.
 
-API 0.13 reports coherent copied process images, cycle timing,
-wait-for-cycle, and DC diagnostic capabilities. It does not report scheduled
-outputs, controller leases, or delegated domain connections.
+API 0.14 reports coherent copied process images, cycle timing,
+wait-for-cycle, DC diagnostics, and optional output leases. It does not report
+scheduled outputs or delegated domain connections.
 
 See `get_api_version()` and `get_capabilities()` in
 [`cw_ec_bus.c`](../tools/cw_ec_bus.c).
@@ -150,6 +150,26 @@ The wait is a notification, not a user-space callback in the cyclic task. A
 slow client may skip intermediate records and must use the returned cycle
 identity rather than assuming one wake per cycle.
 
+### Distributed-clock control loops
+
+The kernel owns EtherLab application time, reference sampling, DC steering,
+slave synchronization, and the common cycle index. A user-space controller
+must follow that published timeline rather than independently recreating or
+steering the DC clock.
+
+API 0.14 still exposes coherent monotonic cycle timing and a separate DC
+diagnostic snapshot. It does not yet expose the exact application time and DC
+sample coherently in the same cycle record, so it is not a complete
+motion-control clock contract.
+
+The planned compatible record will associate the global cycle index with the
+exact 64-bit application time passed to EtherLab, reference validity and the
+low-32-bit reference sample available from EtherLab 1.6.9, normalized phase
+difference, and applied adjustment. A controller woken after cycle N can only
+compute for a future cycle; it cannot change the datagram already sent for N.
+Tightly scheduled motion therefore also requires the planned bounded
+cycle-addressed output queue and an explicit lead/underrun policy.
+
 ## Read coherent inputs
 
 Call `CW_EC_IOC_GET_INPUT_SNAPSHOT` with the exact active generation and a
@@ -198,8 +218,37 @@ After health returns:
 3. publish a fresh safe output generation;
 4. explicitly arm that exact generation.
 
-Power restoration, lease renewal in a future API, or a new planner command
-must never arm outputs by itself.
+Power restoration, lease renewal, or a new planner command must never arm
+outputs by itself.
+
+## Use an output lease
+
+API 0.14 can optionally require controller liveness while outputs are armed.
+Before activation, configure an armed-cycle budget from 1 through 1,000,000
+with `CW_EC_IOC_CONFIGURE_OUTPUT_LEASE`. A budget of zero preserves the
+lease-disabled compatibility behavior.
+
+Each activation starts with the enabled lease invalid. After activation,
+`CW_EC_IOC_RENEW_OUTPUT_LEASE` loads the configured budget. The cyclic task
+decrements it exactly once for every armed output selection. The budget pauses
+while disarmed, so a monitoring-only controller need not send heartbeats.
+
+When the budget is exhausted, the next cycle:
+
+- selects zero outputs;
+- clears the authority's arm state;
+- latches `CW_EC_IO_FAULT_CONTROLLER_STALE` and `rearm_required`;
+- records the current publication sequence; and
+- continues cyclic input exchange.
+
+Renewal clears the current stale-controller condition but never clears the
+latched recovery epoch or arms output. Recovery requires renewal, a newer safe
+output publication, and explicit arm. Query configured/remaining cycles and
+renewal/expiry counters with `CW_EC_IOC_GET_OUTPUT_LEASE_STATUS`.
+
+The lease detects a controller that remains alive but stops renewing. It does
+not interpret why upstream control was lost, and it does not replace a
+hardware watchdog or safety system.
 
 ## Error and teardown rules
 

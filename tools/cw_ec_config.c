@@ -62,12 +62,13 @@ static void usage(const char *program)
 		"  %s prepare CONFIG [DEVICE]\n"
 		"  %s cycle CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-zero-arm CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
+		"  %s cycle-zero-lease CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-zero-hold CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-monitor CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-abi CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s pulse-entry CONFIG PERIOD_NS ENTRY_ID PULSE_MS [DEVICE]\n",
 		program, program, program, program, program, program, program,
-		program);
+		program, program);
 }
 
 static int expect_ioctl_errno(int fd, unsigned long request, void *argument,
@@ -964,7 +965,7 @@ out:
 
 static int cycle(const char *path, uint32_t period_ns,
 		 unsigned int duration_seconds, bool arm_zero,
-		 bool hold_zero, bool monitor, bool active_abi,
+		 bool lease_zero, bool hold_zero, bool monitor, bool active_abi,
 		 const char *device)
 {
 	struct cw_ec_config_validate validate;
@@ -1010,6 +1011,19 @@ static int cycle(const char *path, uint32_t period_ns,
 		.struct_size = sizeof(disarm),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	struct cw_ec_output_lease_config lease_config = {
+		.struct_size = sizeof(lease_config),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.cycle_budget = 100,
+	};
+	struct cw_ec_output_lease_renew lease_renew = {
+		.struct_size = sizeof(lease_renew),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_output_lease_status lease_status = {
+		.struct_size = sizeof(lease_status),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
 	uint8_t *snapshot_data = NULL;
 	uint8_t *output_data = NULL;
 	uint8_t *output_mask = NULL;
@@ -1029,6 +1043,25 @@ static int cycle(const char *path, uint32_t period_ns,
 	}
 	if (configure_fd(fd, path, &validate))
 		goto out;
+	if (lease_zero) {
+		io_status.struct_size = sizeof(io_status);
+		io_status.api_major = CW_EC_API_VERSION_MAJOR;
+		if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0) {
+			fprintf(stderr,
+				"cw_ec_config: pre-activation IO status failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		lease_config.config_generation =
+			io_status.config_generation;
+		if (ioctl(fd, CW_EC_IOC_CONFIGURE_OUTPUT_LEASE,
+			  &lease_config) < 0) {
+			fprintf(stderr,
+				"cw_ec_config: output lease configuration failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+	}
 	if (ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE, &activate) < 0) {
 		fprintf(stderr, "cw_ec_config: activation failed: %s\n",
 			strerror(errno));
@@ -1080,7 +1113,7 @@ static int cycle(const char *path, uint32_t period_ns,
 	       (uint64_t)cycle_wait.cycle.output_sequence_consumed,
 	       (uint64_t)cycle_wait.cycle.stale_output_cycles,
 	       (uint64_t)cycle_wait.cycle.missed_deadlines);
-	if (hold_zero || arm_zero || monitor || active_abi) {
+	if (hold_zero || arm_zero || lease_zero || monitor || active_abi) {
 		unsigned int attempts;
 
 		for (attempts = 0; attempts < 100; attempts++) {
@@ -1435,7 +1468,7 @@ static int cycle(const char *path, uint32_t period_ns,
 				strerror(errno));
 			goto out;
 		}
-		memset(output_data, arm_zero ? 0x00 : 0xff,
+		memset(output_data, (arm_zero || lease_zero) ? 0x00 : 0xff,
 		       activate.domain_size);
 		memset(output_mask, 0xff, activate.domain_size);
 		output.data_ptr = (uintptr_t)output_data;
@@ -1451,9 +1484,87 @@ static int cycle(const char *path, uint32_t period_ns,
 		       " sequence=%" PRIu64 "%s\n",
 		       (uint64_t)output.config_generation,
 		       (uint64_t)output.output_sequence,
-		       arm_zero ? " (zero-arm test pending)" :
+		       (arm_zero || lease_zero) ?
+			       " (zero-arm test pending)" :
 				  " (outputs remain disarmed)");
-		if (arm_zero) {
+		if (lease_zero) {
+			uint64_t input_before = io_status.input_sequence;
+
+			arm.config_generation = output.config_generation;
+			arm.output_sequence = output.output_sequence;
+			if (expect_ioctl_errno(fd, CW_EC_IOC_ARM_OUTPUTS,
+					       &arm, EAGAIN,
+					       "arm without lease renewal"))
+				goto out;
+			lease_renew.config_generation =
+				output.config_generation;
+			if (ioctl(fd, CW_EC_IOC_RENEW_OUTPUT_LEASE,
+				  &lease_renew) < 0 ||
+			    lease_renew.remaining_cycles != 100 ||
+			    lease_renew.renewal_count != 1) {
+				fprintf(stderr,
+					"cw_ec_config: initial lease renewal failed: %s\n",
+					errno ? strerror(errno) : "invalid result");
+				goto out;
+			}
+			if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) < 0) {
+				fprintf(stderr,
+					"cw_ec_config: leased zero arm failed: %s\n",
+					strerror(errno));
+				goto out;
+			}
+			usleep((useconds_t)(period_ns / 1000U) * 150U);
+			io_status.struct_size = sizeof(io_status);
+			io_status.api_major = CW_EC_API_VERSION_MAJOR;
+			if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS,
+				  &io_status) < 0 ||
+			    io_status.outputs_armed ||
+			    !io_status.rearm_required ||
+			    !(io_status.current_faults &
+			      CW_EC_IO_FAULT_CONTROLLER_STALE) ||
+			    io_status.input_sequence <= input_before) {
+				fprintf(stderr,
+					"cw_ec_config: lease expiry did not gate outputs while inputs continued\n");
+				goto out;
+			}
+			lease_status.config_generation =
+				output.config_generation;
+			if (ioctl(fd, CW_EC_IOC_GET_OUTPUT_LEASE_STATUS,
+				  &lease_status) < 0 ||
+			    lease_status.valid ||
+			    lease_status.remaining_cycles ||
+			    lease_status.expiry_count != 1) {
+				fprintf(stderr,
+					"cw_ec_config: expired lease status invalid: %s\n",
+					errno ? strerror(errno) : "invalid result");
+				goto out;
+			}
+			printf("PASS: lease expiry zero-gated outputs and cyclic inputs continued\n");
+			memset(&lease_renew, 0, sizeof(lease_renew));
+			lease_renew.struct_size = sizeof(lease_renew);
+			lease_renew.api_major = CW_EC_API_VERSION_MAJOR;
+			lease_renew.config_generation =
+				output.config_generation;
+			if (ioctl(fd, CW_EC_IOC_RENEW_OUTPUT_LEASE,
+				  &lease_renew) < 0)
+				goto out;
+			if (expect_ioctl_errno(fd, CW_EC_IOC_ARM_OUTPUTS,
+					       &arm, EAGAIN,
+					       "stale publication after lease expiry"))
+				goto out;
+			if (ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output) < 0)
+				goto out;
+			arm.output_sequence = output.output_sequence;
+			disarm.config_generation = output.config_generation;
+			if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) < 0 ||
+			    ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm) < 0) {
+				fprintf(stderr,
+					"cw_ec_config: lease recovery arm/disarm failed: %s\n",
+					strerror(errno));
+				goto out;
+			}
+			printf("PASS: renewal plus fresh zero publication allowed explicit re-arm\n");
+		} else if (arm_zero) {
 			arm.config_generation = output.config_generation;
 			arm.output_sequence = output.output_sequence;
 			if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) < 0) {
@@ -1634,6 +1745,7 @@ int main(int argc, char **argv)
 	}
 	if ((!strcmp(argv[1], "cycle") ||
 	     !strcmp(argv[1], "cycle-zero-arm") ||
+	     !strcmp(argv[1], "cycle-zero-lease") ||
 	     !strcmp(argv[1], "cycle-zero-hold") ||
 	     !strcmp(argv[1], "cycle-monitor") ||
 	     !strcmp(argv[1], "cycle-abi")) &&
@@ -1648,6 +1760,7 @@ int main(int argc, char **argv)
 			device = argv[5];
 		return cycle(argv[2], period, duration,
 			     !strcmp(argv[1], "cycle-zero-arm"),
+			     !strcmp(argv[1], "cycle-zero-lease"),
 			     !strcmp(argv[1], "cycle-zero-hold"),
 			     !strcmp(argv[1], "cycle-monitor"),
 			     !strcmp(argv[1], "cycle-abi"), device);

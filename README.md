@@ -12,7 +12,7 @@ The transport contains no machine, servo, CiA 402, XML, or control-system
 policy. Those decisions remain in user space, so the same module can support
 different devices and control systems without recompiling kernel code.
 
-> **Development status:** experimental API 0.13. The standalone documentation
+> **Development status:** experimental API 0.14. The standalone documentation
 > gate passes, but the kernel-safety and production timing gates remain open.
 > Kernel faults can crash the host and EtherCAT outputs can move machinery.
 > Always use the site's hardware safety and commissioning procedures.
@@ -38,6 +38,9 @@ application policy in the kernel:
 - **Fail-safe output control:** publishing data never arms it. Arming is
   generation-bound; health loss, disarm, controller exit, and deactivation
   select zero outputs and require fresh publication before re-arm.
+- **Controller liveness lease:** an optional armed-cycle budget prevents a
+  stalled controller from retaining output authority indefinitely while still
+  allowing monitoring to run without a heartbeat when outputs are disarmed.
 - **Power-loss recovery:** an unavailable configured slave can recover while
   the transport continues; stale outputs remain gated until user space
   explicitly re-arms.
@@ -52,7 +55,7 @@ application policy in the kernel:
 The design is also being prepared for optional delegated domain controllers:
 one process may own ordinary machine I/O while a dedicated motion service owns
 a drive domain. There will still be one EtherLab master and one cyclic kernel
-timeline. This delegation is planned, not part of API 0.13.
+timeline. This delegation is planned, not part of API 0.14.
 
 ```text
               user-space configuration and controllers
@@ -70,7 +73,7 @@ timeline. This delegation is planned, not part of API 0.13.
 
 ## What is implemented?
 
-API 0.13 currently includes:
+API 0.14 currently includes:
 
 - exclusive EtherLab master lifecycle and raw bus discovery;
 - ordered typed setup SDOs;
@@ -79,6 +82,8 @@ API 0.13 currently includes:
 - configurable cyclic pumping and copied process-image exchange;
 - aggregate, per-domain, and per-configured-slave health/validity;
 - masked output publication with explicit arm and synchronous disarm;
+- optional authority-scoped output leases with explicit renewal and
+  deterministic zero-gating on expiry;
 - coherent timing/generation records and blocking wait-for-cycle; and
 - bounded resource limits, hostile-input validation, and partial-failure
   unwind.
@@ -176,9 +181,11 @@ tools/cw_ec_config check \
   tools/configs/ed3l_velocity_dc_pos29.conf
 ```
 
-Do not copy a target-specific fixture blindly to another network. Identity,
-PDO layout, DC parameters, output masks, and safe commissioning state must be
-reviewed for that machine.
+That file is only a syntax and commissioning example. A new application should
+generate or write its own generic configuration from the intended network's
+ESI data and reviewed device requirements. Do not copy a target-specific
+fixture to another network: identity, PDO layout, DC parameters, output masks,
+and safe commissioning state must be established for that machine.
 
 The [testing guide](docs/testing.md) records test purpose, commands, expected
 results, hardware evidence, and remaining gaps. The

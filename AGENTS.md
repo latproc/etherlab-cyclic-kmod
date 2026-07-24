@@ -16,7 +16,7 @@ decisions, risks, commands, or next steps change.
 
 - Current phase: standalone Phase 3 hardening after the first architecture
   review. IOD integration remains blocked.
-- Current UAPI is 0.13. It covers discovery, ordered setup SDOs, declarative
+- Current UAPI is 0.14. It covers discovery, ordered setup SDOs, declarative
   PDO/DC configuration, domain registration, cyclic pumping, copied input and
   masked output images, explicit arm/disarm, health, timing/DC statistics, and
   per-configured-slave validity, coherent cycle timing, capability discovery,
@@ -79,7 +79,7 @@ decisions, risks, commands, or next steps change.
   `docs/developer-guide.md` gives the user-space controller lifecycle and
   points to the normative UAPI and reference tools.
 - The API 0.12 documentation acceptance gate passed after the multi-domain
-  audit. API 0.13 timing documentation must be re-audited after live
+  audit. API 0.14 timing/lease documentation must be re-audited after live
   validation. The kernel-safety gate remains open, so IOD integration is
   still blocked.
 - Do not modify Clockwork/IOD behavior in this repository.
@@ -275,7 +275,7 @@ Keep this section concise. Historical milestones and validation evidence are in
 `docs/project-history.md`; focused details belong in the relevant design,
 testing, safety, and build documents.
 
-- Current API: 0.13.
+- Current API: 0.14.
 - Deactivation synchronously gates outputs and joins the cyclic thread, then
   waits for configured slaves to leave SAFEOP/OP before invalidating
   EtherLab-owned pointers. The public EtherLab lifecycle can still expose
@@ -423,5 +423,21 @@ testing, safety, and build documents.
   boundary; master 0 returned idle with all 34 slaves visible. An earlier
   intermediate run also logged one AL-state datagram initialization failure
   and one skipped master-FSM datagram.
+- API 0.13 DC status is not yet a complete user-space motion-clock contract.
+  A future coherent timing record must add the exact application time used for
+  each global cycle, reference validity and low-32-bit reference sample,
+  normalized phase difference, and applied adjustment. User space follows
+  that kernel timeline and queues output for an explicit future cycle; a wake
+  after cycle N cannot alter cycle N. Preserve the existing cycle-info ioctl
+  size for binary compatibility and add a new operation.
+- API 0.14 adds an optional 1--1,000,000 armed-cycle lease to the compatibility
+  output authority. It starts invalid on activation, pauses while disarmed,
+  and expires into a distinct controller-stale fault and zero gate. Renewal
+  alone cannot re-arm; recovery requires a newer publication and explicit arm.
+  Hostile/inactive ABI coverage passes. A live 100-cycle all-zero lease expired
+  while inputs continued, rejected stale recovery, accepted renewal plus a
+  fresh zero publication, and returned master 0 idle. A subsequent
+  lease-disabled zero-arm lifecycle also passed after one transient
+  post-teardown health-wait failure.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

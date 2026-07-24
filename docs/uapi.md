@@ -2,13 +2,14 @@
 
 ## Status
 
-The current experimental API is version 0.13. It supports discovery, a
+The current experimental API is version 0.14. It supports discovery, a
 provisional bounded commissioning SDO batch, transactional
 slave/Sync/PDO/entry/DC configuration, domain registration, configurable
 cyclic pumping, copied process images, distributed clocks, health/fault
 status, explicit output arm/disarm, per-configured-slave validity, mandatory
 PDO padding, explicit multiple validity domains, coherent per-cycle timing,
-capability discovery, and interruptible cycle notification.
+capability discovery, interruptible cycle notification, and optional
+authority-scoped output leases.
 
 ## Ownership and lifecycle
 
@@ -47,7 +48,9 @@ Minor versions add:
 - 0.12: explicit ordered domains, slave-domain assignments, and per-domain
   status; and
 - 0.13: capability discovery, coherent cycle timing/generation records, and
-  interruptible wait-for-cycle.
+  interruptible wait-for-cycle; and
+- 0.14: optional armed-cycle output lease configuration, renewal, status,
+  deterministic expiry, and a distinct stale-controller fault.
 
 Input/output structures that accept caller fields include `struct_size` and
 `api_major`. The kernel rejects an unexpected size with `EINVAL` and an
@@ -63,10 +66,10 @@ Returns `struct cw_ec_api_version`.
 
 ### `CW_EC_IOC_GET_CAPABILITIES`
 
-Returns `struct cw_ec_capabilities`. API 0.13 reports only implemented,
+Returns `struct cw_ec_capabilities`. API 0.14 reports only implemented,
 documented features: coherent copied process images, cycle timing,
-wait-for-cycle, and DC diagnostics. Scheduled output and controller leases are
-not currently reported.
+wait-for-cycle, DC diagnostics, and output leases. Scheduled output and
+delegated domain connections are not currently reported.
 
 ### `CW_EC_IOC_GET_MASTER_INFO`
 
@@ -331,9 +334,9 @@ current module lifetime. While cycling, the status reports master link and
 responding-slave count, online/operational configured-slave counts, domain
 health, current and last-latched fault masks, and a fault transition count.
 `last_latched_faults` is the union of every cause observed in the current
-re-arm epoch. A successful arm ends that epoch; the next healthy-to-unhealthy
-transition replaces the old mask. `fault_count` separately counts those
-healthy-to-unhealthy transitions.
+re-arm epoch. A successful arm ends that epoch; the next fault transition
+replaces the old mask. `fault_count` separately counts physical-health fault
+transitions and controller-lease expiries.
 
 The aggregate bus becomes healthy only when the link is up, every configured
 slave is online and operational, and every domain working counter is complete.
@@ -394,6 +397,34 @@ the zero-gated image. Deactivation performs the same handshake before stopping
 the cyclic thread. This prevents a successful disarm ioctl or orderly
 deactivation from leaving a previously selected shadow as the last application
 datagram. Timeout returns `ETIMEDOUT` but leaves the gate disarmed.
+
+API 0.14 adds `CW_EC_IOC_CONFIGURE_OUTPUT_LEASE`,
+`CW_EC_IOC_RENEW_OUTPUT_LEASE`, and
+`CW_EC_IOC_GET_OUTPUT_LEASE_STATUS`.
+
+Lease configuration is permitted only after domain creation and before
+activation, and is bound to the exact configuration generation. A
+`cycle_budget` of zero disables the feature for compatibility. Otherwise the
+accepted range is 1 through `CW_EC_OUTPUT_LEASE_CYCLES_MAX` (1,000,000).
+
+Each activation begins with zero remaining cycles. Renewal while active loads
+the configured budget and increments `renewal_count`; it never publishes or
+arms output. Arm returns `EAGAIN` when a configured lease has no remaining
+budget.
+
+The cyclic task decrements the budget once immediately before each armed
+output selection. A renewed budget of N therefore permits exactly N
+selections. The budget does not decrease while disarmed. When no budget
+remains at the next selection, the cyclic task atomically disarms, selects
+zeros, records the current publication sequence, latches
+`CW_EC_IO_FAULT_CONTROLLER_STALE` and `rearm_required`, and increments
+`expiry_count`. Input exchange and the EtherCAT cycle continue.
+
+Renewal after expiry clears the current stale-controller bit but not the
+latched recovery epoch. The old output publication remains ineligible.
+Recovery requires renewal, a publication newer than the expiry sequence, and
+an explicit successful arm. Orderly disarm, deactivation, and close are not
+lease expiries.
 
 API 0.10 adds `CW_EC_IOC_GET_CONFIG_SLAVE_STATUS`, keyed by the stable
 user-supplied slave `config_id` and exact configuration generation. A stale

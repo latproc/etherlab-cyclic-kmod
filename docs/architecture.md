@@ -1,6 +1,6 @@
 # Architecture
 
-## Current API 0.13 boundary
+## Current API 0.14 boundary
 
 ```text
 standalone controller
@@ -164,6 +164,23 @@ Repeated selection of the same nonzero output generation while armed counts as
 stale reuse. Disarmed zero-image cycles do not. This latest-output path remains
 separate from a future cycle-addressed scheduled-output queue. Capability
 discovery reports only the timing and wait features that are implemented.
+
+## API 0.14 output-authority lease
+
+Output state is owned by a `cw_ec_output_authority` associated with configured
+domains. API 0.14 exposes the existing all-domain compatibility authority; the
+same internal boundary is intended for future delegated domain fds.
+
+The lease is optional and measured in armed output selections rather than wall
+time. User space configures the budget before activation and renews it while
+active. Disarmed cycles do not consume the budget. Immediately before output
+selection, the cyclic task either consumes one unit or, if none remains,
+closes that authority's gate and selects zeros for its domains.
+
+Expiry does not stop the common cyclic task or mark the physical bus
+unhealthy. It is a distinct controller-stale output-authority fault. Inputs,
+WC, DC, and unrelated future authorities remain observable. Renewal never
+resurrects output; a fresh publication and explicit arm are still required.
 
 ## Future delegated domain connections
 

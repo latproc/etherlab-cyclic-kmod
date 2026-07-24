@@ -991,3 +991,36 @@ intermediate five-iteration run also recorded one position-11 AL-state
 datagram initialization failure and one skipped master-FSM datagram. These are
 not a clean-log acceptance result; they remain evidence for the known
 asynchronous EtherLab deactivation boundary. No nonzero output was requested.
+
+## API 0.14 controller output lease
+
+The expanded non-activating hostile ABI/topology harness passed with all 34
+slave identities unchanged. New cases cover capability discovery, flags,
+maximum cycle budget, stale generation, valid pre-activation configuration,
+inactive status, and rejection of inactive renewal.
+
+A 1 ms, position-29 DC fixture configured a 100-armed-cycle lease. The
+standalone zero-only test proved:
+
+```text
+arm before renewal -> EAGAIN
+renew -> remaining=100, renewal_count=1
+arm all-zero publication
+expiry -> armed=0, rearm_required=1, controller-stale fault
+expiry_count=1, remaining=0
+input sequence continued advancing after expiry
+renew plus stale publication -> EAGAIN
+fresh all-zero publication plus explicit arm -> accepted
+synchronous disarm and deactivation
+```
+
+The run completed 4,155 initial disarmed cycles with zero cycle errors and
+overruns, complete WC, a valid DC reference, and the configured slave in OP.
+No nonzero output was requested. Master 0 returned idle with all 34 slaves
+visible.
+
+One immediate lease-disabled compatibility attempt did not reach healthy state
+within the standalone tool's five-second wait after the preceding EtherLab
+teardown; it closed and unwound normally. After the idle bus settled, the
+lease-disabled zero-arm lifecycle passed with no task leak and unchanged
+topology. Its teardown recorded the known position-29 Sync Manager watchdog.

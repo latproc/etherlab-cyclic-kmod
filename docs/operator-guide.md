@@ -16,8 +16,8 @@ motion or nonzero EtherCAT output.
 
 ## Build and verify the contract
 
-Optional cyclic scheduler controls are immutable module parameters. For the
-tested target's existing control-system baseline, load with:
+Optional cyclic scheduler controls are immutable module parameters. The tested
+target used the following example settings:
 
 ```sh
 sudo insmod kernel/cw_ethercat.ko cycle_cpu=1 cycle_fifo_priority=70
@@ -82,7 +82,7 @@ ethercat master
 The ED3L fixture is target-specific commissioning input; it is not kernel
 policy.
 
-API 0.13 accepts explicit availability/validity domains. Each slave must
+API 0.14 accepts explicit availability/validity domains. Each slave must
 be assigned exactly once when any domain is declared:
 
 ```text
@@ -158,6 +158,18 @@ sudo env CW_EC_MOTION_INHIBITED=YES \
 
 Each harness verifies stable physical identity/topology, master release, task
 cleanup, and newly added kernel warning/error lines.
+
+To exercise the optional controller lease with a zero-only image:
+
+```sh
+sudo env CW_EC_MOTION_INHIBITED=YES \
+  tools/cw_ec_config cycle-zero-lease \
+  tools/configs/ed3l_velocity_dc_pos29.conf 1000000 1
+```
+
+This renews a 100-cycle lease, arms only an all-zero publication, waits for
+expiry, verifies that inputs continue while outputs are gated, then proves
+that re-arming requires both renewal and a fresh zero publication.
 
 ## Non-activating stress checks
 

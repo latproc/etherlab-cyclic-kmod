@@ -2872,7 +2872,67 @@ maximum observed DC deviation
 DC synchronisation status flags
 ```
 
-Do not require Clockwork to duplicate or compete with kernel-owned Distributed Clock timing.
+Do not require any user-space controller to duplicate or compete with
+kernel-owned Distributed Clock timing.
+
+### User-space control-clock contract
+
+The current API 0.13 cycle record is adequate for monitoring but not sufficient
+for a tightly scheduled user-space control loop. A compatible later UAPI must
+associate each completed global cycle with the exact DC/application-time state
+used by the kernel for that cycle.
+
+The coherent record shall include:
+
+```text
+configuration generation
+global cycle index
+scheduled monotonic wake time
+actual monotonic wake time
+exact 64-bit application_time_ns passed to EtherLab
+DC reference-valid state
+the low-32-bit reference-clock sample returned by EtherLab 1.6.9
+normalized application/reference phase difference
+cycle adjustment applied to application-time progression
+input generation produced by the cycle
+output generation selected for the cycle
+```
+
+User space follows this kernel-published cycle and application-time mapping.
+It must not independently call EtherLab clock APIs, recreate the DC steering
+algorithm, or assume that nominal period multiplication gives the exact future
+application time while steering is active.
+
+The intended motion-capable timeline is:
+
+```text
+kernel cycle N:
+  wake
+  receive/process
+  sample DC reference
+  publish input N
+  select output already queued for N
+  advance and publish EtherLab application time
+  synchronize/queue/send
+  publish the coherent cycle-N record and wake user space
+
+user-space controller:
+  wake from cycle-N record
+  read input tagged N
+  compute output for explicit cycle N + lead
+  enqueue before that target cycle's admission deadline
+```
+
+A wake after cycle N is observational; it cannot change the datagram already
+sent for N. Ordinary latest-shadow output may be published for a following
+cycle, but motion control requires the separately designed bounded
+cycle-addressed queue above. Queue lead, admission deadline, capacity,
+underrun indication and fail-safe response must be explicit.
+
+Because existing ioctl command encoding includes structure size, do not enlarge
+the API 0.13 `cw_ec_cycle_info` in place. Add a new versioned timing-record and
+wait operation, while continuing to serve the API 0.13 record for binary
+compatibility.
 
 ---
 

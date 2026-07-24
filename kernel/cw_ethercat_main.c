@@ -37,6 +37,7 @@
 struct cw_ec_output_authority {
 	atomic_t armed;
 	atomic_t rearm_required;
+	atomic_t current_faults;
 	atomic_t last_latched_faults;
 	atomic64_t fault_output_sequence;
 	atomic64_t gate_request;
@@ -51,6 +52,10 @@ struct cw_ec_output_authority {
 	u8 active;
 	int reader;
 	atomic64_t sequence;
+	u32 lease_configured_cycles;
+	atomic_t lease_remaining_cycles;
+	atomic64_t lease_renewal_count;
+	atomic64_t lease_expiry_count;
 };
 
 struct cw_ec_file {
@@ -594,6 +599,29 @@ static void cw_ec_publish_input_snapshot(struct cw_ec_file *ctx,
 	spin_unlock_irqrestore(&ctx->input_lock, irq_flags);
 }
 
+static void
+cw_ec_expire_output_lease(struct cw_ec_file *ctx,
+			  struct cw_ec_output_authority *authority)
+{
+	if (atomic_cmpxchg(&authority->armed, 1, 0) != 1)
+		return;
+
+	atomic_set(&authority->lease_remaining_cycles, 0);
+	atomic_or(CW_EC_IO_FAULT_CONTROLLER_STALE,
+		  &authority->current_faults);
+	if (atomic_xchg(&authority->rearm_required, 1))
+		atomic_or(CW_EC_IO_FAULT_CONTROLLER_STALE,
+			  &authority->last_latched_faults);
+	else
+		atomic_set(&authority->last_latched_faults,
+			   CW_EC_IO_FAULT_CONTROLLER_STALE);
+	atomic64_set(&authority->fault_output_sequence,
+		     atomic64_read(&authority->sequence));
+	atomic64_inc(&authority->lease_expiry_count);
+	atomic64_inc(&authority->gate_request);
+	atomic64_inc(&ctx->io_fault_count);
+}
+
 static u64 cw_ec_apply_outputs(struct cw_ec_file *ctx)
 {
 	struct cw_ec_output_authority *authority = &ctx->compat_output;
@@ -604,6 +632,13 @@ static u64 cw_ec_apply_outputs(struct cw_ec_file *ctx)
 	u64 output_sequence_consumed = 0;
 	u32 i;
 
+	if (atomic_read(&authority->armed) &&
+	    authority->lease_configured_cycles) {
+		if (atomic_read(&authority->lease_remaining_cycles) <= 0)
+			cw_ec_expire_output_lease(ctx, authority);
+		else
+			atomic_dec(&authority->lease_remaining_cycles);
+	}
 	if (atomic_read(&authority->armed) &&
 	    atomic_read(&ctx->io_bus_healthy)) {
 		spin_lock_irqsave(&authority->lock, irq_flags);
@@ -874,6 +909,7 @@ static int cw_ec_deactivate_locked(struct cw_ec_file *ctx)
 		return -EINVAL;
 
 	atomic_set(&authority->armed, 0);
+	atomic_set(&authority->lease_remaining_cycles, 0);
 	gate_request = atomic64_inc_return(&authority->gate_request);
 	gate_ret = cw_ec_wait_output_gate(ctx, gate_request);
 	kthread_stop(ctx->cycle_thread);
@@ -980,6 +1016,7 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	atomic_set(&ctx->io_bus_healthy, 0);
 	atomic_set(&ctx->compat_output.armed, 0);
 	atomic_set(&ctx->compat_output.rearm_required, 0);
+	atomic_set(&ctx->compat_output.current_faults, 0);
 	atomic_set(&ctx->io_link_up, 0);
 	atomic_set(&ctx->io_current_faults, 0);
 	atomic_set(&ctx->compat_output.last_latched_faults, 0);
@@ -992,6 +1029,10 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	atomic64_set(&ctx->compat_output.gate_applied, 0);
 	atomic64_set(&ctx->input_sequence, 0);
 	atomic64_set(&ctx->compat_output.sequence, 0);
+	ctx->compat_output.lease_configured_cycles = 0;
+	atomic_set(&ctx->compat_output.lease_remaining_cycles, 0);
+	atomic64_set(&ctx->compat_output.lease_renewal_count, 0);
+	atomic64_set(&ctx->compat_output.lease_expiry_count, 0);
 	file->private_data = ctx;
 	nonseekable_open(inode, file);
 
@@ -1787,6 +1828,7 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	atomic_set(&ctx->io_bus_healthy, 0);
 	atomic_set(&authority->armed, 0);
 	atomic_set(&authority->rearm_required, 0);
+	atomic_set(&authority->current_faults, 0);
 	atomic_set(&ctx->io_link_up, 0);
 	atomic_set(&ctx->io_current_faults, 0);
 	atomic_set(&authority->last_latched_faults, 0);
@@ -1797,6 +1839,9 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	atomic64_set(&authority->fault_output_sequence, 0);
 	atomic64_set(&authority->gate_request, 0);
 	atomic64_set(&authority->gate_applied, 0);
+	atomic_set(&authority->lease_remaining_cycles, 0);
+	atomic64_set(&authority->lease_renewal_count, 0);
+	atomic64_set(&authority->lease_expiry_count, 0);
 	ctx->io_ever_healthy = false;
 	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
 		atomic_set(&slave->state_result, -ENODATA);
@@ -2102,7 +2147,8 @@ static long cw_ec_get_io_status(struct cw_ec_file *ctx, void __user *argp)
 	result.outputs_armed = atomic_read(&authority->armed);
 	result.rearm_required = atomic_read(&authority->rearm_required);
 	result.link_up = atomic_read(&ctx->io_link_up);
-	result.current_faults = atomic_read(&ctx->io_current_faults);
+	result.current_faults = atomic_read(&ctx->io_current_faults) |
+		atomic_read(&authority->current_faults);
 	result.last_latched_faults =
 		atomic_read(&authority->last_latched_faults);
 	result.slaves_responding =
@@ -2313,6 +2359,11 @@ static long cw_ec_arm_outputs(struct cw_ec_file *ctx, void __user *argp)
 		ret = -EAGAIN;
 		goto out;
 	}
+	if (authority->lease_configured_cycles &&
+	    atomic_read(&authority->lease_remaining_cycles) <= 0) {
+		ret = -EAGAIN;
+		goto out;
+	}
 	if (atomic_read(&authority->rearm_required) &&
 	    current_sequence <=
 		    atomic64_read(&authority->fault_output_sequence)) {
@@ -2361,6 +2412,140 @@ static long cw_ec_disarm_outputs(struct cw_ec_file *ctx, void __user *argp)
 	if (ret)
 		goto out;
 out:
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
+
+static long
+cw_ec_configure_output_lease(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_output_authority *authority = &ctx->compat_output;
+	struct cw_ec_output_lease_config request;
+	int ret;
+
+	if (copy_from_user(&request, argp, sizeof(request)))
+		return -EFAULT;
+	ret = cw_ec_check_header(request.struct_size, request.api_major,
+				 sizeof(request));
+	if (ret)
+		return ret;
+	if (request.flags || request.reserved0 || request.reserved1 ||
+	    request.cycle_budget > CW_EC_OUTPUT_LEASE_CYCLES_MAX)
+		return -EINVAL;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->domain_registered || ctx->active) {
+		ret = -EINVAL;
+		goto out;
+	}
+	if (request.config_generation != ctx->config_generation) {
+		ret = -ESTALE;
+		goto out;
+	}
+	authority->lease_configured_cycles = request.cycle_budget;
+	atomic_set(&authority->lease_remaining_cycles, 0);
+	atomic_set(&authority->current_faults, 0);
+	atomic64_set(&authority->lease_renewal_count, 0);
+	atomic64_set(&authority->lease_expiry_count, 0);
+	ret = 0;
+out:
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
+
+static long
+cw_ec_renew_output_lease(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_output_authority *authority = &ctx->compat_output;
+	struct cw_ec_output_lease_renew result;
+	u64 generation;
+	int ret;
+
+	if (copy_from_user(&result, argp, sizeof(result)))
+		return -EFAULT;
+	ret = cw_ec_check_header(result.struct_size, result.api_major,
+				 sizeof(result));
+	if (ret)
+		return ret;
+	if (result.flags || result.reserved0 || result.remaining_cycles ||
+	    result.renewal_count)
+		return -EINVAL;
+	generation = result.config_generation;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->active || !authority->lease_configured_cycles) {
+		ret = -EINVAL;
+		goto out;
+	}
+	if (generation != ctx->config_generation) {
+		ret = -ESTALE;
+		goto out;
+	}
+	atomic_set(&authority->lease_remaining_cycles,
+		   authority->lease_configured_cycles);
+	atomic_and(~CW_EC_IO_FAULT_CONTROLLER_STALE,
+		   &authority->current_faults);
+	memset(&result, 0, sizeof(result));
+	result.struct_size = sizeof(result);
+	result.api_major = CW_EC_API_VERSION_MAJOR;
+	result.config_generation = ctx->config_generation;
+	result.remaining_cycles = authority->lease_configured_cycles;
+	result.renewal_count =
+		atomic64_inc_return(&authority->lease_renewal_count);
+	ret = 0;
+out:
+	if (!ret && copy_to_user(argp, &result, sizeof(result)))
+		ret = -EFAULT;
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
+
+static long
+cw_ec_get_output_lease_status(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_output_authority *authority = &ctx->compat_output;
+	struct cw_ec_output_lease_status result;
+	u64 generation;
+	int remaining;
+	int ret;
+
+	if (copy_from_user(&result, argp, sizeof(result)))
+		return -EFAULT;
+	ret = cw_ec_check_header(result.struct_size, result.api_major,
+				 sizeof(result));
+	if (ret)
+		return ret;
+	if (result.flags ||
+	    memchr_inv(result.reserved0, 0, sizeof(result.reserved0)) ||
+	    result.configured_cycles || result.remaining_cycles ||
+	    result.enabled || result.valid || result.renewal_count ||
+	    result.expiry_count)
+		return -EINVAL;
+	generation = result.config_generation;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->config_validated ||
+	    generation != ctx->config_generation) {
+		ret = -ESTALE;
+		goto out;
+	}
+	remaining = atomic_read(&authority->lease_remaining_cycles);
+	memset(&result, 0, sizeof(result));
+	result.struct_size = sizeof(result);
+	result.api_major = CW_EC_API_VERSION_MAJOR;
+	result.config_generation = ctx->config_generation;
+	result.configured_cycles = authority->lease_configured_cycles;
+	result.remaining_cycles = max(remaining, 0);
+	result.enabled = !!authority->lease_configured_cycles;
+	result.valid = ctx->active && result.enabled && remaining > 0;
+	result.renewal_count =
+		atomic64_read(&authority->lease_renewal_count);
+	result.expiry_count =
+		atomic64_read(&authority->lease_expiry_count);
+	ret = 0;
+out:
+	if (!ret && copy_to_user(argp, &result, sizeof(result)))
+		ret = -EFAULT;
 	mutex_unlock(&ctx->lock);
 	return ret;
 }
@@ -2479,6 +2664,7 @@ static long cw_ec_get_domain_status(struct cw_ec_file *ctx, void __user *argp)
 					CW_EC_IO_FAULT_SLAVE_NOT_OPERATIONAL;
 		}
 	}
+	faults |= atomic_read(&authority->current_faults);
 	memset(&result, 0, sizeof(result));
 	result.struct_size = sizeof(result);
 	result.api_major = CW_EC_API_VERSION_MAJOR;
@@ -3100,7 +3286,8 @@ static long cw_ec_get_capabilities(void __user *argp)
 			CW_EC_CAP_COHERENT_PROCESS_IMAGE |
 			CW_EC_CAP_CYCLE_TIMING |
 			CW_EC_CAP_CYCLE_WAIT |
-			CW_EC_CAP_DC_DIAGNOSTICS,
+			CW_EC_CAP_DC_DIAGNOSTICS |
+			CW_EC_CAP_OUTPUT_LEASE,
 	};
 	int ret;
 
@@ -3225,6 +3412,12 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return cw_ec_get_config_slave_status(ctx, argp);
 	case CW_EC_IOC_GET_DOMAIN_STATUS:
 		return cw_ec_get_domain_status(ctx, argp);
+	case CW_EC_IOC_CONFIGURE_OUTPUT_LEASE:
+		return cw_ec_configure_output_lease(ctx, argp);
+	case CW_EC_IOC_RENEW_OUTPUT_LEASE:
+		return cw_ec_renew_output_lease(ctx, argp);
+	case CW_EC_IOC_GET_OUTPUT_LEASE_STATUS:
+		return cw_ec_get_output_lease_status(ctx, argp);
 	default:
 		break;
 	}

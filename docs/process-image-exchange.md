@@ -42,11 +42,18 @@ returned the configured drive to OP and complete WC without restarting the
 transport. `rearm_required` remained set and the fault epoch count remained
 one after recovery.
 
-API 0.13 exposes each configured slave's online, operational, and AL state by
+API 0.14 exposes each configured slave's online, operational, and AL state by
 stable `config_id`. Its `data_valid` flag additionally requires a published
 snapshot and complete WC for that slave's assigned domain. Snapshots remain
 inspectable when another domain is incomplete. Aggregate health and the output
 gate remain conservative across all configured domains.
+
+When the optional output lease is enabled, its armed-cycle budget is part of
+the same output authority. Expiry synchronously selects the zero image,
+disarms outputs, latches `CW_EC_IO_FAULT_CONTROLLER_STALE`, and requires a
+renewal plus a publication newer than the fault epoch before explicit re-arm.
+Renewal never arms outputs. A zero cycle budget preserves the compatibility
+behavior without lease expiry.
 
 ## Copy concurrency
 
@@ -60,7 +67,8 @@ mask arrays from user space without holding the spinlock, intersects that mask
 with the topology-derived output mask, and merges the selected bits over the
 previous shadow. The cyclic thread reads only the published active buffer at a
 cycle boundary, so it never waits for or copies from a buffer being modified.
-API 0.13 retains one global publication and arm gate across all domains.
+API 0.14 retains one global publication, arm gate, and lease across all
+domains.
 
 Each published input buffer also stores the exact cycle index that produced
 its bytes. `GET_INPUT_SNAPSHOT` returns that per-buffer index rather than a
@@ -68,21 +76,19 @@ separately sampled global counter. `CYCLE_GET_INFO` associates the same
 cycle's input sequence with the output generation selected before queue/send.
 The selected generation is zero when the output gate chooses the zero image.
 
-## IOD format compatibility
+## Generic masked-output format
 
-The current IOD path represents process data as a full zero-based EtherLab
-domain byte array. The future adapter will use the API 0.12 concatenated global
-image in the same way. Output updates carry a second equally sized byte array whose
-set bits select individual bits to change. `IOComponent` builds this mask from
-`io_offset`, `io_bitpos`, and `bitlen`, including values crossing byte
-boundaries; `ECInterface::updateDomain()` applies those masked bits to domain
-memory.
+Process data is represented as a full zero-based global image formed by
+concatenating declared domain segments in declaration order. Output updates
+carry a second equally sized byte array whose set bits select individual bits
+to change. This handles bit fields and values crossing byte boundaries without
+embedding application-specific entry types in the transport.
 
-API 0.8 deliberately uses the same data-plus-bit-mask shape. An eventual IOD
-adapter can therefore forward its accumulated output data and update mask
-without expanding them into entry records. The kernel independently intersects
-the IOD mask with the output mask derived from configured output Sync Managers,
-so an incorrect application mask cannot select input or padding bits.
+The kernel independently intersects the user mask with the output mask derived
+from configured output Sync Managers, so an incorrect application mask cannot
+select input or padding bits. Existing applications that already maintain a
+flat process image and per-bit update mask can adapt that representation
+without expanding updates into entry records.
 
 All buffers, masks, and metadata are allocated before activation and freed only
 after the cyclic thread is synchronously joined.

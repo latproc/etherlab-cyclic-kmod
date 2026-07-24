@@ -11,7 +11,7 @@
 #endif
 
 #define CW_EC_API_VERSION_MAJOR 0U
-#define CW_EC_API_VERSION_MINOR 13U
+#define CW_EC_API_VERSION_MINOR 14U
 
 #define CW_EC_CYCLE_PERIOD_MIN_NS 100000U
 #define CW_EC_CYCLE_PERIOD_MAX_NS 1000000000U
@@ -28,11 +28,13 @@
 #define CW_EC_CONFIG_DOMAIN_MAX CW_EC_CONFIG_SLAVE_MAX
 #define CW_EC_PROCESS_IMAGE_MAX (64U * 1024U)
 #define CW_EC_CYCLE_WAIT_TIMEOUT_MAX_MS 60000U
+#define CW_EC_OUTPUT_LEASE_CYCLES_MAX 1000000U
 
 #define CW_EC_CAP_COHERENT_PROCESS_IMAGE (1ULL << 0)
 #define CW_EC_CAP_CYCLE_TIMING (1ULL << 1)
 #define CW_EC_CAP_CYCLE_WAIT (1ULL << 2)
 #define CW_EC_CAP_DC_DIAGNOSTICS (1ULL << 3)
+#define CW_EC_CAP_OUTPUT_LEASE (1ULL << 4)
 
 enum cw_ec_sdo_type {
 	CW_EC_SDO_U8 = 1,
@@ -81,6 +83,7 @@ enum cw_ec_io_fault {
 	CW_EC_IO_FAULT_SLAVE_OFFLINE = 1U << 3,
 	CW_EC_IO_FAULT_SLAVE_NOT_OPERATIONAL = 1U << 4,
 	CW_EC_IO_FAULT_DOMAIN_INCOMPLETE = 1U << 5,
+	CW_EC_IO_FAULT_CONTROLLER_STALE = 1U << 6,
 };
 
 struct cw_ec_api_version {
@@ -456,6 +459,40 @@ struct cw_ec_output_disarm {
 	__u64 config_generation;
 };
 
+struct cw_ec_output_lease_config {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 config_generation;
+	__u32 cycle_budget;
+	__u32 reserved0;
+	__u64 reserved1;
+};
+
+struct cw_ec_output_lease_renew {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 config_generation;
+	__u32 remaining_cycles;
+	__u32 reserved0;
+	__u64 renewal_count;
+};
+
+struct cw_ec_output_lease_status {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 config_generation;
+	__u32 configured_cycles;
+	__u32 remaining_cycles;
+	__u8 enabled;
+	__u8 valid;
+	__u8 reserved0[6];
+	__u64 renewal_count;
+	__u64 expiry_count;
+};
+
 struct cw_ec_config_slave_status {
 	__u16 struct_size;
 	__u16 api_major;
@@ -564,5 +601,11 @@ struct cw_ec_domain_status {
 	_IOWR(CW_EC_IOC_MAGIC, 0x45, struct cw_ec_config_slave_status)
 #define CW_EC_IOC_GET_DOMAIN_STATUS \
 	_IOWR(CW_EC_IOC_MAGIC, 0x46, struct cw_ec_domain_status)
+#define CW_EC_IOC_CONFIGURE_OUTPUT_LEASE \
+	_IOW(CW_EC_IOC_MAGIC, 0x47, struct cw_ec_output_lease_config)
+#define CW_EC_IOC_RENEW_OUTPUT_LEASE \
+	_IOWR(CW_EC_IOC_MAGIC, 0x48, struct cw_ec_output_lease_renew)
+#define CW_EC_IOC_GET_OUTPUT_LEASE_STATUS \
+	_IOWR(CW_EC_IOC_MAGIC, 0x49, struct cw_ec_output_lease_status)
 
 #endif /* CW_ETHERCAT_UAPI_H */
