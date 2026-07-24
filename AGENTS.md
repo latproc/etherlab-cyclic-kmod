@@ -74,6 +74,10 @@ decisions, risks, commands, or next steps change.
   `docs/testing.md`. Do not duplicate them here.
 - `docs/operator-guide.md` is the end-to-end build, test, zero-output
   operation, teardown, and cleanup sequence.
+- `README.md` is the concise project entry point: generic-interface benefits,
+  requirements, installation, first safe tests, and documentation routes.
+  `docs/developer-guide.md` gives the user-space controller lifecycle and
+  points to the normative UAPI and reference tools.
 - The API 0.12 documentation acceptance gate passed after the multi-domain
   audit. API 0.13 timing documentation must be re-audited after live
   validation. The kernel-safety gate remains open, so IOD integration is

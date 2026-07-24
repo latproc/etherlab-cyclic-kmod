@@ -83,7 +83,7 @@ ethercat master
 The ED3L fixture is target-specific commissioning input; it is not kernel
 policy.
 
-API 0.12 also accepts explicit availability/validity domains. Each slave must
+API 0.13 accepts explicit availability/validity domains. Each slave must
 be assigned exactly once when any domain is declared:
 
 ```text
