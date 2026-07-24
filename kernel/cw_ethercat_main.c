@@ -1194,6 +1194,7 @@ static long cw_ec_domain_create(struct cw_ec_file *ctx, void __user *argp)
 	struct cw_ec_sync_node *sync;
 	struct cw_ec_pdo_node *pdo;
 	unsigned int bit_position;
+	bool has_registered_entry = false;
 	int offset;
 	int ret;
 
@@ -1214,6 +1215,16 @@ static long cw_ec_domain_create(struct cw_ec_file *ctx, void __user *argp)
 		ret = -EINVAL;
 		goto out;
 	}
+	list_for_each_entry(entry, &ctx->config_entries, common.node) {
+		if (entry->cfg.entry_id) {
+			has_registered_entry = true;
+			break;
+		}
+	}
+	if (!has_registered_entry) {
+		ret = -EINVAL;
+		goto out;
+	}
 
 	ctx->config_poisoned = true;
 	ctx->domain = ecrt_master_create_domain(ctx->master);
@@ -1223,6 +1234,8 @@ static long cw_ec_domain_create(struct cw_ec_file *ctx, void __user *argp)
 	}
 
 	list_for_each_entry(entry, &ctx->config_entries, common.node) {
+		if (!entry->cfg.entry_id)
+			continue;
 		pdo = cw_ec_find_pdo(ctx, entry->cfg.pdo_config_id);
 		sync = pdo ? cw_ec_find_sync(ctx, pdo->cfg.sync_config_id) : NULL;
 		slave = sync ?
@@ -2059,8 +2072,10 @@ CW_EC_CONFIG_ADD_CHILD(cw_ec_config_add_pdo, cw_ec_pdo_node, cfg,
 CW_EC_CONFIG_ADD_CHILD(cw_ec_config_add_entry, cw_ec_entry_node, cfg,
 		       config_entries, config_entry_count,
 		       CW_EC_CONFIG_ENTRY_MAX,
-		       !node->cfg.pdo_config_id || !node->cfg.entry_id ||
-		       !node->cfg.index || !node->cfg.bit_length)
+		       !node->cfg.pdo_config_id || !node->cfg.bit_length ||
+		       ((!node->cfg.entry_id || !node->cfg.index) &&
+			(node->cfg.entry_id || node->cfg.index ||
+			 node->cfg.subindex)))
 
 CW_EC_CONFIG_ADD_CHILD(cw_ec_config_add_dc, cw_ec_dc_node, cfg,
 		       config_dcs, config_dc_count, CW_EC_CONFIG_DC_MAX,
@@ -2174,12 +2189,12 @@ static long cw_ec_config_validate(struct cw_ec_file *ctx, void __user *argp)
 			goto out;
 		}
 		list_for_each_entry(other, &ctx->config_entries, common.node) {
-			if (other != entry &&
+			if (entry->cfg.entry_id && other != entry &&
 			    other->cfg.entry_id == entry->cfg.entry_id) {
 				ret = -EEXIST;
 				goto out;
 			}
-			if (other != entry &&
+			if (entry->cfg.index && other != entry &&
 			    other->cfg.pdo_config_id == entry->cfg.pdo_config_id &&
 			    other->cfg.index == entry->cfg.index &&
 			    other->cfg.subindex == entry->cfg.subindex) {

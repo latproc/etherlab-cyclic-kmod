@@ -16,7 +16,7 @@ decisions, risks, commands, or next steps change.
 
 - Current phase: standalone Phase 3 hardening after the first architecture
   review. IOD integration remains blocked.
-- Current UAPI is 0.10. It covers discovery, ordered setup SDOs, declarative
+- Current UAPI is 0.11. It covers discovery, ordered setup SDOs, declarative
   PDO/DC configuration, domain registration, cyclic pumping, copied input and
   masked output images, explicit arm/disarm, health, timing/DC statistics, and
   per-configured-slave validity.
@@ -53,7 +53,7 @@ decisions, risks, commands, or next steps change.
   `docs/testing.md`. Do not duplicate them here.
 - `docs/operator-guide.md` is the end-to-end build, test, zero-output
   operation, teardown, and cleanup sequence.
-- The API 0.10 documentation acceptance gate passes. The kernel-safety gate
+- The API 0.11 documentation acceptance gate passes. The kernel-safety gate
   remains open, so IOD integration is still blocked.
 - Do not modify Clockwork/IOD behavior in this repository.
 
@@ -248,7 +248,7 @@ Keep this section concise. Historical milestones and validation evidence are in
 `docs/project-history.md`; focused details belong in the relevant design,
 testing, safety, and build documents.
 
-- Current API: 0.10.
+- Current API: 0.11.
 - Deactivation synchronously gates outputs and joins the cyclic thread, then
   waits for configured slaves to leave SAFEOP/OP before invalidating
   EtherLab-owned pointers. The public EtherLab lifecycle can still expose an
@@ -279,6 +279,13 @@ testing, safety, and build documents.
 - The cyclic task supports immutable module-load scheduler controls:
   `cycle_cpu=-1` and `cycle_fifo_priority=0` preserve prior defaults. CPU 1 /
   FIFO 70 is live-proven; configuration occurs before the task's first cycle.
+- API 0.11 represents mandatory `0x0000:00` PDO padding with `entry_id=0` and
+  does not register padding as user process data. An XML-derived EL5152 mapping
+  is hardware-proven with the drives absent.
+- Servo-off mixed cycling proves present EL5152 data continues updating, but a
+  shared domain has incomplete WC and cannot certify it independently.
+  EtherLab has only domain-level WC; independently recoverable groups require
+  separate domains rather than weakened validity.
 - Next step: select the next independently testable kernel-safety blocker.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

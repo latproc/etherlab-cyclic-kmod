@@ -1,6 +1,6 @@
 # Architecture
 
-## Current API 0.10 boundary
+## Current API 0.11 boundary
 
 ```text
 standalone controller
@@ -104,7 +104,7 @@ control session.
 
 ## Process image and DC
 
-The complete EtherLab domain is the stable byte/bit offset namespace. API 0.10
+The complete EtherLab domain is the stable byte/bit offset namespace. API 0.11
 copies it into a bounded double-buffered read-only snapshot. Output updates use
 a domain-sized data array plus per-bit update mask; the kernel intersects this
 with a mask derived from entries under output Sync Managers.

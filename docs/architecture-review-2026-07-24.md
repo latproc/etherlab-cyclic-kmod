@@ -105,6 +105,11 @@ The kernel-safety gate is not closed.
    lifecycle controls.** Disarmed hardware checks cover invalid capacity,
    flags, generation, size, sequence, and duplicate activation. Broader fuzz
    and debug-kernel instrumentation remain future hardening.
+10. **Servo-off exchange works but independent validity needs multiple
+    domains.** A present EL5152 reached OP and returned live data with an
+    expected ED3L absent. EtherLab's combined domain WC remained incomplete,
+    so conservative validity stayed false. Separate domains are required for
+    independently recoverable groups.
 
 ## Documentation acceptance gate
 

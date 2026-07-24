@@ -11,7 +11,7 @@ hardware safety systems.
 
 ## Current scope
 
-The experimental API 0.10 implements bus discovery, bounded commissioning SDOs,
+The experimental API 0.11 implements bus discovery, bounded commissioning SDOs,
 transactional declarative slave/Sync/PDO/entry/DC configuration, domain
 registration, a configurable cyclic thread, distributed clocks, copied
 process-image exchange, aggregate and per-configured-slave health/validity
@@ -21,7 +21,7 @@ Discovery is proven on the current 34-slave target. A single ED3L
 configuration has reached OP with complete working counter, recovered from
 servo-supply loss without restarting the controller, and passed zero-only
 output arm/disarm tests. No nonzero output has been authorized or tested. The
-documentation acceptance gate passes for API 0.10; the standalone
+documentation acceptance gate passes for API 0.11; the standalone
 kernel-safety gate remains open. See
 [the current architecture review](docs/architecture-review-2026-07-24.md).
 

@@ -481,6 +481,36 @@ slave id=1 online=1 operational=1 valid=1 al=0x08
 
 Close/unload returned master 0 idle/inactive with 34 slaves.
 
+## API 0.11 PDO padding and servo-off startup
+
+The installed `Wooltech_EL5152.xml` and live position-3 PDO scan contain
+multiple mandatory `0x0000:00` gap entries. API 0.11 assigns these
+`entry_id=0`: they retain order/bit length in EtherLab configuration but are
+not registered or returned as user process entries. The non-activating ABI
+suite proved an 8-bit gap shifts the following real entry to byte offset 1.
+
+The XML-derived mixed fixture at
+`tools/configs/el5152_pos3_with_absent_ed3l_pos29.conf` prepared successfully
+with only 29 slaves present. Its real EL5152 entries occupied bytes 0–31 and
+the expected absent ED3L reserved bytes 32–59.
+
+A five-second disarmed cycle reported:
+
+```text
+cycles=5000 errors=0 overruns=0 maximum_lateness=47445 ns
+wc=3 wc_state=1 healthy=0 armed=0 faults=0x38
+EL5152: online=1 operational=1 al=0x08
+ED3L:   online=0 operational=0 al=0x00
+```
+
+The 60-byte snapshot contained nonzero EL5152 counter/frequency data while the
+ED3L region remained zero. Both `data_valid` values remained false because
+EtherLab reports WC completeness for the combined domain. This proves
+servo-off startup and continued present-device exchange, but also proves a
+single domain cannot independently certify unaffected data. The safe next
+architecture is separate domains for independently recoverable groups, not
+removing the complete-WC validity condition.
+
 ## Cyclic scheduler controls
 
 The module-load parameters `cycle_cpu` and `cycle_fifo_priority` are immutable

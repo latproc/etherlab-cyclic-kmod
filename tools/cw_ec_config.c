@@ -425,7 +425,7 @@ static int print_offsets(int fd, const char *path)
 		struct cw_ec_entry_offset offset;
 
 		if (parse_record(line, &record) <= 0 ||
-		    record.kind != RECORD_ENTRY)
+		    record.kind != RECORD_ENTRY || !record.entry.entry_id)
 			continue;
 		memset(&offset, 0, sizeof(offset));
 		offset.struct_size = sizeof(offset);

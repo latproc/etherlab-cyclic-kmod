@@ -59,6 +59,13 @@ slave is offline, and returns only after the slave is online and OP again.
 `rearm_required` remained latched after recovery and outputs remained
 disarmed.
 
+A later API 0.11 mixed test with a present EL5152 and absent ED3L proved the
+EL5152 still reaches OP and its bytes update while the combined domain WC is
+incomplete. EtherLab 1.6.9 exposes WC state per domain, not per slave. The
+kernel therefore must use separate domains for independently recoverable
+groups before it can certify unaffected data; OP state alone is not sufficient
+evidence to weaken `data_valid`.
+
 `last_latched_faults` accumulates every cause observed while that re-arm
 requirement remains set. It is not merely the first cyclic sample of the
 failure. A successful arm ends the epoch; a later fault begins a new mask.

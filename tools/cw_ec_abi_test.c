@@ -92,6 +92,16 @@ int main(int argc, char **argv)
 		.index = 0x6040,
 		.bit_length = 16,
 	};
+	struct cw_ec_config_entry config_padding = {
+		.struct_size = sizeof(config_padding),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.config_id = 6,
+		.pdo_config_id = 3,
+		.entry_id = 0,
+		.index = 0,
+		.subindex = 0,
+		.bit_length = 8,
+	};
 	struct cw_ec_config_dc config_dc = {
 		.struct_size = sizeof(config_dc),
 		.api_major = CW_EC_API_VERSION_MAJOR,
@@ -295,6 +305,20 @@ int main(int argc, char **argv)
 		fprintf(stderr, "FAIL: config begin: %s\n", strerror(errno));
 		failures++;
 	}
+	config_padding.index = 1;
+	errno = 0;
+	failures += expect_errno("padding with nonzero object index",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_ENTRY,
+				       &config_padding),
+				 EINVAL);
+	config_padding.index = 0;
+	config_padding.entry_id = 1;
+	errno = 0;
+	failures += expect_errno("zero object with registered entry ID",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_ENTRY,
+				       &config_padding),
+				 EINVAL);
+	config_padding.entry_id = 0;
 	config_slave.revision_number = 1;
 	errno = 0;
 	failures += expect_errno("unsupported revision constraint",
@@ -374,6 +398,7 @@ int main(int argc, char **argv)
 	config_sync.slave_config_id = config_slave.config_id;
 	if (ioctl(fd, CW_EC_IOC_CONFIG_ADD_SYNC, &config_sync) < 0 ||
 	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_PDO, &config_pdo) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_ENTRY, &config_padding) < 0 ||
 	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_ENTRY, &config_entry) < 0 ||
 	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC, &config_dc) < 0 ||
 	    ioctl(fd, CW_EC_IOC_CONFIG_SET_DC_POLICY, &dc_policy) < 0) {
@@ -391,11 +416,11 @@ int main(int argc, char **argv)
 	} else if (config_validate.slave_count != 1 ||
 		   config_validate.sync_count != 1 ||
 		   config_validate.pdo_count != 1 ||
-		   config_validate.entry_count != 1) {
+		   config_validate.entry_count != 2) {
 		fprintf(stderr, "FAIL: validated config counts are incorrect\n");
 		failures++;
 	} else {
-		printf("PASS: valid config hierarchy accepted\n");
+		printf("PASS: valid config hierarchy with padding accepted\n");
 	}
 	errno = 0;
 	failures += expect_errno("config mutation after validation",
@@ -438,7 +463,7 @@ int main(int argc, char **argv)
 	if (ioctl(fd, CW_EC_IOC_GET_ENTRY_OFFSET, &entry_offset) < 0) {
 		fprintf(stderr, "FAIL: get entry offset: %s\n", strerror(errno));
 		failures++;
-	} else if (entry_offset.domain_offset != 0 ||
+	} else if (entry_offset.domain_offset != 1 ||
 		   entry_offset.bit_position != 0 ||
 		   entry_offset.bit_length != 16) {
 		fprintf(stderr,
@@ -448,7 +473,7 @@ int main(int argc, char **argv)
 			entry_offset.bit_length);
 		failures++;
 	} else {
-		printf("PASS: stable entry ID resolved to domain offset\n");
+		printf("PASS: padding skipped and stable entry ID resolved\n");
 	}
 	entry_offset.entry_id = 9999;
 	errno = 0;

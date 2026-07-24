@@ -136,3 +136,13 @@ commands, outputs, and design details.
   was visible live and completed a 30-second disarmed run with zero
   errors/overruns and 51,293 ns maximum lateness; invalid CPU 99 was rejected
   before activation.
+- API 0.11 added explicit unregistered `0x0000:00` PDO padding so the installed
+  EL5152 XML/PDO layout can be represented exactly. The non-activating ABI
+  suite and live offset preparation passed with padding omitted from stable
+  entry lookup.
+- A mixed present-EL5152/absent-ED3L run completed 5,000 disarmed cycles with
+  zero errors/overruns. The encoder reached OP and returned live data while
+  the drive remained offline. The combined domain WC stayed incomplete, so
+  conservative validity correctly remained false for both. EtherLab exposes
+  WC per domain, not per slave; independent validity requires separate
+  domains.
