@@ -62,6 +62,12 @@ tools/cw_ec_config check \
   tools/configs/ed3l_velocity_dc_pos29.conf
 ```
 
+The EtherLab build-path contract is also testable without claiming the master:
+
+```sh
+make test-build-contract
+```
+
 `prepare` claims master 0, constructs the declarative configuration and
 domain set, prints stable entry IDs and global offsets, but does not activate
 or send cyclic process data:

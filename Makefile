@@ -1,15 +1,16 @@
 KERNEL_RELEASE ?= $(shell uname -r)
 KERNEL_BUILD ?= /lib/modules/$(KERNEL_RELEASE)/build
 ETHERLAB_DKMS_NAME ?= ethercat-dkms
+ETHERLAB_DKMS_SOURCE_DIRS := $(wildcard /usr/src/$(ETHERLAB_DKMS_NAME)-*)
 ETHERLAB_VERSION ?= $(patsubst /usr/src/$(ETHERLAB_DKMS_NAME)-%,%,$(firstword \
-	$(wildcard /usr/src/$(ETHERLAB_DKMS_NAME)-*)))
+	$(ETHERLAB_DKMS_SOURCE_DIRS)))
 ETHERLAB_INCLUDE ?= /usr/src/$(ETHERLAB_DKMS_NAME)-$(ETHERLAB_VERSION)/include
 ETHERLAB_SYMVERS ?= /var/lib/dkms/$(ETHERLAB_DKMS_NAME)/$(ETHERLAB_VERSION)/$(KERNEL_RELEASE)/$(shell uname -m)/module/Module.symvers
 
 CPPFLAGS ?=
 CFLAGS ?= -O2 -g
 
-.PHONY: all modules tools check-build-env install uninstall clean
+.PHONY: all modules tools check-build-env test-build-contract install uninstall clean
 
 MODULE_INSTALL_DIR := $(DESTDIR)/lib/modules/$(KERNEL_RELEASE)/extra/cw_ethercat
 MODULE_FILES := kernel/cw_ethercat.ko kernel/cw_ethercat_probe.ko
@@ -17,6 +18,15 @@ MODULE_FILES := kernel/cw_ethercat.ko kernel/cw_ethercat_probe.ko
 all: modules tools
 
 check-build-env:
+	@if [ "$(origin ETHERLAB_VERSION)" = "file" ] && \
+	    [ "$(words $(ETHERLAB_DKMS_SOURCE_DIRS))" -gt 1 ] && \
+	    { [ "$(origin ETHERLAB_INCLUDE)" = "file" ] || \
+	      [ "$(origin ETHERLAB_SYMVERS)" = "file" ]; }; then \
+		echo "error: multiple EtherLab DKMS source trees found:" >&2; \
+		printf '  %s\n' $(ETHERLAB_DKMS_SOURCE_DIRS) >&2; \
+		echo "set ETHERLAB_VERSION or explicit ETHERLAB_INCLUDE and ETHERLAB_SYMVERS" >&2; \
+		exit 1; \
+	fi
 	@test -d "$(KERNEL_BUILD)" || { \
 		echo "error: kernel build directory not found: $(KERNEL_BUILD)" >&2; \
 		exit 1; \
@@ -48,6 +58,9 @@ modules: check-build-env
 
 tools: tools/cw_ec_bus tools/cw_ec_abi_test tools/cw_ec_sdo \
 	tools/cw_ec_config tools/cw_ec_config_stress
+
+test-build-contract:
+	./tools/cw_ec_test_build_contract.sh
 
 tools/cw_ec_bus: tools/cw_ec_bus.c include/cw_ethercat_uapi.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \

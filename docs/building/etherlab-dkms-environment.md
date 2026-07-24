@@ -89,8 +89,59 @@ The build fails if `ecrt.h`, the selected kernel build tree, the symbol file, or
 the `ecrt_request_master` symbol is absent. Explicit overrides are the intended
 path for manually built EtherLab trees.
 
+Automatic DKMS resolution also fails when more than one
+`/usr/src/ethercat-dkms-*` source tree exists. Select `ETHERLAB_VERSION`, or
+provide both `ETHERLAB_INCLUDE` and `ETHERLAB_SYMVERS`; the build never chooses
+the first ambiguous installation silently.
+
 Never select a `Module.symvers` belonging to another kernel release or EtherLab
 build. Symbol CRCs are required because this kernel enables module versioning.
+
+## Explicit manual-layout contract test
+
+On 2026-07-24, the installed 1.6.9 `ecrt.h` and its exact matching DKMS
+`Module.symvers` were copied into arbitrary temporary paths shaped like a
+separate source/build tree:
+
+```text
+TEMP/source/include/ecrt.h
+TEMP/build/Module.symvers
+```
+
+Both `make check-build-env` and `make modules` passed when those paths were
+supplied explicitly as `ETHERLAB_INCLUDE` and `ETHERLAB_SYMVERS`. The rebuilt
+module reported:
+
+```text
+license:  GPL
+vermagic: 6.1.0-49-rt-amd64 SMP preempt_rt mod_unload modversions
+```
+
+A Linux kernel-header `Module.symvers` was rejected because it lacked
+`ecrt_request_master`; a missing manual header path was also rejected.
+Simulated multiple auto-detected DKMS source trees failed with a clear
+ambiguity error, while explicit paths continued to pass.
+
+This proves that the build contract does not require the DKMS directory layout
+and fails closed for the tested missing/wrong inputs. It does **not** prove
+compatibility with a separately compiled EtherLab source revision, because no
+independent manual EtherLab build is present on this host. Such a build must
+still supply its own header and matching `Module.symvers`, build successfully,
+load under the target kernel, and pass the standalone lifecycle tests before
+compatibility is claimed.
+
+The repeatable no-hardware check is:
+
+```sh
+make test-build-contract
+```
+
+It stages the selected header/symbol pair under temporary arbitrary paths,
+rebuilds the modules, checks GPL license and target vermagic, verifies the
+default DKMS path, and requires rejection of a missing header, kernel-only
+symbol file, and ambiguous automatic DKMS selection. `ETHERLAB_INCLUDE`,
+`ETHERLAB_SYMVERS`, `KERNEL_RELEASE`, and `KERNEL_SYMVERS` may be overridden
+to exercise another prepared build.
 
 ## Runtime baseline and probe result
 
@@ -189,5 +240,6 @@ The script refuses to disturb a probe module that was already loaded.
   passed while IOD owned master 0.
 - Extend lifecycle repetition and run kmemleak/fault-injection testing when the
   module begins allocating persistent objects.
-- Obtain and test the older manual EtherLab build environment before claiming
-  compatibility with it.
+- Obtain and test an independently compiled manual EtherLab build before
+  claiming binary/source-revision compatibility. The explicit arbitrary-path
+  contract itself is validated.

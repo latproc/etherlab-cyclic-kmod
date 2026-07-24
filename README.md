@@ -52,6 +52,7 @@ On the currently tested EtherLab DKMS environment:
 ```sh
 make check-build-env
 make
+make test-build-contract
 ```
 
 Optional module-tree installation and removal:

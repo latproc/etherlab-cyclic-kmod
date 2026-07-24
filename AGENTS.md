@@ -327,6 +327,12 @@ testing, safety, and build documents.
   the implicit domain owns allocation 18. All six failures and cyclic-task
   construction failure unwind cleanly; allocation 25 completed 8,000 disarmed
   cycles with zero errors/overruns and no topology/kernel-log regression.
+- The build contract is proven with explicit EtherLab header and matching
+  symbol paths staged outside the DKMS layout. Missing headers, a kernel-only
+  symbol file, and ambiguous DKMS auto-detection fail clearly. No independently
+  compiled manual EtherLab revision exists locally, so binary/source-revision
+  compatibility remains unclaimed. Reproduce the layout/fail-closed checks with
+  `make test-build-contract`.
 - Next step: capture the powered-off ED3L case showing EL5152 valid and the
   ED3L domain invalid, then re-audit API 0.12 documentation and safety status.
 - Do not begin IOD integration before the standalone architecture and

@@ -190,3 +190,11 @@ commands, outputs, and design details.
   construction failure unwound cleanly; allocation 25 completed 8,000
   disarmed cycles with zero errors/overruns, master idle after teardown,
   unchanged topology, and no new kernel warning/error.
+- Validated that explicit EtherLab header/symbol overrides work outside the
+  DKMS directory layout by staging the exact installed 1.6.9 artifacts under
+  arbitrary source/build paths and rebuilding both modules. Wrong kernel
+  symbols, missing headers, and ambiguous DKMS auto-detection fail closed.
+  This validates the layout-independent build contract, not compatibility with
+  a separately compiled EtherLab revision, which is unavailable on this host.
+  Added `make test-build-contract` to reproduce the arbitrary-path rebuild,
+  vermagic/license checks, and missing/wrong/ambiguous rejection cases.
