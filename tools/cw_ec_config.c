@@ -633,7 +633,7 @@ static int cycle(const char *path, uint32_t period_ns,
 	printf("activated zero-output domain: size=%" PRIu32
 	       " period=%" PRIu32 " ns for %u second(s)\n",
 	       activate.domain_size, period_ns, duration_seconds);
-	if (hold_zero) {
+	if (hold_zero || arm_zero) {
 		unsigned int attempts;
 
 		for (attempts = 0; attempts < 100; attempts++) {
@@ -652,9 +652,11 @@ static int cycle(const char *path, uint32_t period_ns,
 		}
 		if (!io_status.bus_healthy) {
 			fprintf(stderr,
-				"cw_ec_config: bus did not become healthy for zero hold\n");
+				"cw_ec_config: bus did not become healthy for zero-output operation\n");
 			goto out;
 		}
+	}
+	if (hold_zero) {
 		output_data = calloc(activate.domain_size, 1);
 		output_mask = malloc(activate.domain_size);
 		if (!output_data || !output_mask) {

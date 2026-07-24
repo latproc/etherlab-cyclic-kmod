@@ -416,6 +416,19 @@ PASS: 5 API lifecycle iteration(s); no cyclic task leak; topology unchanged
 New kernel warning/error lines: none
 ```
 
+A later 20-iteration run initially exposed a tool race: iteration 6 attempted
+zero-arm before the rapidly reconfigured drive was healthy and correctly
+received `EAGAIN`. `cycle-zero-arm` now uses the same bounded five-second
+health prerequisite as `cycle-zero-hold`. The corrected run passed:
+
+```text
+PASS: 20 API lifecycle iteration(s); no cyclic task leak; topology unchanged
+New kernel warning/error lines: none
+```
+
+Master 0 was idle/inactive and the cyclic task count matched baseline after
+every iteration.
+
 ## Zero-armed controller death
 
 `tools/cw_ec_test_controller_death.sh` starts `cycle-zero-hold`, waits until an

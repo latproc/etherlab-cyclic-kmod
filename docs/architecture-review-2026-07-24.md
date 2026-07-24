@@ -54,13 +54,13 @@ No nonzero output has been authorized or tested.
 
 | Plan requirement | Status | Evidence or blocker |
 |---|---|---|
-| Repeated load/unload | Partial | Earlier probe/device repetitions plus five API 0.10 active lifecycles passed; increase repetition under instrumentation. |
-| Repeated master acquire/release | Pass | 120 open/scan/close iterations, five current cyclic lifecycles, controller-death teardown, and continued CLI usability. |
+| Repeated load/unload | Partial | Earlier probe/device repetitions plus 20 consecutive API 0.10 active lifecycles passed; instrumentation remains unavailable. |
+| Repeated master acquire/release | Pass | 120 open/scan/close iterations, 20 current cyclic lifecycles, controller-death teardown, and continued CLI usability. |
 | Repeated scan memory stability | Partial | Functional repetitions passed; no allocator/leak instrumentation. |
 | Invalid ABI calls | Partial | Broad ABI suite passes; add active stale generation/size/sequence cases and fuzzed counts. |
 | Allocation failure paths | Partial | Every module-owned pending/image allocation and cyclic-task constructor passed deterministic unwind; external allocations require a fault-injection kernel. |
 | Configuration create/destroy stress | Partial | Ten maximum pending create/reset iterations passed; applied/domain stress still needs instrumentation. |
-| Cyclic start/stop stress | Partial | Five API 0.10 zero-arm lifecycles passed with no task leak or new warning; longer/instrumented stress remains. |
+| Cyclic start/stop stress | Partial | Twenty API 0.10 zero-arm lifecycles passed with no task leak or new warning; instrumented stress remains. |
 | SDO failure teardown | Partial | Abort/error handling tested; allocation/close interruption stress remains. |
 | Unload with resources | Pass | Normal unload failed while a zero-armed control fd/task/master were live; controller continued, then file release and unload succeeded. |
 | kmemleak/equivalent | Unsupported on target | `CONFIG_DEBUG_KMEMLEAK` is disabled. |
@@ -81,10 +81,10 @@ The kernel-safety gate is not closed.
    killed while explicitly zero-armed; file release left no cyclic task,
    returned master 0 idle, preserved topology, and added no warning/error.
    Repeat this under leak/debug-kernel instrumentation.
-3. **Current cyclic lifecycle stress is incomplete.** Five API 0.10
-   configure/activate/zero-arm/disarm/deactivate/close iterations passed with
-   task, CLI, topology, and kernel-log checks. Increase repetition and add
-   memory/debug-kernel instrumentation.
+3. **Current cyclic lifecycle functional stress passes 20 iterations.**
+   Configure/activate/zero-arm/disarm/deactivate/close returned the master idle
+   with no task leak after every iteration and no final topology/log change.
+   Memory/debug-kernel instrumentation remains unavailable.
 4. **EtherLab public deactivation remains imperfect.** ED3L can report AL
    `0x001b` before EtherLab's asynchronous PREOP transition. The application
    now sends zero before stopping, but the watchdog/idle-FSM boundary remains.

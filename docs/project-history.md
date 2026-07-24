@@ -112,3 +112,7 @@ commands, outputs, and design details.
 - Proved module reference protection with current active resources: normal
   unload was rejected while a zero-armed controller remained healthy, then
   controller death synchronously released the task/master and allowed unload.
+- A 20-cycle zero-arm lifecycle run exposed premature arm at iteration 6.
+  Requiring bounded bus health before zero-arm fixed the tool race; the
+  corrected 20 iterations returned the master idle every time with no task,
+  topology, or kernel-log regression.

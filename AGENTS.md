@@ -38,6 +38,10 @@ decisions, risks, commands, or next steps change.
 - Normal module unload is hardware-proven blocked while a zero-armed control
   fd, cyclic task, and master ownership are live. Controller death then
   releases all resources and permits unload.
+- Twenty consecutive current-API zero-arm lifecycles pass after making the
+  standalone tool wait up to five seconds for bus health before arming. Every
+  iteration returned master 0 idle with no cyclic task; final topology was
+  unchanged and no new kernel warning/error appeared.
 - The target kernel lacks fault-injection, kmemleak, KFENCE, and lockdep
   validation facilities; debug-kernel evidence remains outstanding.
 - Servo-off startup and live power-loss/restoration are mandatory. Outputs
