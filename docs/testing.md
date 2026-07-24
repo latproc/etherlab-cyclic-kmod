@@ -717,3 +717,32 @@ so independent validity across an absent drive is still outstanding. The
 known EtherLab asynchronous deactivation limitation produced Sync Manager
 watchdog messages for ED3L position 29 and EL5152 position 3; master 0
 nevertheless returned idle and inactive after both runs.
+
+## API 0.12 multi-domain lifecycle and controller death
+
+The explicit EL5152/ED3L two-domain fixture was exercised through five
+consecutive `cycle-zero-arm` sessions at 1 ms for two seconds each. Every
+session published and armed only an all-zero output image, synchronously
+disarmed, stopped its cyclic task, and returned master 0 idle/inactive.
+After all five iterations:
+
+```text
+New kernel warning/error lines:
+  none
+PASS: 5 API lifecycle iteration(s); no cyclic task leak; topology unchanged
+```
+
+The same explicit fixture then ran `cycle-zero-hold`. While its all-zero image
+was armed, normal module unload was correctly rejected. Killing the controller
+exercised file-release teardown; the cyclic task terminated, master 0 returned
+idle/inactive, module unload succeeded, topology was unchanged, and no new
+kernel warning/error appeared:
+
+```text
+PASS: killed zero-armed controller; no cyclic task leak; master released;
+      topology unchanged
+```
+
+These tests prove multi-domain lifetime/unwind behavior with two configured
+domains; the ABI limit is 256 domains and is separately covered by the
+maximum-count reset test.

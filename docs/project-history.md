@@ -174,3 +174,8 @@ commands, outputs, and design details.
   points in setup, legacy implicit-domain, and explicit-domain preparation;
   every failure unwound to an idle master with unchanged topology and no new
   kernel warning/error.
+- Repeated the lifecycle and controller-death gates with the explicit
+  EL5152/ED3L domain fixture. Five zero-arm sessions each returned master 0
+  idle with no cyclic task leak. A live zero-armed control file blocked module
+  unload; killing it released every resource and then allowed unload. Both
+  tests preserved topology and added no kernel warning/error.

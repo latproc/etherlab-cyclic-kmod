@@ -314,8 +314,11 @@ testing, safety, and build documents.
   failures across setup, legacy implicit-domain, and explicit-domain
   preparation unwind cleanly with unchanged topology and no new kernel
   warning/error.
+- Five explicit multi-domain zero-arm lifecycles and an explicit multi-domain
+  zero-armed controller-death test pass. Each returned master 0 idle, leaked no
+  cyclic task, preserved topology, and added no kernel warning/error. Active
+  resources correctly blocked module unload before controller death.
 - Next step: capture the powered-off ED3L case showing EL5152 valid and the
-  ED3L domain invalid, then repeat multi-domain lifecycle/controller-death
-  tests.
+  ED3L domain invalid, then re-audit API 0.12 documentation and safety status.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.
