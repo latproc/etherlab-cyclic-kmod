@@ -165,6 +165,46 @@ stale reuse. Disarmed zero-image cycles do not. This latest-output path remains
 separate from a future cycle-addressed scheduled-output queue. Capability
 discovery reports only the timing and wait features that are implemented.
 
+## Future delegated domain connections
+
+Explicit domains may later become user-space ownership boundaries as well as
+WC and process-image boundaries. This does not change the single-master
+architecture. One coordinator continues to own topology, activation, DC and
+the common cyclic task; a delegated controller can receive a restricted file
+descriptor for an immutable domain set.
+
+```text
+                         coordinator
+                 configure / activate / teardown
+                              |
+                       one EtherLab master
+                              |
+                   one common cyclic timeline
+                     /                    \
+          Beckhoff domain fd          drive domain fd
+          machine controller          motion controller
+                                             ^
+                                             |
+                                   user-space planner IPC
+```
+
+The preferred interface is a kernel-created fd returned to the coordinator,
+which can pass it to a controller with `SCM_RIGHTS`. The delegated fd exposes
+only its authorized input segment, output mask, status, publication, lease and
+arm state. It cannot configure EtherLab or address another segment. There is
+at most one output writer per domain.
+
+All connections observe the same global cycle identity and notification
+timeline. Domain output generations can advance independently, but this does
+not provide atomic cross-domain commits. A future group-commit facility would
+need explicit cycle-addressed semantics.
+
+Closing or expiring a delegated controller gates its domains while the common
+cycle and unrelated authorities continue. Closing the coordinator gates all
+outputs and performs the existing complete teardown. Until that ABI is
+implemented, the exclusive control fd remains the compatibility owner of all
+domains and output safety state remains global.
+
 ## Clockwork process-entry selectors
 
 The flattened entry `pos` in `/tmp/ecat.log` is an enumeration artifact. For

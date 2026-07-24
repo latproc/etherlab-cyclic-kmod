@@ -3082,6 +3082,119 @@ physically safe bounded commissioning output.
 
 ---
 
+# 13C. Delegated per-domain user-space control
+
+## Goal
+
+Support optional independent user-space control connections for explicitly
+declared domains without creating multiple EtherCAT masters or cyclic loops.
+For example, a dedicated motion controller may own the drive domain while a
+supervisory controller owns ordinary machine I/O. A separate motion-planning
+process may supply trajectories to that motion controller through user-space
+IPC; trajectory semantics do not belong in this kernel transport.
+
+The kernel shall retain:
+
+```text
+one EtherLab master owner
+one immutable configured topology
+one application-time/DC timeline
+one receive/process/queue/send cycle
+one globally monotonically increasing cycle identity
+```
+
+Domains are transport availability, validity and ownership boundaries within
+that single cycle. They are not independent EtherCAT networks and do not each
+call `ecrt_master_receive()` or `ecrt_master_send()`.
+
+## Ownership model
+
+The initial design shall distinguish:
+
+- one coordinator connection, which exclusively owns discovery,
+  configuration, activation, deactivation and master lifetime;
+- optional delegated domain connections, each restricted to an explicit set
+  of configured domain IDs;
+- at most one output writer for a domain;
+- read-only monitoring connections as a later compatible extension.
+
+The preferred Linux interface is for the coordinator to request a new
+kernel-created domain file descriptor after configuration. The coordinator
+can pass that fd to the intended controller using `SCM_RIGHTS`. This avoids
+reopen races, global bearer tokens and device-node permission ambiguity.
+Closing a delegated fd revokes only its output authority; closing the
+coordinator gates every output, closes delegated authority and tears down the
+transport in the existing safe order.
+
+The current exclusive control fd remains a compatibility owner of all domains
+when no delegation is requested.
+
+## Domain data path
+
+A delegated connection shall be able to:
+
+```text
+wait for the common cycle notification
+read a coherent copied input segment with its exact global cycle identity
+publish only bytes/bits registered as outputs in its owned domain
+observe its domain WC, validity, fault and generation state
+renew, arm and disarm only its own output authority
+```
+
+The cyclic task still assembles and sends every domain once per global cycle.
+It selects the latest permitted output generation independently for each
+domain. No domain connection may address, mask or modify another domain's
+process-image segment.
+
+Independent domain publication does not imply an atomic transaction across
+domains. If an application needs multi-domain outputs to take effect on one
+cycle, that requires a separately designed cycle-addressed group-commit API;
+the kernel must not infer such coupling.
+
+## Liveness and fault containment
+
+Controller leases from Section 13B shall be represented internally as output
+authority scoped to a domain set, even if the first exposed API revision
+supports only the compatibility all-domain owner. This avoids baking a global
+lease into the implementation.
+
+Expiry or close of a delegated connection shall:
+
+1. gate only its owned domain outputs to zero/fail-safe values before their
+   next selection;
+2. latch per-authority and affected-domain stale-controller state;
+3. leave unrelated domain output authorities unchanged;
+4. continue the common EtherCAT cycle and all input publication; and
+5. require renewal/reconnection, fresh domain output publication and explicit
+   per-domain re-arm.
+
+Bus-level, topology, master and coordinator faults may still gate all domains.
+Software domain isolation does not replace physical safety or drive-local
+watchdogs.
+
+## Design gates before implementation
+
+Before exposing delegated fds, document and test:
+
+```text
+fd and coordinator lifetime ownership
+revocation and teardown lock order
+domain-set representation and immutable authorization
+per-domain copied-buffer ownership
+per-domain output generations, masks, arm state and leases
+coherent cycle notification fan-out
+writer exclusivity and duplicate delegation rejection
+coordinator close with live delegated fds
+delegated process death and hung-controller lease expiry
+cross-domain fault containment
+generation handling across deactivate/reactivate
+resource limits for delegated connections
+```
+
+No Clockwork, CiA 402, servo, axis or motion-planner policy may enter this API.
+
+---
+
 # 14. Phase 7 — build a compatibility user-space library
 
 ## Goal

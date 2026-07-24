@@ -401,5 +401,14 @@ testing, safety, and build documents.
   selection but keeps cyclic input exchange alive, latches a distinct
   controller-stale fault, and requires renewal, fresh output and explicit
   re-arm.
+- Section 13C requires optional delegated per-domain user-space connections.
+  Keep one coordinator, EtherLab master, cyclic task and global cycle timeline.
+  The preferred interface is coordinator-created domain fds that may be passed
+  with `SCM_RIGHTS`; each fd is confined to its immutable domain set and at
+  most one writer owns a domain. A motion planner remains user-space policy and
+  supplies a domain controller through ordinary user-space IPC.
+- Implement Section 13B lease state internally as domain-set-scoped output
+  authority even if the first compatible UAPI exposes only the existing
+  all-domain owner. Do not deepen the current global-output-state assumption.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.
