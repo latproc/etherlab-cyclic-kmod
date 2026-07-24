@@ -413,6 +413,26 @@ was one, and the final status retained latched fault `0x20` while current
 faults cleared. This validates conservative per-slave invalidation and
 recovery without silently clearing the explicit re-arm requirement.
 
+That first capture also exposed that the latched mask retained only the first
+cyclic sample. After changing it to accumulate causes for the entire re-arm
+epoch, the same disarmed power-cycle procedure observed:
+
+```text
+current 0x20: domain incomplete, slave still online/OP, data invalid
+current 0x38: domain incomplete, slave offline/not operational
+current 0x30: domain incomplete, slave online/not operational in PREOP
+current 0x10: slave online/not operational in SAFEOP
+current 0x00: slave online/OP/valid again
+final latched=0x00000038 fault_count=1 rearm_required=1 armed=0
+```
+
+The run completed 90,974 cycles with zero overruns. Cycle errors and DC read
+errors increased while the drive was deliberately absent, as expected. After
+close/unload, master 0 was idle/inactive with all 34 slaves visible. The kernel
+log contained ED3L emergency requests, the known stop-path Sync Manager
+watchdog, and EtherLab scan errors during the deliberate disruption; this test
+does not claim a warning-free power cycle.
+
 ## API 0.10 lifecycle repetition
 
 `tools/cw_ec_test_cycle_lifecycle.sh` requires the explicit

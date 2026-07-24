@@ -121,3 +121,8 @@ commands, outputs, and design details.
   before the slave went offline, returned only after online/OP recovery in the
   same active session, and `rearm_required` stayed latched with one fault
   epoch.
+- Changed `last_latched_faults` from first-sample detail to the union of causes
+  observed in a re-arm epoch. A repeated disarmed power cycle accumulated
+  `0x38` across domain-incomplete/offline/not-operational phases, retained one
+  fault transition, recovered to OP/valid without restart, and remained
+  disarmed pending explicit re-arm.

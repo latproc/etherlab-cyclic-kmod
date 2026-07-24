@@ -270,6 +270,9 @@ testing, safety, and build documents.
 - API 0.10 per-slave status is hardware-proven across live position-29 power
   loss and restoration: validity cleared offline, returned in OP, and
   `rearm_required` remained latched throughout recovery.
+- Fault detail accumulates all causes within a re-arm epoch. A repeated live
+  power cycle ended with latched mask `0x38`, one fault transition, restored
+  OP/valid input, and outputs still disarmed.
 - Next step: select the next independently testable kernel-safety blocker.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

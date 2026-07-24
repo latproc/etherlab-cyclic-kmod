@@ -480,14 +480,18 @@ static void cw_ec_update_io_health(struct cw_ec_file *ctx,
 		   atomic_xchg(&ctx->io_bus_healthy, 0)) {
 		atomic_set(&ctx->io_outputs_armed, 0);
 		atomic64_inc(&ctx->output_gate_request);
-		atomic_set(&ctx->io_rearm_required, 1);
-		atomic_set(&ctx->io_last_latched_faults, faults);
+		if (atomic_xchg(&ctx->io_rearm_required, 1))
+			atomic_or(faults, &ctx->io_last_latched_faults);
+		else
+			atomic_set(&ctx->io_last_latched_faults, faults);
 		atomic64_set(&ctx->io_fault_output_sequence,
 			     atomic64_read(&ctx->output_sequence));
 		atomic64_inc(&ctx->io_fault_count);
 	} else {
 		atomic_set(&ctx->io_outputs_armed, 0);
 		atomic_set(&ctx->io_bus_healthy, 0);
+		if (atomic_read(&ctx->io_rearm_required))
+			atomic_or(faults, &ctx->io_last_latched_faults);
 	}
 }
 

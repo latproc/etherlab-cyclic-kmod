@@ -243,6 +243,10 @@ configuration receives a nonzero monotonically increasing generation for the
 current module lifetime. While cycling, the status reports master link and
 responding-slave count, online/operational configured-slave counts, domain
 health, current and last-latched fault masks, and a fault transition count.
+`last_latched_faults` is the union of every cause observed in the current
+re-arm epoch. A successful arm ends that epoch; the next healthy-to-unhealthy
+transition replaces the old mask. `fault_count` separately counts those
+healthy-to-unhealthy transitions.
 
 The bus becomes healthy only when the link is up, every configured slave is
 online and operational, and domain working counter is complete. After health

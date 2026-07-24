@@ -59,6 +59,13 @@ slave is offline, and returns only after the slave is online and OP again.
 `rearm_required` remained latched after recovery and outputs remained
 disarmed.
 
+`last_latched_faults` accumulates every cause observed while that re-arm
+requirement remains set. It is not merely the first cyclic sample of the
+failure. A successful arm ends the epoch; a later fault begins a new mask.
+This is hardware-proven: a position-29 power cycle accumulated mask `0x38`
+from the domain-incomplete, offline, and not-operational phases, while
+`fault_count` remained one and recovery did not clear `rearm_required`.
+
 If one powered device also disconnects downstream devices, every affected
 configuration must report offline. The kernel must not silently renumber
 expected devices and attach configurations to a different physical device.

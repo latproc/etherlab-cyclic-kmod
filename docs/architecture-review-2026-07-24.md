@@ -87,9 +87,11 @@ The kernel-safety gate is not closed.
 4. **EtherLab public deactivation remains imperfect.** ED3L can report AL
    `0x001b` before EtherLab's asynchronous PREOP transition. The application
    now sends zero before stopping, but the watchdog/idle-FSM boundary remains.
-5. **Fault detail currently records the first fault of an epoch.** The power
-   test latched domain-incomplete before later offline/not-operational states.
-   Decide whether the UAPI needs first cause, accumulated causes, or both.
+5. **Fault detail uses accumulated causes per re-arm epoch.** This preserves
+   the domain-incomplete onset plus later offline/not-operational causes while
+   keeping `fault_count` as the healthy-to-unhealthy transition count. A
+   repeated disarmed hardware power cycle proved final mask `0x38` with one
+   transition and recovery to OP/valid.
 6. **Nonzero output is untested.** A bounded commissioning output requires a
    separate reviewed procedure, selected harmless output/object, physical
    observation, rollback, and explicit authorization.
