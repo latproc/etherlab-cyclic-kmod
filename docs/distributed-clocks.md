@@ -179,6 +179,20 @@ The future configuration transaction needs:
 
 Do not expose raw kernel pointers or EtherLab configuration addresses.
 
+The installed ED3L ESI file
+`/opt/latproc/code/config/xml/ESTUN_SUMMA_SERVO_V1.00B9.xml` provides the
+first fixture values for its DC-enabled operation mode:
+
+```text
+AssignActivate = 0x0300
+CycleTimeSync0 = application cycle * 1 + 0
+ShiftTimeSync0 = 0 ns
+```
+
+At the current 1 ms standalone test period this resolves to a 1,000,000 ns
+SYNC0 cycle. These values belong in the user-space fixture/configuration, not
+as kernel device policy.
+
 ## Required tests
 
 - compare direct-IOD and kernel ordering and correction results;

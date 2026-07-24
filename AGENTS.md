@@ -418,3 +418,8 @@ Update this section during work. Use dated entries for facts that may change.
   reuse. Five immediate hardware repetitions added no unmatched or
   failed/skipped AL-state datagrams, but four stops still reported ED3L Sync
   Manager watchdog `0x001b`.
+- 2026-07-24: The installed ED3L ESI DC-enabled operation mode specifies
+  `AssignActivate 0x0300`, SYNC0 equal to one application cycle, and zero
+  SYNC0 shift. The first generic DC fixture should therefore use a 1,000,000 ns
+  SYNC0 cycle at the current 1 ms test period; the values remain user-space
+  policy.
