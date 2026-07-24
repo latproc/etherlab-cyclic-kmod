@@ -104,6 +104,20 @@ slave configuration, activate the master, or write any slave. The module
 unloaded cleanly and the subsequent five-minute kernel warning/error window was
 empty.
 
+The following no-activation construction test then passed:
+
+```text
+PASS: unsupported revision constraint returned Invalid argument
+PASS: validated config hierarchy applied to EtherLab
+PASS: duplicate config apply returned Invalid argument
+PASS: config begin after apply returned Device or resource busy
+```
+
+The hierarchy addressed a deliberately absent fictitious slave. EtherLab
+configuration objects were constructed and released on close, but the master
+was not activated and no mailbox or process-data traffic was sent. Module
+unload again left the recent kernel warning/error window empty.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

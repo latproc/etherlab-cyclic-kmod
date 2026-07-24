@@ -4,6 +4,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -93,6 +94,10 @@ int main(int argc, char **argv)
 	};
 	struct cw_ec_config_validate config_validate = {
 		.struct_size = sizeof(config_validate),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_config_apply config_apply = {
+		.struct_size = sizeof(config_apply),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
 	unsigned long unknown_ioctl = _IO(CW_EC_IOC_MAGIC, 0x7f);
@@ -211,6 +216,13 @@ int main(int argc, char **argv)
 		fprintf(stderr, "FAIL: config begin: %s\n", strerror(errno));
 		failures++;
 	}
+	config_slave.revision_number = 1;
+	errno = 0;
+	failures += expect_errno("unsupported revision constraint",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE,
+				       &config_slave),
+				 EINVAL);
+	config_slave.revision_number = 0;
 	if (ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0) {
 		fprintf(stderr, "FAIL: valid config slave: %s\n",
 			strerror(errno));
@@ -269,6 +281,27 @@ int main(int argc, char **argv)
 				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_ENTRY,
 				       &config_entry),
 				 EINVAL);
+
+	if (ioctl(fd, CW_EC_IOC_CONFIG_APPLY, &config_apply) < 0) {
+		fprintf(stderr,
+			"FAIL: apply config hierarchy: %s; kind=%u id=%" PRIu32
+			"\n",
+			strerror(errno), config_apply.failed_object_kind,
+			config_apply.failed_config_id);
+		failures++;
+	} else {
+		printf("PASS: validated config hierarchy applied to EtherLab\n");
+	}
+	errno = 0;
+	failures += expect_errno("duplicate config apply",
+				 ioctl(fd, CW_EC_IOC_CONFIG_APPLY,
+				       &config_apply),
+				 EINVAL);
+	errno = 0;
+	failures += expect_errno("config begin after apply",
+				 ioctl(fd, CW_EC_IOC_CONFIG_BEGIN,
+				       &config_begin),
+				 EBUSY);
 
 	if (close(fd) < 0) {
 		fprintf(stderr, "FAIL: close: %s\n", strerror(errno));

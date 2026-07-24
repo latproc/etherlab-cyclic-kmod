@@ -32,8 +32,9 @@ decisions, risks, commands, or next steps change.
 - No persistent configuration, PDO/domain, process-image, or cyclic code
   exists.
 - API 0.3 now accepts and validates a bounded pending
-  slave/Sync/PDO/PDO-entry hierarchy. It does not yet construct EtherLab
-  configuration objects, create/register a domain, activate, or cycle.
+  slave/Sync/PDO/PDO-entry hierarchy and can construct the corresponding
+  persistent EtherLab configuration objects without activation. It does not
+  yet create/register a domain, activate, or cycle.
 - A provisional bounded ad-hoc SDO batch exists for commissioning and
   decision-gate tests. It is not the persistent production setup mechanism.
 - Bounded SDO upload is hardware-proven against ED3L `0x6060:00`; no write has
@@ -278,5 +279,10 @@ Update this section during work. Use dated entries for facts that may change.
 - 2026-07-24: API 0.3 pending declarative configuration validation built and
   passed its live ABI suite with IOD stopped. The test performed no EtherLab
   configuration, activation, or slave write; unload produced no recent kernel
-  warning/error. Next: construct immutable EtherLab arrays from validated
-  metadata and add a separate apply/activate decision-gate operation.
+  warning/error.
+- 2026-07-24: API 0.3 can now apply validated metadata to EtherLab-owned slave,
+  Sync Manager, PDO-assignment, and mapping objects. A fictitious absent-slave
+  apply/release test passed without activation, bus traffic, or kernel
+  warning/error. Nonzero revision constraints are rejected because the target
+  EtherLab configuration matcher does not accept revision. Next: domain
+  creation and stable entry registration, still without activation.

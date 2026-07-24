@@ -36,6 +36,8 @@ struct cw_ec_file {
 	u32 config_entry_count;
 	bool config_started;
 	bool config_validated;
+	bool config_applied;
+	bool config_poisoned;
 };
 
 struct cw_ec_setup_entry {
@@ -57,6 +59,7 @@ struct cw_ec_config_node {
 struct cw_ec_slave_node {
 	struct cw_ec_config_node common;
 	struct cw_ec_config_slave cfg;
+	ec_slave_config_t *ec_config;
 };
 
 struct cw_ec_sync_node {
@@ -118,6 +121,8 @@ static void cw_ec_config_clear(struct cw_ec_file *ctx)
 	ctx->config_entry_count = 0;
 	ctx->config_started = false;
 	ctx->config_validated = false;
+	ctx->config_applied = false;
+	ctx->config_poisoned = false;
 }
 
 static int cw_ec_open(struct inode *inode, struct file *file)
@@ -203,6 +208,10 @@ static long cw_ec_config_begin(struct cw_ec_file *ctx, void __user *argp)
 		return -EINVAL;
 
 	mutex_lock(&ctx->lock);
+	if (ctx->config_applied || ctx->config_poisoned) {
+		mutex_unlock(&ctx->lock);
+		return -EBUSY;
+	}
 	cw_ec_config_clear(ctx);
 	ctx->config_started = true;
 	mutex_unlock(&ctx->lock);
@@ -226,7 +235,8 @@ static long cw_ec_config_add_slave(struct cw_ec_file *ctx, void __user *argp)
 	if (ret)
 		goto out;
 	if (!node->cfg.config_id || !node->cfg.vendor_id ||
-	    !node->cfg.product_code || node->cfg.flags) {
+	    !node->cfg.product_code || node->cfg.revision_number ||
+	    node->cfg.flags) {
 		ret = -EINVAL;
 		goto out;
 	}
@@ -249,6 +259,181 @@ static long cw_ec_config_add_slave(struct cw_ec_file *ctx, void __user *argp)
 	mutex_unlock(&ctx->lock);
 out:
 	kfree(node);
+	return ret;
+}
+
+static struct cw_ec_slave_node *
+cw_ec_find_slave(struct cw_ec_file *ctx, u32 config_id)
+{
+	struct cw_ec_slave_node *slave;
+
+	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+		if (slave->cfg.config_id == config_id)
+			return slave;
+	}
+	return NULL;
+}
+
+static struct cw_ec_sync_node *
+cw_ec_find_sync(struct cw_ec_file *ctx, u32 config_id)
+{
+	struct cw_ec_sync_node *sync;
+
+	list_for_each_entry(sync, &ctx->config_syncs, common.node) {
+		if (sync->cfg.config_id == config_id)
+			return sync;
+	}
+	return NULL;
+}
+
+static struct cw_ec_pdo_node *
+cw_ec_find_pdo(struct cw_ec_file *ctx, u32 config_id)
+{
+	struct cw_ec_pdo_node *pdo;
+
+	list_for_each_entry(pdo, &ctx->config_pdos, common.node) {
+		if (pdo->cfg.config_id == config_id)
+			return pdo;
+	}
+	return NULL;
+}
+
+static long cw_ec_config_apply(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_config_apply result;
+	struct cw_ec_entry_node *entry;
+	struct cw_ec_sync_node *sync;
+	struct cw_ec_pdo_node *pdo;
+	struct cw_ec_slave_node *slave;
+	int ret;
+
+	if (copy_from_user(&result, argp, sizeof(result)))
+		return -EFAULT;
+	ret = cw_ec_check_header(result.struct_size, result.api_major,
+				 sizeof(result));
+	if (ret)
+		return ret;
+
+	memset(&result, 0, sizeof(result));
+	result.struct_size = sizeof(result);
+	result.api_major = CW_EC_API_VERSION_MAJOR;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->config_validated || ctx->config_applied ||
+	    ctx->config_poisoned) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	/*
+	 * EtherLab has no public operation to remove one partially constructed
+	 * slave configuration. Any failure below poisons this master
+	 * application; close/reopen releases the master and provides rollback.
+	 */
+	ctx->config_poisoned = true;
+
+	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+		slave->ec_config =
+			ecrt_master_slave_config(ctx->master, slave->cfg.alias,
+						slave->cfg.position,
+						slave->cfg.vendor_id,
+						slave->cfg.product_code);
+		if (!slave->ec_config) {
+			ret = -ENOMEM;
+			result.failed_config_id = slave->cfg.config_id;
+			result.failed_object_kind = CW_EC_CONFIG_OBJECT_SLAVE;
+			goto out;
+		}
+	}
+
+	list_for_each_entry(sync, &ctx->config_syncs, common.node) {
+		slave = cw_ec_find_slave(ctx, sync->cfg.slave_config_id);
+		if (!slave) {
+			ret = -ENOENT;
+			result.failed_config_id = sync->cfg.config_id;
+			result.failed_object_kind = CW_EC_CONFIG_OBJECT_SYNC;
+			goto out;
+		}
+		ret = ecrt_slave_config_sync_manager(
+			slave->ec_config, sync->cfg.sync_index,
+			sync->cfg.direction == CW_EC_DIR_OUTPUT ?
+				EC_DIR_OUTPUT : EC_DIR_INPUT,
+			sync->cfg.watchdog_mode == CW_EC_WD_ENABLE ?
+				EC_WD_ENABLE :
+			sync->cfg.watchdog_mode == CW_EC_WD_DISABLE ?
+				EC_WD_DISABLE : EC_WD_DEFAULT);
+		if (ret) {
+			result.failed_config_id = sync->cfg.config_id;
+			result.failed_object_kind = CW_EC_CONFIG_OBJECT_SYNC;
+			goto out;
+		}
+		ecrt_slave_config_pdo_assign_clear(slave->ec_config,
+						  sync->cfg.sync_index);
+	}
+
+	list_for_each_entry(pdo, &ctx->config_pdos, common.node) {
+		sync = cw_ec_find_sync(ctx, pdo->cfg.sync_config_id);
+		if (!sync) {
+			ret = -ENOENT;
+			result.failed_config_id = pdo->cfg.config_id;
+			result.failed_object_kind = CW_EC_CONFIG_OBJECT_PDO;
+			goto out;
+		}
+		slave = cw_ec_find_slave(ctx, sync->cfg.slave_config_id);
+		if (!slave) {
+			ret = -ENOENT;
+			result.failed_config_id = pdo->cfg.config_id;
+			result.failed_object_kind = CW_EC_CONFIG_OBJECT_PDO;
+			goto out;
+		}
+		ret = ecrt_slave_config_pdo_assign_add(
+			slave->ec_config, sync->cfg.sync_index,
+			pdo->cfg.pdo_index);
+		if (ret) {
+			result.failed_config_id = pdo->cfg.config_id;
+			result.failed_object_kind = CW_EC_CONFIG_OBJECT_PDO;
+			goto out;
+		}
+		ecrt_slave_config_pdo_mapping_clear(slave->ec_config,
+						   pdo->cfg.pdo_index);
+	}
+
+	list_for_each_entry(entry, &ctx->config_entries, common.node) {
+		pdo = cw_ec_find_pdo(ctx, entry->cfg.pdo_config_id);
+		if (!pdo) {
+			ret = -ENOENT;
+			result.failed_config_id = entry->cfg.config_id;
+			result.failed_object_kind = CW_EC_CONFIG_OBJECT_ENTRY;
+			goto out;
+		}
+		sync = cw_ec_find_sync(ctx, pdo->cfg.sync_config_id);
+		slave = sync ?
+			cw_ec_find_slave(ctx, sync->cfg.slave_config_id) : NULL;
+		if (!slave) {
+			ret = -ENOENT;
+			result.failed_config_id = entry->cfg.config_id;
+			result.failed_object_kind = CW_EC_CONFIG_OBJECT_ENTRY;
+			goto out;
+		}
+		ret = ecrt_slave_config_pdo_mapping_add(
+			slave->ec_config, pdo->cfg.pdo_index,
+			entry->cfg.index, entry->cfg.subindex,
+			entry->cfg.bit_length);
+		if (ret) {
+			result.failed_config_id = entry->cfg.config_id;
+			result.failed_object_kind = CW_EC_CONFIG_OBJECT_ENTRY;
+			goto out;
+		}
+	}
+
+	ctx->config_applied = true;
+	ctx->config_poisoned = false;
+	ret = 0;
+out:
+	result.result = ret;
+	if (copy_to_user(argp, &result, sizeof(result)))
+		ret = -EFAULT;
+	mutex_unlock(&ctx->lock);
 	return ret;
 }
 
@@ -790,6 +975,8 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return cw_ec_config_add_entry(ctx, argp);
 	case CW_EC_IOC_CONFIG_VALIDATE:
 		return cw_ec_config_validate(ctx, argp);
+	case CW_EC_IOC_CONFIG_APPLY:
+		return cw_ec_config_apply(ctx, argp);
 	default:
 		return -ENOTTY;
 	}

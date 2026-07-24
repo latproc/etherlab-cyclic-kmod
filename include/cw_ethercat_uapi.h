@@ -43,6 +43,14 @@ enum cw_ec_watchdog_mode {
 	CW_EC_WD_DISABLE = 2,
 };
 
+enum cw_ec_config_object_kind {
+	CW_EC_CONFIG_OBJECT_NONE = 0,
+	CW_EC_CONFIG_OBJECT_SLAVE = 1,
+	CW_EC_CONFIG_OBJECT_SYNC = 2,
+	CW_EC_CONFIG_OBJECT_PDO = 3,
+	CW_EC_CONFIG_OBJECT_ENTRY = 4,
+};
+
 struct cw_ec_api_version {
 	__u16 struct_size;
 	__u16 major;
@@ -188,6 +196,16 @@ struct cw_ec_config_validate {
 	__u32 reserved;
 };
 
+struct cw_ec_config_apply {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 failed_config_id;
+	__u8 failed_object_kind;
+	__u8 reserved0[3];
+	__s32 result;
+	__u32 reserved1;
+};
+
 #define CW_EC_IOC_MAGIC 0xec
 
 #define CW_EC_IOC_GET_API_VERSION \
@@ -218,5 +236,7 @@ struct cw_ec_config_validate {
 	_IOW(CW_EC_IOC_MAGIC, 0x24, struct cw_ec_config_entry)
 #define CW_EC_IOC_CONFIG_VALIDATE \
 	_IOWR(CW_EC_IOC_MAGIC, 0x25, struct cw_ec_config_validate)
+#define CW_EC_IOC_CONFIG_APPLY \
+	_IOWR(CW_EC_IOC_MAGIC, 0x26, struct cw_ec_config_apply)
 
 #endif /* CW_ETHERCAT_UAPI_H */

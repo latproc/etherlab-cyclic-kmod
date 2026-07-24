@@ -12,10 +12,10 @@ hardware safety systems.
 ## Current scope
 
 Phase 2 bus discovery, the provisional Phase 3 commissioning SDO interface,
-and non-mutating validation of a pending declarative PDO hierarchy are
-implemented. Discovery is proven on the current 34-slave target. The project
-does not yet apply persistent slave/PDO configuration or provide cyclic
-process data.
+validation and no-activation construction of a pending declarative PDO
+hierarchy are implemented. Discovery is proven on the current 34-slave target.
+The project does not yet create a process-data domain, activate persistent
+slave/PDO configuration, or provide cyclic process data.
 
 ```text
 cw_ec_bus

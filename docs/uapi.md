@@ -148,6 +148,7 @@ CW_EC_IOC_CONFIG_ADD_SYNC
 CW_EC_IOC_CONFIG_ADD_PDO
 CW_EC_IOC_CONFIG_ADD_ENTRY
 CW_EC_IOC_CONFIG_VALIDATE
+CW_EC_IOC_CONFIG_APPLY
 ```
 
 Each object has a nonzero configuration ID. Child objects reference their
@@ -159,6 +160,25 @@ references within a PDO.
 
 The current conservative limits are 256 slaves, 1024 Sync Managers, 4096 PDOs,
 and 16384 entries. A successful validation freezes the pending transaction
-against further additions. `CONFIG_BEGIN` or close clears it. Applying it to
-EtherLab, registering a domain, and returning entry offsets are deliberately
-deferred to the next checkpoint.
+against further additions.
+
+`CONFIG_APPLY` constructs persistent EtherLab slave configurations and copies
+the submitted hierarchy through the granular Sync Manager, PDO-assignment, and
+PDO-mapping calls. It preserves submission order and reports the object kind
+and configuration ID at which construction failed. It does not create a
+domain, register entries, activate the master, or communicate the configuration
+to a slave.
+
+EtherLab has no public operation for removing one partially constructed slave
+configuration. Consequently, an apply failure poisons the current control
+session and requires close/reopen; releasing the master provides the
+transaction rollback. A successful apply also prevents another
+`CONFIG_BEGIN` or apply in the same session.
+
+The target EtherLab matching API accepts alias, position, vendor ID, and product
+code, but not revision. API 0.3 therefore rejects a nonzero revision constraint
+instead of silently failing to enforce it. A future explicit revision policy
+must preserve absent-at-startup configuration.
+
+Creating/registering a domain and returning stable entry offsets are deferred
+to the next checkpoint.
