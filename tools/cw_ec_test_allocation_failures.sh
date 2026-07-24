@@ -11,6 +11,7 @@ module_path=${CW_EC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
 device=${CW_EC_DEVICE:-/dev/cw_ethercat0}
 recipe=${CW_EC_RECIPE:-"$project_dir/tools/recipes/ed3l_velocity_pdo_pos29.txt"}
 config=${CW_EC_CONFIG:-"$project_dir/tools/configs/ed3l_velocity_dc_pos29.conf"}
+domain_config=${CW_EC_DOMAIN_CONFIG:-"$project_dir/tools/configs/el5152_pos3_with_absent_ed3l_pos29.conf"}
 module_name=cw_ethercat
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -18,7 +19,7 @@ if [ "$(id -u)" -ne 0 ]; then
 	exit 1
 fi
 if [ ! -f "$module_path" ] || [ ! -f "$recipe" ] ||
-    [ ! -f "$config" ]; then
+    [ ! -f "$config" ] || [ ! -f "$domain_config" ]; then
 	echo "error: module, recipe, or configuration fixture is missing" >&2
 	exit 1
 fi
@@ -92,13 +93,25 @@ wait_for_device
 verify_idle
 rmmod "$module_name"
 
-# Context, slave, two syncs, two PDOs, ten entries, and DC configuration.
-run_failure_series config 17 \
+# Context, slave, two syncs, two PDOs, ten entries, DC configuration, and the
+# implicit compatibility-domain node created during registration.
+run_failure_series config 18 \
 	"$project_dir/tools/cw_ec_config" prepare "$config" "$device"
 
-insmod "$module_path" test_fail_allocation=18
+insmod "$module_path" test_fail_allocation=19
 wait_for_device
 "$project_dir/tools/cw_ec_config" prepare "$config" "$device"
+verify_idle
+rmmod "$module_name"
+
+# Context plus two domains, two assignments, two slaves, four syncs, eight
+# PDOs, and 48 entries.
+run_failure_series domains 67 \
+	"$project_dir/tools/cw_ec_config" prepare "$domain_config" "$device"
+
+insmod "$module_path" test_fail_allocation=68
+wait_for_device
+"$project_dir/tools/cw_ec_config" prepare "$domain_config" "$device"
 verify_idle
 rmmod "$module_name"
 
@@ -121,4 +134,4 @@ if [ -s "$tmp_dir/dmesg-new.txt" ]; then
 else
 	echo "  none"
 fi
-echo "PASS: 39 injected allocation failures unwound; success boundaries passed; topology unchanged"
+echo "PASS: 107 injected allocation failures unwound; success boundaries passed; topology unchanged"

@@ -106,6 +106,16 @@ static int stress_config(int fd)
 		.assign_activate = 0x0300,
 		.sync0_cycle_ns = 1000000,
 	};
+	struct cw_ec_config_domain domain = {
+		.struct_size = sizeof(domain),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_config_domain_assignment assignment = {
+		.struct_size = sizeof(assignment),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.slave_config_id = 1,
+		.domain_config_id = 1,
+	};
 	uint32_t i;
 
 	if (require_ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &begin, "config begin"))
@@ -167,6 +177,28 @@ static int stress_config(int fd)
 	}
 	dc.config_id++;
 	if (require_limit(fd, CW_EC_IOC_CONFIG_ADD_DC, &dc, "DC limit"))
+		return -1;
+
+	for (i = 0; i < CW_EC_CONFIG_DOMAIN_MAX; i++) {
+		domain.config_id = i + 1;
+		if (require_ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &domain,
+				  "domain add"))
+			return -1;
+	}
+	domain.config_id++;
+	if (require_limit(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &domain,
+			  "domain limit"))
+		return -1;
+
+	for (i = 0; i < CW_EC_CONFIG_SLAVE_MAX; i++) {
+		assignment.config_id = i + 1;
+		if (require_ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+				  &assignment, "domain assignment add"))
+			return -1;
+	}
+	assignment.config_id++;
+	if (require_limit(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN, &assignment,
+			  "domain assignment limit"))
 		return -1;
 
 	/* A new transaction must synchronously free the maximum pending set. */

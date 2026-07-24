@@ -309,8 +309,13 @@ testing, safety, and build documents.
   compatibility. The servo-off independence case still needs capture.
 - API 0.12 output publication/gating and latched re-arm state remain global.
   Do not claim independent domain output control.
-- Next step: extend hostile ABI coverage and allocation unwind for domain
-  records, then capture the powered-off ED3L case showing EL5152 valid and the
-  ED3L domain invalid.
+- API 0.12 hostile domain-record/status checks pass. Ten maximum-count resets
+  include 256 domains and 256 assignments. All 107 deterministic allocation
+  failures across setup, legacy implicit-domain, and explicit-domain
+  preparation unwind cleanly with unchanged topology and no new kernel
+  warning/error.
+- Next step: capture the powered-off ED3L case showing EL5152 valid and the
+  ED3L domain invalid, then repeat multi-domain lifecycle/controller-death
+  tests.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

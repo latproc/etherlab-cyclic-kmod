@@ -166,3 +166,11 @@ commands, outputs, and design details.
   complete WC, proving compatibility. No nonzero output was armed. This did
   not prove the intended servo-off split because the observed topology
   contained all five drives.
+- Hardened the API 0.12 domain ABI against unsupported flags, missing and
+  unknown domains, duplicate slave assignments, stale/unknown status queries,
+  and inactive implicit-domain status. Extended maximum pending stress to 256
+  domain declarations plus 256 assignments and completed ten reset iterations.
+  Deterministic allocation injection covered all 107 module-owned allocation
+  points in setup, legacy implicit-domain, and explicit-domain preparation;
+  every failure unwound to an idle master with unchanged topology and no new
+  kernel warning/error.

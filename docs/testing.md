@@ -573,17 +573,25 @@ point. It covers the file context and all allocations reached by:
 
 - staging the 21-write ED3L recipe without applying it; and
 - preparing the one-slave/two-Sync/two-PDO/ten-entry/DC declarative fixture
-  without activation.
+  with its implicit domain, without activation; and
+- preparing the explicit two-domain EL5152/ED3L fixture without activation.
 
-The target test passed all 39 injected failures plus the first success
+The target test passed all 107 injected failures plus the first success
 boundary of each path:
 
 ```text
 New kernel warning/error lines:
   none
-PASS: 39 injected allocation failures unwound; success boundaries passed;
+PASS: 107 injected allocation failures unwound; success boundaries passed;
       topology unchanged
 ```
+
+API 0.12 extends this series through the implicit compatibility-domain
+allocation and every explicit-domain fixture record: two domains, two
+assignments, two slaves, four Sync Managers, eight PDOs, and 48 entries. The
+first run exposed the new implicit-domain allocation at the former success
+boundary; after correcting that boundary, all 107 injected failures and all
+three success boundaries passed with no new kernel warning/error.
 
 Every failed operation closed its control file, master 0 returned
 idle/inactive, module unload succeeded, and the final topology matched the
@@ -622,8 +630,10 @@ constructs and resets:
 - 256 slaves;
 - 1024 Sync Managers;
 - 4096 PDOs;
-- 16384 PDO entries; and
-- 256 distributed-clock records.
+- 16384 PDO entries;
+- 256 distributed-clock records;
+- 256 domain declarations; and
+- 256 slave-to-domain assignments.
 
 For each collection, the tool also submits one extra valid record and requires
 `E2BIG`. It does not validate, apply, or activate the synthetic hierarchy.
@@ -638,7 +648,8 @@ PASS: 10 maximum pending configuration iteration(s);
       master idle; topology unchanged
 ```
 
-This exercised more than 220,000 pending record allocations plus synchronous
+The API 0.12 ten-iteration rerun exercised 227,840 pending record allocations
+plus synchronous
 list teardown. It is limit and lifetime evidence, not evidence that the
 synthetic hierarchy represents valid EtherCAT hardware.
 

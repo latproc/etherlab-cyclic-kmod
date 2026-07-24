@@ -170,6 +170,11 @@ int main(int argc, char **argv)
 		.api_major = CW_EC_API_VERSION_MAJOR,
 		.config_id = 1,
 	};
+	struct cw_ec_domain_status domain_status = {
+		.struct_size = sizeof(domain_status),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.domain_config_id = UINT32_MAX,
+	};
 	uint8_t snapshot_byte;
 	struct cw_ec_input_snapshot snapshot = {
 		.struct_size = sizeof(snapshot),
@@ -401,6 +406,21 @@ int main(int argc, char **argv)
 				 ENOENT);
 	config_dc.slave_config_id = config_slave.config_id;
 
+	config_domain.flags = 1;
+	errno = 0;
+	failures += expect_errno("domain with unsupported flags",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
+				       &config_domain),
+				 EINVAL);
+	config_domain.flags = 0;
+	domain_assignment.flags = 1;
+	errno = 0;
+	failures += expect_errno("domain assignment with unsupported flags",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+				       &domain_assignment),
+				 EINVAL);
+	domain_assignment.flags = 0;
+
 	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
 	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
 	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0) {
@@ -434,6 +454,29 @@ int main(int argc, char **argv)
 				       &config_validate),
 				 ENOENT);
 	domain_assignment.domain_config_id = config_domain.config_id;
+
+	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+		  &domain_assignment) < 0) {
+		fprintf(stderr, "FAIL: start duplicate assignment config: %s\n",
+			strerror(errno));
+		failures++;
+	}
+	domain_assignment.config_id++;
+	if (ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+		  &domain_assignment) < 0) {
+		fprintf(stderr, "FAIL: add duplicate slave assignment: %s\n",
+			strerror(errno));
+		failures++;
+	}
+	errno = 0;
+	failures += expect_errno("duplicate slave domain assignment",
+				 ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE,
+				       &config_validate),
+				 EEXIST);
+	domain_assignment.config_id--;
 
 	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
 	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0) {
@@ -589,6 +632,31 @@ int main(int argc, char **argv)
 				       CW_EC_IOC_GET_CONFIG_SLAVE_STATUS,
 				       &slave_status),
 				 ENOENT);
+	domain_status.config_generation = io_status.config_generation + 1;
+	errno = 0;
+	failures += expect_errno("stale domain status generation",
+				 ioctl(fd, CW_EC_IOC_GET_DOMAIN_STATUS,
+				       &domain_status),
+				 ESTALE);
+	domain_status.config_generation = io_status.config_generation;
+	domain_status.domain_config_id = 99;
+	errno = 0;
+	failures += expect_errno("unknown domain status ID",
+				 ioctl(fd, CW_EC_IOC_GET_DOMAIN_STATUS,
+				       &domain_status),
+				 ENOENT);
+	domain_status.domain_config_id = UINT32_MAX;
+	if (ioctl(fd, CW_EC_IOC_GET_DOMAIN_STATUS, &domain_status) < 0) {
+		fprintf(stderr, "FAIL: implicit domain inactive status: %s\n",
+			strerror(errno));
+		failures++;
+	} else if (domain_status.active || domain_status.data_valid ||
+		   domain_status.domain_size != 3) {
+		fprintf(stderr, "FAIL: implicit domain inactive status invalid\n");
+		failures++;
+	} else {
+		printf("PASS: implicit domain inactive status is clean\n");
+	}
 	slave_status.config_id = 1;
 	if (ioctl(fd, CW_EC_IOC_GET_CONFIG_SLAVE_STATUS,
 		  &slave_status) < 0) {
