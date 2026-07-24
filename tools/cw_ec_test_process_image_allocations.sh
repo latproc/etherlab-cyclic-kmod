@@ -87,6 +87,26 @@ while [ "$fail" -le 23 ]; do
 	fail=$((fail + 1))
 done
 
+# Task construction happens after EtherLab activation. Its failure must
+# deactivate the master, free all six process-image buffers, and invalidate
+# every EtherLab-owned configuration/domain pointer before close.
+insmod "$module_path" test_fail_cycle_thread=1
+wait_for_device
+set +e
+"$project_dir/tools/cw_ec_config" cycle "$config" "$period" 1 "$device" \
+	>"$tmp_dir/thread-failure.txt" 2>&1
+status=$?
+set -e
+if [ "$status" -eq 0 ] ||
+    ! grep -q 'activation failed: Cannot allocate memory' \
+	    "$tmp_dir/thread-failure.txt"; then
+	echo "error: cyclic task construction did not fail as expected" >&2
+	sed 's/^/  /' "$tmp_dir/thread-failure.txt" >&2
+	exit 1
+fi
+verify_idle
+rmmod "$module_name"
+
 # Allocation 24 is beyond every module-owned allocation reached by this
 # fixture. It must complete a normal zero-output cycle, reach a healthy bus,
 # and teardown.
@@ -118,4 +138,4 @@ if [ -s "$tmp_dir/dmesg-new.txt" ]; then
 else
 	echo "  none"
 fi
-echo "PASS: all six process-image allocation failures unwound; success boundary passed; topology unchanged"
+echo "PASS: all six process-image and cyclic-task construction failures unwound; success boundary passed; topology unchanged"

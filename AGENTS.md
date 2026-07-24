@@ -256,7 +256,7 @@ testing, safety, and build documents.
   `docs/architecture-review-2026-07-24.md`. Safety/documentation gates remain
   open. Major gaps include per-slave offline-transition evidence, debug-kernel
   validation, and manual EtherLab build compatibility.
-- Next step: cover cyclic-thread construction failure, then reassess remaining
-  standalone safety-gate gaps.
+- Next step: reassess the remaining standalone safety-gate gaps and select the
+  next independently testable blocker.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

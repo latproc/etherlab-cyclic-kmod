@@ -98,3 +98,7 @@ commands, outputs, and design details.
   activation and unwound cleanly; the next allocation boundary reached
   OP/complete WC in an eight-second zero-output cycle with no new kernel
   warning/error.
+- Added deterministic cyclic-task construction failure after master
+  activation. Its deeper unwind deactivated the master, freed copied images,
+  invalidated EtherLab-owned pointers, and restored idle state without a new
+  kernel warning/error.

@@ -114,10 +114,11 @@ commands that were actually run from procedures that remain untested.
 1. Capture API 0.10 per-slave invalid/recovery transitions.
 2. Expand current API 0.10 lifecycle/controller-death stress under
    instrumentation.
-3. **Construction failure coverage is nearly complete.** Pending
-   configuration and all six copied process-image allocation failures pass,
-   as do ten full-limit create/reset iterations. Add deterministic cyclic-task
-   creation failure and audit non-allocation constructors.
+3. **Module-controlled construction failure coverage passes.** Pending
+   configuration, all six copied process-image allocations, and post-activation
+   cyclic-task construction unwind cleanly. Ten full-limit create/reset
+   iterations also pass. External EtherLab/internal kernel allocations still
+   require a fault-injection-capable debug kernel.
 4. Run available kmemleak/KFENCE/lockdep procedures, recording unsupported
    facilities explicitly.
 5. Finish end-to-end standalone documentation and repeat the gate review.

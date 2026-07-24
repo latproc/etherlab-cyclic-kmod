@@ -170,9 +170,14 @@ static atomic_t cw_ec_control_open = ATOMIC_INIT(0);
 static atomic64_t cw_ec_next_config_generation = ATOMIC64_INIT(0);
 static atomic_t cw_ec_test_allocation_count = ATOMIC_INIT(0);
 static int cw_ec_test_fail_allocation;
+static bool cw_ec_test_fail_cycle_thread;
 module_param_named(test_fail_allocation, cw_ec_test_fail_allocation, int, 0444);
 MODULE_PARM_DESC(test_fail_allocation,
 		 "fail the Nth module-owned allocation (test only; 0 disables)");
+module_param_named(test_fail_cycle_thread, cw_ec_test_fail_cycle_thread,
+		   bool, 0444);
+MODULE_PARM_DESC(test_fail_cycle_thread,
+		 "fail cyclic task construction after activation (test only)");
 
 static int cw_ec_check_header(u16 struct_size, u16 api_major,
 			      size_t expected_size);
@@ -1466,8 +1471,11 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	ctx->output_active = 0;
 	ctx->output_reader = -1;
 	atomic64_set(&ctx->output_sequence, 0);
-	ctx->cycle_thread = kthread_run(cw_ec_cycle_thread, ctx,
-					"cw_ec_cycle");
+	if (cw_ec_test_fail_cycle_thread)
+		ctx->cycle_thread = ERR_PTR(-ENOMEM);
+	else
+		ctx->cycle_thread = kthread_run(cw_ec_cycle_thread, ctx,
+						"cw_ec_cycle");
 	if (IS_ERR(ctx->cycle_thread)) {
 		ret = PTR_ERR(ctx->cycle_thread);
 		ctx->cycle_thread = NULL;

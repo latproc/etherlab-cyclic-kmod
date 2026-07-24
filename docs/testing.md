@@ -475,8 +475,11 @@ The six copied process-image allocations were then tested separately using the
 motion-inhibited ED3L position-29 fixture. Allocations 18 through 23 (two input
 images, two output images, the output ownership mask, and the update mask)
 each returned `ENOMEM` before master activation and unwound to an idle master.
-Allocation 24, immediately beyond those paths, completed an eight-second
-zero-output cycle:
+The separate cyclic-task construction hook then returned `ENOMEM` after
+EtherLab activation; that path deactivated the master, freed all copied
+buffers, invalidated EtherLab-owned configuration/domain pointers, and closed
+cleanly. Allocation 24, immediately beyond the owned allocation paths,
+completed an eight-second zero-output cycle:
 
 ```text
 cycles=7997 errors=0 overruns=1 maximum_lateness=2747281 ns
@@ -485,7 +488,7 @@ healthy=1 armed=0 faults=0x00000000
 configured=1 online=1 operational=1
 New kernel warning/error lines:
   none
-PASS: all six process-image allocation failures unwound;
+PASS: all six process-image and cyclic-task construction failures unwound;
       success boundary passed; topology unchanged
 ```
 
