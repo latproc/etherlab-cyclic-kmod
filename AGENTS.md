@@ -16,7 +16,7 @@ decisions, risks, commands, or next steps change.
 
 - Current phase: standalone Phase 3 hardening after the first architecture
   review. IOD integration remains blocked.
-- Current UAPI is 0.11. It covers discovery, ordered setup SDOs, declarative
+- Current UAPI is 0.12. It covers discovery, ordered setup SDOs, declarative
   PDO/DC configuration, domain registration, cyclic pumping, copied input and
   masked output images, explicit arm/disarm, health, timing/DC statistics, and
   per-configured-slave validity.
@@ -53,7 +53,7 @@ decisions, risks, commands, or next steps change.
   `docs/testing.md`. Do not duplicate them here.
 - `docs/operator-guide.md` is the end-to-end build, test, zero-output
   operation, teardown, and cleanup sequence.
-- The API 0.11 documentation acceptance gate passes. The kernel-safety gate
+- The API 0.12 documentation acceptance gate has not yet been re-audited. The kernel-safety gate
   remains open, so IOD integration is still blocked.
 - Do not modify Clockwork/IOD behavior in this repository.
 
@@ -248,7 +248,7 @@ Keep this section concise. Historical milestones and validation evidence are in
 `docs/project-history.md`; focused details belong in the relevant design,
 testing, safety, and build documents.
 
-- Current API: 0.11.
+- Current API: 0.12.
 - Deactivation synchronously gates outputs and joins the cyclic thread, then
   waits for configured slaves to leave SAFEOP/OP before invalidating
   EtherLab-owned pointers. The public EtherLab lifecycle can still expose an
@@ -298,9 +298,19 @@ testing, safety, and build documents.
 - Recommended machine grouping is always-powered Beckhoff I/O separately from
   switchable drives, splitting drives further only for independently required
   validity or fault containment.
-- Next step: implement explicit domain records, assignment, per-domain WC
-  status, and multi-domain cyclic processing as an independently testable UAPI
-  increment. Retain conservative global output controls until per-domain
-  output gating is implemented and proven.
+- API 0.12 implements explicit domain records, one assignment per configured
+  slave, ordered global image segments, per-domain WC/status, and per-slave
+  validity from the assigned domain. No-domain configurations retain one
+  implicit compatibility domain.
+- Explicit EL5152/ED3L domains completed 5,702 disarmed cycles with both
+  devices powered and OP: segment sizes were 32 and 28 bytes, each WC was
+  complete, and global offsets were stable. The unchanged implicit-domain
+  ED3L fixture completed 2,000 disarmed cycles, proving legacy configuration
+  compatibility. The servo-off independence case still needs capture.
+- API 0.12 output publication/gating and latched re-arm state remain global.
+  Do not claim independent domain output control.
+- Next step: extend hostile ABI coverage and allocation unwind for domain
+  records, then capture the powered-off ED3L case showing EL5152 valid and the
+  ED3L domain invalid.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

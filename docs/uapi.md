@@ -225,10 +225,11 @@ user-supplied `entry_id` to its domain byte offset, bit position, and bit
 length. Unknown IDs return `ENOENT`. Domain creation does not activate the
 master, obtain the process-data pointer, or send traffic.
 
-## Confirmed multi-domain direction
+## API 0.12 multi-domain configuration
 
-The API following 0.11 will add explicit user-defined domain records and
-explicit slave-to-domain assignment. Domain IDs are stable, nonzero
+API 0.12 adds `CW_EC_IOC_CONFIG_ADD_DOMAIN`,
+`CW_EC_IOC_CONFIG_ASSIGN_DOMAIN`, and `CW_EC_IOC_GET_DOMAIN_STATUS`.
+Domain IDs are stable, nonzero
 configuration IDs. In explicit mode every configured slave must resolve to
 exactly one declared domain; duplicate IDs, duplicate assignments, missing
 assignments, and references to unknown domains or slaves are errors.
@@ -244,11 +245,16 @@ implicit domain containing all configured slaves. Mixing implicit and explicit
 assignment is invalid. This preserves existing API 0.11 configuration files
 and tools without making inferred grouping part of the new policy.
 
-Each domain will expose its own WC, health, current/latched fault state, output
-arm state, re-arm requirement, process-image segment, and sequence context.
-Per-slave `data_valid` will depend on the WC of the slave's assigned domain.
-Aggregate status remains conservative for callers using the legacy global
-status API.
+Each domain status exposes its global segment base and size, WC and WC state,
+current health faults, validity, cycle/input sequence, and the current global
+output arm/re-arm state. Per-slave `data_valid` depends on the WC of the
+slave's assigned domain. Aggregate status remains conservative for callers
+using the legacy global status API.
+
+API 0.12 deliberately retains global output publication, arm, disarm, latched
+fault, and re-arm epochs. The domain status does not claim an independent
+output gate: its output fields reflect that global gate. Per-domain output
+gating and fresh-publication epochs require a later explicit ABI increment.
 
 ## Initial cyclic lifecycle
 
@@ -276,8 +282,9 @@ re-arm epoch. A successful arm ends that epoch; the next healthy-to-unhealthy
 transition replaces the old mask. `fault_count` separately counts those
 healthy-to-unhealthy transitions.
 
-The bus becomes healthy only when the link is up, every configured slave is
-online and operational, and domain working counter is complete. After health
+The aggregate bus becomes healthy only when the link is up, every configured
+slave is online and operational, and every domain working counter is complete.
+After health
 has first been reached, a transition to unhealthy latches `rearm_required`.
 API 0.7 adds `CW_EC_IOC_GET_INPUT_SNAPSHOT`. The name describes the
 user-space direction: it is a read-only snapshot of the complete EtherLab
@@ -344,17 +351,18 @@ slave-state call result, cycle count, input sequence, and `data_valid`.
 Validity is deliberately conservative: the transport must be active, the
 slave-state call must succeed, that configured slave must be online and
 operational, at least one input snapshot must have been published, and the
-whole domain working counter must be complete. EtherLab does not expose
+assigned domain working counter must be complete. EtherLab does not expose
 per-entry working-counter validity through this configuration-state API, so
-API 0.10 does not claim that an unaffected slave's bytes are fresh while the
-shared domain is incomplete.
+API 0.10 did not claim that an unaffected slave's bytes were fresh while the
+shared domain was incomplete. API 0.12 resolves that limitation when user
+space assigns independent availability domains.
 
-Activation requires an applied configuration and registered domain. The caller
+Activation requires an applied configuration and registered domain set. The caller
 supplies a cycle period from 100 microseconds through one second; flags must be
 zero. The kernel activates EtherLab, obtains the internal domain memory,
-zeroes the complete image before the first application send, and starts one
-kernel thread. The thread calls receive, domain process, domain queue, and send
-in that order.
+zeroes every domain image before the first application send, and starts one
+kernel thread. The thread receives once, processes every domain, assembles the
+global copied snapshot, queues every domain, and sends once.
 
 Status returns active state, configured period, domain size, working counter
 and interpretation, completed cycles, cycle API errors, full-period overruns,

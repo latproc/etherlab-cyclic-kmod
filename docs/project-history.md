@@ -154,3 +154,15 @@ commands, outputs, and design details.
   domain's WC. The recommended machine policy is always-powered Beckhoff I/O
   separate from switchable drives, with further splits only where independent
   validity or fault containment is required.
+- API 0.12 implemented explicit domain declarations and slave assignments,
+  ordered domain segments in one copied image, multi-domain process/queue
+  cycling, per-domain WC/status, and per-slave validity from its assigned
+  domain. Configurations without domain records retain the legacy implicit
+  single domain.
+- A live explicit EL5152/ED3L run with all 34 slaves powered completed 5,702
+  disarmed cycles with zero errors/overruns. Domain 1 occupied bytes 0-31 and
+  domain 2 bytes 32-59; each reported WC 3/complete and valid data. The
+  unchanged implicit ED3L fixture then completed 2,000 disarmed cycles with
+  complete WC, proving compatibility. No nonzero output was armed. This did
+  not prove the intended servo-off split because the observed topology
+  contained all five drives.

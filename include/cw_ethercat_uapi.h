@@ -11,7 +11,7 @@
 #endif
 
 #define CW_EC_API_VERSION_MAJOR 0U
-#define CW_EC_API_VERSION_MINOR 11U
+#define CW_EC_API_VERSION_MINOR 12U
 
 #define CW_EC_CYCLE_PERIOD_MIN_NS 100000U
 #define CW_EC_CYCLE_PERIOD_MAX_NS 1000000000U
@@ -25,6 +25,7 @@
 #define CW_EC_CONFIG_PDO_MAX 4096U
 #define CW_EC_CONFIG_ENTRY_MAX 16384U
 #define CW_EC_CONFIG_DC_MAX CW_EC_CONFIG_SLAVE_MAX
+#define CW_EC_CONFIG_DOMAIN_MAX CW_EC_CONFIG_SLAVE_MAX
 #define CW_EC_PROCESS_IMAGE_MAX (64U * 1024U)
 
 enum cw_ec_sdo_type {
@@ -56,6 +57,8 @@ enum cw_ec_config_object_kind {
 	CW_EC_CONFIG_OBJECT_ENTRY = 4,
 	CW_EC_CONFIG_OBJECT_DC = 5,
 	CW_EC_CONFIG_OBJECT_DC_POLICY = 6,
+	CW_EC_CONFIG_OBJECT_DOMAIN = 7,
+	CW_EC_CONFIG_OBJECT_DOMAIN_ASSIGNMENT = 8,
 };
 
 enum cw_ec_dc_reference_mode {
@@ -231,6 +234,23 @@ struct cw_ec_config_dc_policy {
 	__u32 flags;
 };
 
+struct cw_ec_config_domain {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 config_id;
+	__u32 flags;
+	__u32 reserved;
+};
+
+struct cw_ec_config_domain_assignment {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 config_id;
+	__u32 slave_config_id;
+	__u32 domain_config_id;
+	__u32 flags;
+};
+
 struct cw_ec_config_validate {
 	__u16 struct_size;
 	__u16 api_major;
@@ -400,6 +420,25 @@ struct cw_ec_config_slave_status {
 	__u64 input_sequence;
 };
 
+struct cw_ec_domain_status {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 domain_config_id;
+	__u64 config_generation;
+	__u32 base_offset;
+	__u32 domain_size;
+	__u32 working_counter;
+	__u32 current_faults;
+	__u8 active;
+	__u8 working_counter_state;
+	__u8 data_valid;
+	__u8 outputs_armed;
+	__u8 rearm_required;
+	__u8 reserved0[3];
+	__u64 cycle_count;
+	__u64 input_sequence;
+};
+
 #define CW_EC_IOC_MAGIC 0xec
 
 #define CW_EC_IOC_GET_API_VERSION \
@@ -440,6 +479,10 @@ struct cw_ec_config_slave_status {
 	_IOW(CW_EC_IOC_MAGIC, 0x29, struct cw_ec_config_dc)
 #define CW_EC_IOC_CONFIG_SET_DC_POLICY \
 	_IOW(CW_EC_IOC_MAGIC, 0x2a, struct cw_ec_config_dc_policy)
+#define CW_EC_IOC_CONFIG_ADD_DOMAIN \
+	_IOW(CW_EC_IOC_MAGIC, 0x2b, struct cw_ec_config_domain)
+#define CW_EC_IOC_CONFIG_ASSIGN_DOMAIN \
+	_IOW(CW_EC_IOC_MAGIC, 0x2c, struct cw_ec_config_domain_assignment)
 #define CW_EC_IOC_CYCLE_ACTIVATE \
 	_IOWR(CW_EC_IOC_MAGIC, 0x30, struct cw_ec_cycle_activate)
 #define CW_EC_IOC_CYCLE_GET_STATUS \
@@ -460,5 +503,7 @@ struct cw_ec_config_slave_status {
 	_IOW(CW_EC_IOC_MAGIC, 0x44, struct cw_ec_output_disarm)
 #define CW_EC_IOC_GET_CONFIG_SLAVE_STATUS \
 	_IOWR(CW_EC_IOC_MAGIC, 0x45, struct cw_ec_config_slave_status)
+#define CW_EC_IOC_GET_DOMAIN_STATUS \
+	_IOWR(CW_EC_IOC_MAGIC, 0x46, struct cw_ec_domain_status)
 
 #endif /* CW_ETHERCAT_UAPI_H */

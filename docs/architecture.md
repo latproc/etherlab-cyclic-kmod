@@ -104,9 +104,9 @@ control session.
 
 ## Process image, domains, and DC
 
-API 0.11 has one EtherLab domain and therefore one global WC/validity boundary.
-That compatibility behavior remains available for existing configurations.
-The next UAPI increment adds explicit user-defined domains; the kernel must
+API 0.12 supports explicit user-defined domains. The API 0.11 single-domain
+behavior remains available for existing configurations containing no domain
+records. The kernel must
 never infer grouping from vendor, product, topology, or device type.
 
 A domain is an availability and data-validity boundary, not automatically a
@@ -133,11 +133,11 @@ processing; evaluate per-domain health and output gates; apply outputs;
 application-time/slave synchronization; queue every domain; and send once.
 Application policy and object interpretation never enter the kernel.
 
-Output safety state is ultimately per domain: health, current and latched
-faults, arm state, re-arm requirement, and fresh-publication epoch. The first
-multi-domain increment may retain the existing conservative all-domain output
-control ioctls while the domain-specific control ABI is added, but it must not
-claim independent output availability until those controls exist.
+API 0.12 independently reports domain WC, validity, current faults, and image
+segments. Output publication, masking, arm/disarm, latched faults, and fresh
+publication epochs remain conservatively global. Domain status mirrors that
+global output gate and does not claim independent output availability.
+Per-domain output safety state requires a later explicit ABI increment.
 
 Detailed concurrency and recovery rules are in
 `process-image-exchange.md`; DC behavior is in `distributed-clocks.md`.

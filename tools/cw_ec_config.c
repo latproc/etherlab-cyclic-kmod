@@ -26,6 +26,8 @@ enum record_kind {
 	RECORD_ENTRY,
 	RECORD_DC,
 	RECORD_DC_POLICY,
+	RECORD_DOMAIN,
+	RECORD_DOMAIN_ASSIGNMENT,
 };
 
 struct record {
@@ -37,6 +39,8 @@ struct record {
 		struct cw_ec_config_entry entry;
 		struct cw_ec_config_dc dc;
 		struct cw_ec_config_dc_policy dc_policy;
+		struct cw_ec_config_domain domain;
+		struct cw_ec_config_domain_assignment domain_assignment;
 	};
 };
 
@@ -46,6 +50,8 @@ struct counts {
 	uint32_t pdos;
 	uint32_t entries;
 	uint32_t dcs;
+	uint32_t domains;
+	uint32_t domain_assignments;
 };
 
 static void usage(const char *program)
@@ -180,6 +186,34 @@ static int parse_record(char *line, struct record *record)
 		if (parse_u64(tokens[6], UINT32_MAX, &value))
 			return -1;
 		record->slave.revision_number = value;
+		return 1;
+	}
+
+	if (!strcmp(tokens[0], "domain") && count == 2) {
+		record->kind = RECORD_DOMAIN;
+		record->domain.struct_size = sizeof(record->domain);
+		record->domain.api_major = CW_EC_API_VERSION_MAJOR;
+		if (parse_u64(tokens[1], UINT32_MAX, &value))
+			return -1;
+		record->domain.config_id = value;
+		return 1;
+	}
+
+	if (!strcmp(tokens[0], "domain_slave") && count == 4) {
+		record->kind = RECORD_DOMAIN_ASSIGNMENT;
+		record->domain_assignment.struct_size =
+			sizeof(record->domain_assignment);
+		record->domain_assignment.api_major =
+			CW_EC_API_VERSION_MAJOR;
+		if (parse_u64(tokens[1], UINT32_MAX, &value))
+			return -1;
+		record->domain_assignment.config_id = value;
+		if (parse_u64(tokens[2], UINT32_MAX, &value))
+			return -1;
+		record->domain_assignment.slave_config_id = value;
+		if (parse_u64(tokens[3], UINT32_MAX, &value))
+			return -1;
+		record->domain_assignment.domain_config_id = value;
 		return 1;
 	}
 
@@ -344,6 +378,12 @@ static int scan_config(const char *path, struct counts *counts)
 			break;
 		case RECORD_DC_POLICY:
 			break;
+		case RECORD_DOMAIN:
+			counts->domains++;
+			break;
+		case RECORD_DOMAIN_ASSIGNMENT:
+			counts->domain_assignments++;
+			break;
 		default:
 			break;
 		}
@@ -360,7 +400,9 @@ static int scan_config(const char *path, struct counts *counts)
 	    counts->syncs > CW_EC_CONFIG_SYNC_MAX ||
 	    counts->pdos > CW_EC_CONFIG_PDO_MAX ||
 	    counts->entries > CW_EC_CONFIG_ENTRY_MAX ||
-	    counts->dcs > CW_EC_CONFIG_DC_MAX) {
+	    counts->dcs > CW_EC_CONFIG_DC_MAX ||
+	    counts->domains > CW_EC_CONFIG_DOMAIN_MAX ||
+	    counts->domain_assignments > CW_EC_CONFIG_SLAVE_MAX) {
 		fprintf(stderr, "cw_ec_config: invalid or excessive object counts\n");
 		return -1;
 	}
@@ -383,6 +425,12 @@ static int submit_record(int fd, const struct record *record)
 	case RECORD_DC_POLICY:
 		return ioctl(fd, CW_EC_IOC_CONFIG_SET_DC_POLICY,
 			     &record->dc_policy);
+	case RECORD_DOMAIN:
+		return ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
+			     &record->domain);
+	case RECORD_DOMAIN_ASSIGNMENT:
+		return ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+			     &record->domain_assignment);
 	default:
 		return 0;
 	}
@@ -550,6 +598,52 @@ static int print_slave_statuses(int fd, const char *path,
 		goto out;
 	}
 	ret = 0;
+out:
+	free(line);
+	fclose(stream);
+	return ret;
+}
+
+static int print_domain_statuses(int fd, const char *path,
+				 uint64_t generation)
+{
+	FILE *stream;
+	char *line = NULL;
+	size_t capacity = 0;
+	int ret = -1;
+
+	stream = fopen(path, "r");
+	if (!stream)
+		return -1;
+	while (getline(&line, &capacity, stream) >= 0) {
+		struct cw_ec_domain_status status = {
+			.struct_size = sizeof(status),
+			.api_major = CW_EC_API_VERSION_MAJOR,
+			.config_generation = generation,
+		};
+		struct record record;
+
+		if (parse_record(line, &record) < 0)
+			goto out;
+		if (record.kind != RECORD_DOMAIN)
+			continue;
+		status.domain_config_id = record.domain.config_id;
+		if (ioctl(fd, CW_EC_IOC_GET_DOMAIN_STATUS, &status) < 0) {
+			fprintf(stderr,
+				"cw_ec_config: domain status %" PRIu32
+				" failed: %s\n",
+				status.domain_config_id, strerror(errno));
+			goto out;
+		}
+		printf("domain status: id=%" PRIu32 " base=%" PRIu32
+		       " size=%" PRIu32 " wc=%" PRIu32
+		       " wc_state=%u valid=%u faults=0x%08" PRIx32 "\n",
+		       status.domain_config_id, status.base_offset,
+		       status.domain_size, status.working_counter,
+		       status.working_counter_state, status.data_valid,
+		       status.current_faults);
+	}
+	ret = ferror(stream) ? -1 : 0;
 out:
 	free(line);
 	fclose(stream);
@@ -817,6 +911,10 @@ static int cycle(const char *path, uint32_t period_ns,
 					    fd, path,
 					    io_status.config_generation))
 					goto out;
+				if (print_domain_statuses(
+					    fd, path,
+					    io_status.config_generation))
+					goto out;
 				fflush(stdout);
 				previous = io_status;
 				have_previous = true;
@@ -888,6 +986,8 @@ static int cycle(const char *path, uint32_t period_ns,
 	       io_status.configured_slaves_online,
 	       io_status.configured_slaves_operational);
 	if (print_slave_statuses(fd, path, io_status.config_generation))
+		goto out;
+	if (print_domain_statuses(fd, path, io_status.config_generation))
 		goto out;
 	if (held_armed) {
 		disarm.config_generation = output.config_generation;

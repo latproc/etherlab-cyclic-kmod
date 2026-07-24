@@ -670,3 +670,39 @@ still held master 0 in active Operation phase with 29 slaves and link up.
 
 This closes the Phase 2 contention check: registering the transport module does
 not disturb the direct backend, and attempted control ownership fails cleanly.
+
+## API 0.12 explicit-domain smoke test
+
+With 34 slaves present and motion inhibited, the mixed EL5152 position-3 /
+ED3L position-29 fixture explicitly assigned each slave to a separate domain.
+A five-second disarmed run reported:
+
+```text
+domain 1: base=0  size=32 wc=3 complete valid=1
+domain 2: base=32 size=28 wc=3 complete valid=1
+cycles=5702 errors=0 overruns=0 maximum_lateness=54376 ns
+aggregate wc=6 complete
+```
+
+Returned entry offsets for the ED3L began at byte 32, proving that the public
+offset namespace is the ordered concatenation of the two EtherLab domains.
+The final 60-byte snapshot contained live data in both segments. No output was
+armed and the output shadow publication occurred only after measurement.
+
+The unchanged `ed3l_velocity_pos29.conf`, which contains no domain records,
+then exercised the implicit compatibility domain for two seconds:
+
+```text
+cycles=2000 errors=0 overruns=0 maximum_lateness=77841 ns
+wc=3 complete; slave online=1 operational=1 valid=1
+```
+
+The non-activating hostile ABI suite also rejected an explicit domain without
+an assignment and an assignment referencing an unknown domain. It retained
+the existing legacy-domain offset and padding checks.
+
+The actual topology was 34 slaves, not the intended servo-off 29-slave state,
+so independent validity across an absent drive is still outstanding. The
+known EtherLab asynchronous deactivation limitation produced Sync Manager
+watchdog messages for ED3L position 29 and EL5152 position 3; master 0
+nevertheless returned idle and inactive after both runs.

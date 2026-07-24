@@ -44,11 +44,15 @@ struct cw_ec_file {
 	struct list_head config_pdos;
 	struct list_head config_entries;
 	struct list_head config_dcs;
+	struct list_head config_domains;
+	struct list_head config_domain_assignments;
 	u32 config_slave_count;
 	u32 config_sync_count;
 	u32 config_pdo_count;
 	u32 config_entry_count;
 	u32 config_dc_count;
+	u32 config_domain_count;
+	u32 config_domain_assignment_count;
 	u64 config_generation;
 	struct cw_ec_config_dc_policy dc_policy;
 	bool dc_policy_set;
@@ -136,10 +140,13 @@ struct cw_ec_config_node {
 	u32 config_id;
 };
 
+struct cw_ec_domain_node;
+
 struct cw_ec_slave_node {
 	struct cw_ec_config_node common;
 	struct cw_ec_config_slave cfg;
 	ec_slave_config_t *ec_config;
+	struct cw_ec_domain_node *domain;
 	atomic_t state_result;
 	atomic_t state_online;
 	atomic_t state_operational;
@@ -167,6 +174,22 @@ struct cw_ec_entry_node {
 struct cw_ec_dc_node {
 	struct cw_ec_config_node common;
 	struct cw_ec_config_dc cfg;
+};
+
+struct cw_ec_domain_node {
+	struct cw_ec_config_node common;
+	struct cw_ec_config_domain cfg;
+	ec_domain_t *ec_domain;
+	u8 *data;
+	u32 base_offset;
+	u32 size;
+	atomic_t working_counter;
+	atomic_t working_counter_state;
+};
+
+struct cw_ec_domain_assignment_node {
+	struct cw_ec_config_node common;
+	struct cw_ec_config_domain_assignment cfg;
 };
 
 static atomic_t cw_ec_control_open = ATOMIC_INIT(0);
@@ -219,11 +242,20 @@ static void *cw_ec_kvzalloc(size_t size)
 
 static void cw_ec_invalidate_applied_config(struct cw_ec_file *ctx)
 {
+	struct cw_ec_domain_node *domain;
 	struct cw_ec_entry_node *entry;
 	struct cw_ec_slave_node *slave;
 
-	list_for_each_entry(slave, &ctx->config_slaves, common.node)
+	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
 		slave->ec_config = NULL;
+		slave->domain = NULL;
+	}
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		domain->ec_domain = NULL;
+		domain->data = NULL;
+		domain->base_offset = 0;
+		domain->size = 0;
+	}
 	list_for_each_entry(entry, &ctx->config_entries, common.node) {
 		entry->domain_offset = 0;
 		entry->bit_position = 0;
@@ -292,6 +324,8 @@ static void cw_ec_config_clear(struct cw_ec_file *ctx)
 
 	CW_EC_CLEAR_CONFIG_LIST(config_entries);
 	CW_EC_CLEAR_CONFIG_LIST(config_dcs);
+	CW_EC_CLEAR_CONFIG_LIST(config_domain_assignments);
+	CW_EC_CLEAR_CONFIG_LIST(config_domains);
 	CW_EC_CLEAR_CONFIG_LIST(config_pdos);
 	CW_EC_CLEAR_CONFIG_LIST(config_syncs);
 	CW_EC_CLEAR_CONFIG_LIST(config_slaves);
@@ -302,6 +336,8 @@ static void cw_ec_config_clear(struct cw_ec_file *ctx)
 	ctx->config_pdo_count = 0;
 	ctx->config_entry_count = 0;
 	ctx->config_dc_count = 0;
+	ctx->config_domain_count = 0;
+	ctx->config_domain_assignment_count = 0;
 	ctx->config_generation = 0;
 	memset(&ctx->dc_policy, 0, sizeof(ctx->dc_policy));
 	ctx->dc_policy_set = false;
@@ -508,6 +544,7 @@ static void cw_ec_update_io_health(struct cw_ec_file *ctx,
 
 static void cw_ec_publish_input_snapshot(struct cw_ec_file *ctx)
 {
+	struct cw_ec_domain_node *domain;
 	unsigned long irq_flags;
 	u8 target;
 
@@ -519,7 +556,9 @@ static void cw_ec_publish_input_snapshot(struct cw_ec_file *ctx)
 	}
 	spin_unlock_irqrestore(&ctx->input_lock, irq_flags);
 
-	memcpy(ctx->input_buffers[target], ctx->domain_data, ctx->domain_size);
+	list_for_each_entry(domain, &ctx->config_domains, common.node)
+		memcpy(ctx->input_buffers[target] + domain->base_offset,
+		       domain->data, domain->size);
 
 	spin_lock_irqsave(&ctx->input_lock, irq_flags);
 	ctx->input_active = target;
@@ -529,6 +568,7 @@ static void cw_ec_publish_input_snapshot(struct cw_ec_file *ctx)
 
 static void cw_ec_apply_outputs(struct cw_ec_file *ctx)
 {
+	struct cw_ec_domain_node *domain;
 	unsigned long irq_flags;
 	u8 *source = NULL;
 	u8 reader = 0;
@@ -542,12 +582,16 @@ static void cw_ec_apply_outputs(struct cw_ec_file *ctx)
 		source = ctx->output_buffers[reader];
 		spin_unlock_irqrestore(&ctx->output_lock, irq_flags);
 	}
-	for (i = 0; i < ctx->domain_size; i++) {
-		u8 output = source ? source[i] : 0;
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		for (i = 0; i < domain->size; i++) {
+			u32 global = domain->base_offset + i;
+			u8 output = source ? source[global] : 0;
 
-		ctx->domain_data[i] =
-			(ctx->domain_data[i] & ~ctx->output_mask[i]) |
-			(output & ctx->output_mask[i]);
+			domain->data[i] =
+				(domain->data[i] &
+				 ~ctx->output_mask[global]) |
+				(output & ctx->output_mask[global]);
+		}
 	}
 	if (source) {
 		spin_lock_irqsave(&ctx->output_lock, irq_flags);
@@ -562,7 +606,9 @@ static int cw_ec_cycle_thread(void *data)
 	u64 deadline = ktime_get_ns();
 
 	while (!kthread_should_stop()) {
-		ec_domain_state_t domain_state = {};
+		struct cw_ec_domain_node *domain;
+		ec_domain_state_t aggregate_state = {};
+		bool domains_complete = true;
 		ktime_t expires;
 		u64 now;
 		int cycle_result = 0;
@@ -591,10 +637,32 @@ static int cw_ec_cycle_thread(void *data)
 		operation_result = ecrt_master_receive(ctx->master);
 		if (operation_result && !cycle_result)
 			cycle_result = operation_result;
-		operation_result = ecrt_domain_process(ctx->domain);
-		if (operation_result && !cycle_result)
-			cycle_result = operation_result;
-		if (!operation_result)
+		list_for_each_entry(domain, &ctx->config_domains, common.node) {
+			ec_domain_state_t state = {};
+
+			operation_result =
+				ecrt_domain_process(domain->ec_domain);
+			if (operation_result && !cycle_result)
+				cycle_result = operation_result;
+			operation_result =
+				ecrt_domain_state(domain->ec_domain, &state);
+			if (operation_result && !cycle_result) {
+				cycle_result = operation_result;
+				domains_complete = false;
+			} else if (!operation_result) {
+				atomic_set(&domain->working_counter,
+					   state.working_counter);
+				atomic_set(&domain->working_counter_state,
+					   state.wc_state);
+				aggregate_state.working_counter +=
+					state.working_counter;
+				if (state.wc_state != EC_WC_COMPLETE)
+					domains_complete = false;
+			}
+		}
+		aggregate_state.wc_state = domains_complete ?
+			EC_WC_COMPLETE : EC_WC_INCOMPLETE;
+		if (!cycle_result)
 			cw_ec_publish_input_snapshot(ctx);
 		if (ctx->config_dc_count)
 			operation_result = cw_ec_dc_process_receive(ctx);
@@ -602,16 +670,11 @@ static int cw_ec_cycle_thread(void *data)
 			operation_result = 0;
 		if (operation_result && !cycle_result)
 			cycle_result = operation_result;
-		operation_result = ecrt_domain_state(ctx->domain, &domain_state);
-		if (operation_result && !cycle_result) {
-			cycle_result = operation_result;
-		} else if (!operation_result) {
-			atomic_set(&ctx->working_counter,
-				   domain_state.working_counter);
-			atomic_set(&ctx->working_counter_state,
-				   domain_state.wc_state);
-		}
-		cw_ec_update_io_health(ctx, &domain_state);
+		atomic_set(&ctx->working_counter,
+			   aggregate_state.working_counter);
+		atomic_set(&ctx->working_counter_state,
+			   aggregate_state.wc_state);
+		cw_ec_update_io_health(ctx, &aggregate_state);
 		cw_ec_apply_outputs(ctx);
 		if (ctx->config_dc_count) {
 			operation_result = cw_ec_dc_prepare_send(ctx);
@@ -622,9 +685,12 @@ static int cw_ec_cycle_thread(void *data)
 		}
 		if (operation_result && !cycle_result)
 			cycle_result = operation_result;
-		operation_result = ecrt_domain_queue(ctx->domain);
-		if (operation_result && !cycle_result)
-			cycle_result = operation_result;
+		list_for_each_entry(domain, &ctx->config_domains, common.node) {
+			operation_result =
+				ecrt_domain_queue(domain->ec_domain);
+			if (operation_result && !cycle_result)
+				cycle_result = operation_result;
+		}
 		operation_result = ecrt_master_send(ctx->master);
 		if (operation_result && !cycle_result)
 			cycle_result = operation_result;
@@ -698,6 +764,7 @@ static int cw_ec_wait_output_gate(struct cw_ec_file *ctx, u64 request)
 
 static int cw_ec_deactivate_locked(struct cw_ec_file *ctx)
 {
+	struct cw_ec_domain_node *domain;
 	u64 gate_request;
 	int gate_ret;
 	int process_ret;
@@ -721,7 +788,13 @@ static int cw_ec_deactivate_locked(struct cw_ec_file *ctx)
 	usleep_range(DIV_ROUND_UP(ctx->cycle_period_ns, 1000U),
 		     DIV_ROUND_UP(ctx->cycle_period_ns, 1000U) + 100U);
 	receive_ret = ecrt_master_receive(ctx->master);
-	process_ret = ecrt_domain_process(ctx->domain);
+	process_ret = 0;
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		int domain_ret = ecrt_domain_process(domain->ec_domain);
+
+		if (domain_ret && !process_ret)
+			process_ret = domain_ret;
+	}
 	ret = ecrt_master_deactivate(ctx->master);
 	ctx->active = false;
 	settle_ret = ret ? 0 : cw_ec_wait_configured_slaves_settled(ctx);
@@ -775,6 +848,8 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	INIT_LIST_HEAD(&ctx->config_pdos);
 	INIT_LIST_HEAD(&ctx->config_entries);
 	INIT_LIST_HEAD(&ctx->config_dcs);
+	INIT_LIST_HEAD(&ctx->config_domains);
+	INIT_LIST_HEAD(&ctx->config_domain_assignments);
 	atomic64_set(&ctx->cycle_count, 0);
 	atomic64_set(&ctx->cycle_error_count, 0);
 	atomic64_set(&ctx->cycle_overrun_count, 0);
@@ -928,6 +1003,31 @@ cw_ec_find_slave(struct cw_ec_file *ctx, u32 config_id)
 	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
 		if (slave->cfg.config_id == config_id)
 			return slave;
+	}
+	return NULL;
+}
+
+static struct cw_ec_domain_node *
+cw_ec_find_domain(struct cw_ec_file *ctx, u32 config_id)
+{
+	struct cw_ec_domain_node *domain;
+
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		if (domain->cfg.config_id == config_id)
+			return domain;
+	}
+	return NULL;
+}
+
+static struct cw_ec_domain_assignment_node *
+cw_ec_find_domain_assignment(struct cw_ec_file *ctx, u32 slave_config_id)
+{
+	struct cw_ec_domain_assignment_node *assignment;
+
+	list_for_each_entry(assignment, &ctx->config_domain_assignments,
+			    common.node) {
+		if (assignment->cfg.slave_config_id == slave_config_id)
+			return assignment;
 	}
 	return NULL;
 }
@@ -1189,12 +1289,15 @@ static unsigned int cw_ec_entry_position(struct cw_ec_file *ctx,
 static long cw_ec_domain_create(struct cw_ec_file *ctx, void __user *argp)
 {
 	struct cw_ec_domain_create result;
+	struct cw_ec_domain_assignment_node *assignment;
+	struct cw_ec_domain_node *domain;
 	struct cw_ec_entry_node *entry;
 	struct cw_ec_slave_node *slave;
 	struct cw_ec_sync_node *sync;
 	struct cw_ec_pdo_node *pdo;
 	unsigned int bit_position;
 	bool has_registered_entry = false;
+	u64 total_size = 0;
 	int offset;
 	int ret;
 
@@ -1227,10 +1330,48 @@ static long cw_ec_domain_create(struct cw_ec_file *ctx, void __user *argp)
 	}
 
 	ctx->config_poisoned = true;
-	ctx->domain = ecrt_master_create_domain(ctx->master);
-	if (!ctx->domain) {
-		ret = -ENOMEM;
-		goto out;
+	if (!ctx->config_domain_count) {
+		domain = cw_ec_kzalloc(sizeof(*domain));
+		if (!domain) {
+			ret = -ENOMEM;
+			goto out;
+		}
+		domain->cfg.struct_size = sizeof(domain->cfg);
+		domain->cfg.api_major = CW_EC_API_VERSION_MAJOR;
+		domain->cfg.config_id = U32_MAX;
+		domain->common.config_id = U32_MAX;
+		list_add_tail(&domain->common.node, &ctx->config_domains);
+		ctx->config_domain_count = 1;
+	}
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		domain->ec_domain = ecrt_master_create_domain(ctx->master);
+		if (!domain->ec_domain) {
+			ret = -ENOMEM;
+			result.failed_config_id = domain->cfg.config_id;
+			goto out;
+		}
+		if (!ctx->domain)
+			ctx->domain = domain->ec_domain;
+	}
+	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+		if (ctx->config_domain_assignment_count) {
+			assignment = cw_ec_find_domain_assignment(
+				ctx, slave->cfg.config_id);
+			domain = assignment ?
+				cw_ec_find_domain(
+					ctx,
+					assignment->cfg.domain_config_id) : NULL;
+		} else {
+			domain = list_first_entry(&ctx->config_domains,
+						 struct cw_ec_domain_node,
+						 common.node);
+		}
+		if (!domain) {
+			ret = -ENOENT;
+			result.failed_config_id = slave->cfg.config_id;
+			goto out;
+		}
+		slave->domain = domain;
 	}
 
 	list_for_each_entry(entry, &ctx->config_entries, common.node) {
@@ -1251,7 +1392,7 @@ static long cw_ec_domain_create(struct cw_ec_file *ctx, void __user *argp)
 			slave->ec_config, sync->cfg.sync_index,
 			cw_ec_pdo_position(ctx, pdo),
 			cw_ec_entry_position(ctx, entry),
-			ctx->domain, &bit_position);
+			slave->domain->ec_domain, &bit_position);
 		if (offset < 0) {
 			ret = offset;
 			result.failed_config_id = entry->cfg.config_id;
@@ -1262,6 +1403,36 @@ static long cw_ec_domain_create(struct cw_ec_file *ctx, void __user *argp)
 		entry->registered = true;
 		result.entry_count++;
 	}
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		size_t size = ecrt_domain_size(domain->ec_domain);
+
+		if (!size || size > U32_MAX || total_size + size > U32_MAX) {
+			ret = !size ? -EINVAL : -EOVERFLOW;
+			result.failed_config_id = domain->cfg.config_id;
+			goto out;
+		}
+		domain->base_offset = total_size;
+		domain->size = size;
+		total_size += size;
+	}
+	list_for_each_entry(entry, &ctx->config_entries, common.node) {
+		if (!entry->registered)
+			continue;
+		pdo = cw_ec_find_pdo(ctx, entry->cfg.pdo_config_id);
+		sync = pdo ? cw_ec_find_sync(ctx,
+					     pdo->cfg.sync_config_id) : NULL;
+		slave = sync ?
+			cw_ec_find_slave(ctx, sync->cfg.slave_config_id) : NULL;
+		if (!slave || !slave->domain ||
+		    entry->domain_offset >
+			    U32_MAX - slave->domain->base_offset) {
+			ret = -EOVERFLOW;
+			result.failed_config_id = entry->cfg.config_id;
+			goto out;
+		}
+		entry->domain_offset += slave->domain->base_offset;
+	}
+	ctx->domain_size = total_size;
 
 	ctx->domain_registered = true;
 	ctx->config_poisoned = false;
@@ -1320,6 +1491,7 @@ out:
 static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 {
 	struct cw_ec_dc_node *dc;
+	struct cw_ec_domain_node *domain;
 	struct cw_ec_entry_node *entry;
 	struct cw_ec_pdo_node *pdo;
 	struct cw_ec_slave_node *slave;
@@ -1366,7 +1538,7 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 			goto out;
 		}
 	}
-	domain_size = ecrt_domain_size(ctx->domain);
+	domain_size = ctx->domain_size;
 	if (domain_size > U32_MAX) {
 		ret = -EOVERFLOW;
 		goto out;
@@ -1398,6 +1570,8 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 		goto out;
 	}
 	list_for_each_entry(entry, &ctx->config_entries, common.node) {
+		if (!entry->registered)
+			continue;
 		pdo = cw_ec_find_pdo(ctx, entry->cfg.pdo_config_id);
 		sync = pdo ? cw_ec_find_sync(ctx,
 					     pdo->cfg.sync_config_id) : NULL;
@@ -1434,23 +1608,28 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 		goto out;
 	}
 
-	ctx->domain_size = domain_size;
-	ctx->domain_data = ecrt_domain_data(ctx->domain);
-	if (ctx->domain_size && !ctx->domain_data) {
-		ret = -EFAULT;
-		ecrt_master_deactivate(ctx->master);
-		cw_ec_free_input_buffers(ctx);
-		cw_ec_free_output_buffers(ctx);
-		cw_ec_invalidate_applied_config(ctx);
-		goto out;
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		domain->data = ecrt_domain_data(domain->ec_domain);
+		if (domain->size && !domain->data) {
+			ret = -EFAULT;
+			ecrt_master_deactivate(ctx->master);
+			cw_ec_free_input_buffers(ctx);
+			cw_ec_free_output_buffers(ctx);
+			cw_ec_invalidate_applied_config(ctx);
+			goto out;
+		}
 	}
 
 	/*
 	 * No user-space process-image writer exists in API 0.4. Start every
 	 * mapped output at zero before the first application datagram is sent.
 	 */
-	if (ctx->domain_size)
-		memset(ctx->domain_data, 0, ctx->domain_size);
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		if (domain->size)
+			memset(domain->data, 0, domain->size);
+		atomic_set(&domain->working_counter, 0);
+		atomic_set(&domain->working_counter_state, EC_WC_ZERO);
+	}
 	atomic64_set(&ctx->cycle_count, 0);
 	atomic64_set(&ctx->cycle_error_count, 0);
 	atomic64_set(&ctx->cycle_overrun_count, 0);
@@ -1999,11 +2178,89 @@ static long cw_ec_get_config_slave_status(struct cw_ec_file *ctx,
 		result.data_valid =
 			!result.state_result && result.online &&
 			result.operational && result.input_sequence &&
-			atomic_read(&ctx->working_counter_state) ==
+			slave->domain &&
+			atomic_read(&slave->domain->working_counter_state) ==
 				EC_WC_COMPLETE;
 	} else {
 		result.state_result = -ENODATA;
 	}
+	ret = 0;
+out:
+	if (!ret && copy_to_user(argp, &result, sizeof(result)))
+		ret = -EFAULT;
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
+
+static long cw_ec_get_domain_status(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_domain_status result;
+	struct cw_ec_domain_node *domain;
+	struct cw_ec_slave_node *slave;
+	u64 generation;
+	u32 domain_id;
+	u32 faults = 0;
+	int ret;
+
+	if (copy_from_user(&result, argp, sizeof(result)))
+		return -EFAULT;
+	ret = cw_ec_check_header(result.struct_size, result.api_major,
+				 sizeof(result));
+	if (ret)
+		return ret;
+	if (memchr_inv(result.reserved0, 0, sizeof(result.reserved0)))
+		return -EINVAL;
+	domain_id = result.domain_config_id;
+	generation = result.config_generation;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->config_validated || generation != ctx->config_generation) {
+		ret = -ESTALE;
+		goto out;
+	}
+	domain = cw_ec_find_domain(ctx, domain_id);
+	if (!domain || !ctx->domain_registered) {
+		ret = -ENOENT;
+		goto out;
+	}
+	if (ctx->active) {
+		if (!atomic_read(&ctx->io_link_up))
+			faults |= CW_EC_IO_FAULT_LINK_DOWN;
+		if (atomic_read(&domain->working_counter_state) !=
+		    EC_WC_COMPLETE)
+			faults |= CW_EC_IO_FAULT_DOMAIN_INCOMPLETE;
+		list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+			if (slave->domain != domain)
+				continue;
+			if (atomic_read(&slave->state_result))
+				faults |= CW_EC_IO_FAULT_SLAVE_STATE;
+			if (!atomic_read(&slave->state_online))
+				faults |= CW_EC_IO_FAULT_SLAVE_OFFLINE;
+			if (!atomic_read(&slave->state_operational))
+				faults |=
+					CW_EC_IO_FAULT_SLAVE_NOT_OPERATIONAL;
+		}
+	}
+	memset(&result, 0, sizeof(result));
+	result.struct_size = sizeof(result);
+	result.api_major = CW_EC_API_VERSION_MAJOR;
+	result.domain_config_id = domain_id;
+	result.config_generation = ctx->config_generation;
+	result.base_offset = domain->base_offset;
+	result.domain_size = domain->size;
+	result.active = ctx->active;
+	result.current_faults = faults;
+	result.working_counter =
+		atomic_read(&domain->working_counter);
+	result.working_counter_state =
+		atomic_read(&domain->working_counter_state);
+	result.cycle_count = atomic64_read(&ctx->cycle_count);
+	result.input_sequence = atomic64_read(&ctx->input_sequence);
+	result.data_valid = ctx->active && !faults &&
+		result.input_sequence;
+	/* API 0.12 output control remains conservatively global. */
+	result.outputs_armed = atomic_read(&ctx->io_outputs_armed);
+	result.rearm_required = atomic_read(&ctx->io_rearm_required);
 	ret = 0;
 out:
 	if (!ret && copy_to_user(argp, &result, sizeof(result)))
@@ -2084,6 +2341,19 @@ CW_EC_CONFIG_ADD_CHILD(cw_ec_config_add_dc, cw_ec_dc_node, cfg,
 		       !node->cfg.sync0_cycle_ns ||
 		       node->cfg.reserved0 || node->cfg.flags)
 
+CW_EC_CONFIG_ADD_CHILD(cw_ec_config_add_domain, cw_ec_domain_node, cfg,
+		       config_domains, config_domain_count,
+		       CW_EC_CONFIG_DOMAIN_MAX,
+		       node->cfg.flags || node->cfg.reserved)
+
+CW_EC_CONFIG_ADD_CHILD(cw_ec_config_assign_domain,
+		       cw_ec_domain_assignment_node, cfg,
+		       config_domain_assignments,
+		       config_domain_assignment_count,
+		       CW_EC_CONFIG_SLAVE_MAX,
+		       !node->cfg.slave_config_id ||
+		       !node->cfg.domain_config_id || node->cfg.flags)
+
 #undef CW_EC_CONFIG_ADD_CHILD
 
 static long cw_ec_config_set_dc_policy(struct cw_ec_file *ctx,
@@ -2121,6 +2391,7 @@ static long cw_ec_config_set_dc_policy(struct cw_ec_file *ctx,
 
 static long cw_ec_config_validate(struct cw_ec_file *ctx, void __user *argp)
 {
+	struct cw_ec_domain_assignment_node *assignment;
 	struct cw_ec_dc_node *dc;
 	struct cw_ec_config_validate result;
 	struct cw_ec_entry_node *entry;
@@ -2144,6 +2415,55 @@ static long cw_ec_config_validate(struct cw_ec_file *ctx, void __user *argp)
 	if (!ctx->config_started || !ctx->config_slave_count) {
 		ret = -EINVAL;
 		goto out;
+	}
+	if (!!ctx->config_domain_count !=
+	    !!ctx->config_domain_assignment_count) {
+		ret = -EINVAL;
+		goto out;
+	}
+	if (ctx->config_domain_count) {
+		list_for_each_entry(assignment,
+				    &ctx->config_domain_assignments,
+				    common.node) {
+			struct cw_ec_domain_assignment_node *other;
+
+			if (!cw_ec_config_id_exists(
+				    &ctx->config_slaves,
+				    assignment->cfg.slave_config_id) ||
+			    !cw_ec_config_id_exists(
+				    &ctx->config_domains,
+				    assignment->cfg.domain_config_id)) {
+				ret = -ENOENT;
+				goto out;
+			}
+			list_for_each_entry(
+				other, &ctx->config_domain_assignments,
+				common.node) {
+				if (other != assignment &&
+				    other->cfg.slave_config_id ==
+					    assignment->cfg.slave_config_id) {
+					ret = -EEXIST;
+					goto out;
+				}
+			}
+		}
+		list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+			bool assigned = false;
+
+			list_for_each_entry(
+				assignment, &ctx->config_domain_assignments,
+				common.node) {
+				if (assignment->cfg.slave_config_id ==
+				    slave->cfg.config_id) {
+					assigned = true;
+					break;
+				}
+			}
+			if (!assigned) {
+				ret = -ENOENT;
+				goto out;
+			}
+		}
 	}
 	list_for_each_entry(sync, &ctx->config_syncs, common.node) {
 		struct cw_ec_sync_node *other;
@@ -2621,6 +2941,8 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return cw_ec_disarm_outputs(ctx, argp);
 	case CW_EC_IOC_GET_CONFIG_SLAVE_STATUS:
 		return cw_ec_get_config_slave_status(ctx, argp);
+	case CW_EC_IOC_GET_DOMAIN_STATUS:
+		return cw_ec_get_domain_status(ctx, argp);
 	default:
 		break;
 	}
@@ -2658,6 +2980,10 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return cw_ec_config_add_dc(ctx, argp);
 	case CW_EC_IOC_CONFIG_SET_DC_POLICY:
 		return cw_ec_config_set_dc_policy(ctx, argp);
+	case CW_EC_IOC_CONFIG_ADD_DOMAIN:
+		return cw_ec_config_add_domain(ctx, argp);
+	case CW_EC_IOC_CONFIG_ASSIGN_DOMAIN:
+		return cw_ec_config_assign_domain(ctx, argp);
 	case CW_EC_IOC_CONFIG_VALIDATE:
 		return cw_ec_config_validate(ctx, argp);
 	case CW_EC_IOC_CONFIG_APPLY:

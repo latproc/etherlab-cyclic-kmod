@@ -116,6 +116,18 @@ int main(int argc, char **argv)
 		.reference_mode = CW_EC_DC_REFERENCE_EXPLICIT,
 		.reference_slave_config_id = 1,
 	};
+	struct cw_ec_config_domain config_domain = {
+		.struct_size = sizeof(config_domain),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.config_id = 10,
+	};
+	struct cw_ec_config_domain_assignment domain_assignment = {
+		.struct_size = sizeof(domain_assignment),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.config_id = 11,
+		.slave_config_id = 1,
+		.domain_config_id = 10,
+	};
 	struct cw_ec_config_validate config_validate = {
 		.struct_size = sizeof(config_validate),
 		.api_major = CW_EC_API_VERSION_MAJOR,
@@ -388,6 +400,40 @@ int main(int argc, char **argv)
 				       &config_validate),
 				 ENOENT);
 	config_dc.slave_config_id = config_slave.config_id;
+
+	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0) {
+		fprintf(stderr, "FAIL: start unassigned domain config: %s\n",
+			strerror(errno));
+		failures++;
+	}
+	errno = 0;
+	failures += expect_errno("explicit domain without assignment",
+				 ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE,
+				       &config_validate),
+				 EINVAL);
+
+	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0) {
+		fprintf(stderr, "FAIL: start unknown domain assignment: %s\n",
+			strerror(errno));
+		failures++;
+	}
+	domain_assignment.domain_config_id = 99;
+	if (ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+		  &domain_assignment) < 0) {
+		fprintf(stderr, "FAIL: add unknown domain assignment: %s\n",
+			strerror(errno));
+		failures++;
+	}
+	errno = 0;
+	failures += expect_errno("assignment to unknown domain",
+				 ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE,
+				       &config_validate),
+				 ENOENT);
+	domain_assignment.domain_config_id = config_domain.config_id;
 
 	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
 	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0) {
