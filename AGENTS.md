@@ -35,6 +35,9 @@ decisions, risks, commands, or next steps change.
   absent logical axis.
 - Deterministic pending and cyclic process-image allocation unwind and
   maximum-count create/reset stress pass.
+- Normal module unload is hardware-proven blocked while a zero-armed control
+  fd, cyclic task, and master ownership are live. Controller death then
+  releases all resources and permits unload.
 - The target kernel lacks fault-injection, kmemleak, KFENCE, and lockdep
   validation facilities; debug-kernel evidence remains outstanding.
 - Servo-off startup and live power-loss/restoration are mandatory. Outputs

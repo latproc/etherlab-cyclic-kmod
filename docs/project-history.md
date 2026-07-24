@@ -109,3 +109,6 @@ commands, outputs, and design details.
 - Added `DESTDIR`-testable install/uninstall targets and completed the API 0.10
   documentation acceptance audit. Staged installation/removal passed without
   modifying the live module tree; the kernel-safety gate remains open.
+- Proved module reference protection with current active resources: normal
+  unload was rejected while a zero-armed controller remained healthy, then
+  controller death synchronously released the task/master and allowed unload.

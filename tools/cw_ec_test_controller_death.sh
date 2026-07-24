@@ -77,6 +77,21 @@ if [ "$ready" -ne 1 ]; then
 	exit 1
 fi
 
+# file_operations.owner must hold the module reference for the live control
+# file. Normal unload must fail without disturbing the controller.
+set +e
+rmmod "$module_name" >"$tmp_dir/rmmod-active.txt" 2>&1
+rmmod_status=$?
+set -e
+if [ "$rmmod_status" -eq 0 ] ||
+    ! grep -q "^$module_name " /proc/modules ||
+    ! kill -0 "$controller_pid" 2>/dev/null; then
+	echo "error: module unload was not blocked by active resources" >&2
+	sed 's/^/  /' "$tmp_dir/rmmod-active.txt" >&2
+	exit 1
+fi
+echo "Active control file correctly blocked module unload"
+
 echo "Killing zero-armed controller process $controller_pid"
 kill -KILL "$controller_pid"
 set +e

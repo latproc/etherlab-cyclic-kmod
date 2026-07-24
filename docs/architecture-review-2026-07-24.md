@@ -62,7 +62,7 @@ No nonzero output has been authorized or tested.
 | Configuration create/destroy stress | Partial | Ten maximum pending create/reset iterations passed; applied/domain stress still needs instrumentation. |
 | Cyclic start/stop stress | Partial | Five API 0.10 zero-arm lifecycles passed with no task leak or new warning; longer/instrumented stress remains. |
 | SDO failure teardown | Partial | Abort/error handling tested; allocation/close interruption stress remains. |
-| Unload with resources | Pass by design, needs current test | `file_operations.owner` blocks normal unload; explicitly test current API with an open/active fd. |
+| Unload with resources | Pass | Normal unload failed while a zero-armed control fd/task/master were live; controller continued, then file release and unload succeeded. |
 | kmemleak/equivalent | Unsupported on target | `CONFIG_DEBUG_KMEMLEAK` is disabled. |
 | KASAN/KFENCE | Unsupported on target | `CONFIG_KFENCE` and fault injection are disabled; use a debug kernel. |
 | lockdep | Unsupported on target | `CONFIG_PROVE_LOCKING` is disabled; use a lockdep-enabled kernel. |

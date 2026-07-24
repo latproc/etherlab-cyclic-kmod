@@ -423,9 +423,13 @@ all-zero output shadow is explicitly armed, then sends `SIGKILL` to the
 controller. It verifies kernel file-release teardown rather than allowing the
 tool to issue its normal disarm/deactivate calls.
 
-The target test passed:
+Before the kill, it attempts normal `rmmod cw_ethercat` and requires failure
+while the control fd, cyclic task, and master ownership are live. The
+controller must remain running and the module must remain loaded. The target
+test passed:
 
 ```text
+Active control file correctly blocked module unload
 PASS: killed zero-armed controller; no cyclic task leak;
       master released; topology unchanged
 New kernel warning/error lines: none
