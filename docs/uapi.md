@@ -295,6 +295,20 @@ the cyclic thread. This prevents a successful disarm ioctl or orderly
 deactivation from leaving a previously selected shadow as the last application
 datagram. Timeout returns `ETIMEDOUT` but leaves the gate disarmed.
 
+API 0.10 adds `CW_EC_IOC_GET_CONFIG_SLAVE_STATUS`, keyed by the stable
+user-supplied slave `config_id` and exact configuration generation. A stale
+generation returns `ESTALE`; an unknown ID returns `ENOENT`.
+
+The result reports active, online, operational, AL state, the EtherLab
+slave-state call result, cycle count, input sequence, and `data_valid`.
+Validity is deliberately conservative: the transport must be active, the
+slave-state call must succeed, that configured slave must be online and
+operational, at least one input snapshot must have been published, and the
+whole domain working counter must be complete. EtherLab does not expose
+per-entry working-counter validity through this configuration-state API, so
+API 0.10 does not claim that an unaffected slave's bytes are fresh while the
+shared domain is incomplete.
+
 Activation requires an applied configuration and registered domain. The caller
 supplies a cycle period from 100 microseconds through one second; flags must be
 zero. The kernel activates EtherLab, obtains the internal domain memory,

@@ -41,6 +41,12 @@ returned the configured drive to OP and complete WC without restarting the
 transport. `rearm_required` remained set and the fault epoch count remained
 one after recovery.
 
+API 0.10 exposes each configured slave's online, operational, and AL state by
+stable `config_id`. Its `data_valid` flag additionally requires a published
+snapshot and complete domain WC. This is intentionally conservative: when the
+domain is incomplete, snapshots remain inspectable but no configured slave is
+certified fresh solely from aggregate EtherLab WC information.
+
 ## Copy concurrency
 
 Read-only snapshots use two preallocated buffers. A process-context reader reserves

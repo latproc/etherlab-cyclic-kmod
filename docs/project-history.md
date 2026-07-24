@@ -75,3 +75,7 @@ commands, outputs, and design details.
   integration remains blocked by per-slave validity, current lifecycle and
   controller-death stress, allocation/leak/debug-kernel testing, manual-build
   compatibility, and stale top-level documentation identified during review.
+- Added API 0.10 generation-bound per-configured-slave state and conservative
+  data validity. Position 29 reported online, operational, AL OP, and valid at
+  cycle/input sequence 5,000 with complete WC; stale, unknown, and inactive
+  queries were rejected/reported correctly.

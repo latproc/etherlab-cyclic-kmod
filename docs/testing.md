@@ -379,6 +379,27 @@ bounded cyclic disarm acknowledgement, and fresh-publication recovery without
 requesting or transmitting a nonzero output. A nonzero commissioning output
 has not been authorized or tested.
 
+## API 0.10 configured-slave validity
+
+The non-activating ABI suite rejected a stale configuration generation and an
+unknown slave `config_id`, then reported the known configured slave inactive
+with `state_result=-ENODATA` and `data_valid=0`.
+
+A five-second motion-inhibited position-29 run reported:
+
+```text
+cycles=5000 errors=0 overruns=0 wc=3 wc_state=2
+slave id=1 active=1 online=1 operational=1
+data_valid=1 al_state=0x08 state_result=0
+status cycle=5000 input_sequence=5000
+```
+
+The query is keyed by the stable user-supplied ID and exact configuration
+generation. `data_valid` requires the individual slave online/operational plus
+complete domain WC and a published snapshot. An offline-transition query has
+not yet been captured in hardware; the earlier power-loss run predates this
+ioctl.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

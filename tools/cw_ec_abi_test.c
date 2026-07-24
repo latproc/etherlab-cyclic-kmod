@@ -143,6 +143,11 @@ int main(int argc, char **argv)
 		.struct_size = sizeof(io_status),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	struct cw_ec_config_slave_status slave_status = {
+		.struct_size = sizeof(slave_status),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.config_id = 1,
+	};
 	uint8_t snapshot_byte;
 	struct cw_ec_input_snapshot snapshot = {
 		.struct_size = sizeof(snapshot),
@@ -497,6 +502,37 @@ int main(int argc, char **argv)
 		failures++;
 	} else {
 		printf("PASS: generation-bound inactive IO status is clean\n");
+	}
+	slave_status.config_generation = io_status.config_generation + 1;
+	errno = 0;
+	failures += expect_errno("stale configured-slave status generation",
+				 ioctl(fd,
+				       CW_EC_IOC_GET_CONFIG_SLAVE_STATUS,
+				       &slave_status),
+				 ESTALE);
+	slave_status.config_generation = io_status.config_generation;
+	slave_status.config_id = 99;
+	errno = 0;
+	failures += expect_errno("unknown configured-slave status ID",
+				 ioctl(fd,
+				       CW_EC_IOC_GET_CONFIG_SLAVE_STATUS,
+				       &slave_status),
+				 ENOENT);
+	slave_status.config_id = 1;
+	if (ioctl(fd, CW_EC_IOC_GET_CONFIG_SLAVE_STATUS,
+		  &slave_status) < 0) {
+		fprintf(stderr,
+			"FAIL: configured-slave inactive status failed: %s\n",
+			strerror(errno));
+		failures++;
+	} else if (slave_status.active || slave_status.online ||
+		   slave_status.operational || slave_status.data_valid ||
+		   slave_status.state_result != -ENODATA) {
+		fprintf(stderr,
+			"FAIL: configured-slave inactive status is not clean\n");
+		failures++;
+	} else {
+		printf("PASS: configured-slave inactive status is invalid\n");
 	}
 	snapshot.flags = 1;
 	errno = 0;

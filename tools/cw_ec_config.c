@@ -479,6 +479,66 @@ static int configure_fd(int fd, const char *path,
 	return 0;
 }
 
+static int print_slave_statuses(int fd, const char *path,
+				uint64_t generation)
+{
+	FILE *stream;
+	char *line = NULL;
+	size_t capacity = 0;
+	unsigned int line_number = 0;
+	int ret = -1;
+
+	stream = fopen(path, "r");
+	if (!stream) {
+		fprintf(stderr, "cw_ec_config: cannot open %s: %s\n",
+			path, strerror(errno));
+		return -1;
+	}
+	while (getline(&line, &capacity, stream) >= 0) {
+		struct cw_ec_config_slave_status status = {
+			.struct_size = sizeof(status),
+			.api_major = CW_EC_API_VERSION_MAJOR,
+			.config_generation = generation,
+		};
+		struct record record;
+
+		line_number++;
+		if (parse_record(line, &record) < 0) {
+			fprintf(stderr, "%s:%u: invalid record\n", path,
+				line_number);
+			goto out;
+		}
+		if (record.kind != RECORD_SLAVE)
+			continue;
+		status.config_id = record.slave.config_id;
+		if (ioctl(fd, CW_EC_IOC_GET_CONFIG_SLAVE_STATUS,
+			  &status) < 0) {
+			fprintf(stderr,
+				"cw_ec_config: slave status %" PRIu32
+				" failed: %s\n",
+				status.config_id, strerror(errno));
+			goto out;
+		}
+		printf("slave status: id=%" PRIu32 " active=%u online=%u"
+		       " operational=%u valid=%u al=0x%02x result=%" PRId32
+		       " cycle=%" PRIu64 " input_sequence=%" PRIu64 "\n",
+		       status.config_id, status.active, status.online,
+		       status.operational, status.data_valid, status.al_state,
+		       status.state_result, (uint64_t)status.cycle_count,
+		       (uint64_t)status.input_sequence);
+	}
+	if (ferror(stream)) {
+		fprintf(stderr, "cw_ec_config: read %s: %s\n",
+			path, strerror(errno));
+		goto out;
+	}
+	ret = 0;
+out:
+	free(line);
+	fclose(stream);
+	return ret;
+}
+
 static int prepare(const char *path, const char *device)
 {
 	struct cw_ec_config_validate validate;
@@ -632,6 +692,8 @@ static int cycle(const char *path, uint32_t period_ns,
 	       io_status.configured_slave_count,
 	       io_status.configured_slaves_online,
 	       io_status.configured_slaves_operational);
+	if (print_slave_statuses(fd, path, io_status.config_generation))
+		goto out;
 	output_data = malloc(activate.domain_size);
 	output_mask = malloc(activate.domain_size);
 	if (!output_data || !output_mask) {

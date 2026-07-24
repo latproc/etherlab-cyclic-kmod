@@ -68,9 +68,11 @@ The kernel-safety gate is not closed.
 
 ## Functional and safety gaps
 
-1. **Per-slave validity is missing.** Aggregate configured-slave counts and a
-   global fault mask cannot tell user space which entry data is stale. Add a
-   generation-bound per-configured-slave status query before IOD integration.
+1. **Per-slave validity transition evidence is incomplete.** API 0.10 now
+   reports each configured slave by stable ID and conservatively certifies
+   data only with individual OP plus complete domain WC. Online/valid hardware
+   evidence exists; capture the offline transition and recovery through the
+   new ioctl.
 2. **Controller-death behavior needs explicit proof.** Kill a standalone
    controller while active/zero-armed, verify close synchronously sends zero,
    joins the thread, releases master 0, and leaves no task or warning beyond
@@ -108,9 +110,8 @@ commands that were actually run from procedures that remain untested.
 
 ## Next work order
 
-1. Add generation-bound per-configured-slave status and document entry
-   validity semantics.
-2. Add current API 0.9 lifecycle/controller-death stress tooling.
+1. Capture API 0.10 per-slave invalid/recovery transitions.
+2. Add current API 0.10 lifecycle/controller-death stress tooling.
 3. Add deterministic allocation-failure tests and configuration stress.
 4. Run available kmemleak/KFENCE/lockdep procedures, recording unsupported
    facilities explicitly.

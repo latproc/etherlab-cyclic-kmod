@@ -58,6 +58,11 @@ decisions, risks, commands, or next steps change.
   disarm requires a newer publication. A zero-only position-29 test proved
   arm, acknowledged disarm, stale-sequence rejection, and fresh-sequence
   recovery without transmitting a nonzero output.
+- API 0.10 adds generation-bound per-configured-slave state keyed by stable
+  `config_id`. It reports online/operational/AL state and a conservative
+  `data_valid` bit requiring that slave OP plus complete domain WC. Position 29
+  reported valid at cycle/input sequence 5,000; an offline transition query is
+  not yet hardware-captured.
 - A provisional bounded ad-hoc SDO batch exists for commissioning and
   decision-gate tests. It is not the persistent production setup mechanism.
 - Bounded SDO upload is hardware-proven against ED3L `0x6060:00`; no write has
@@ -287,7 +292,7 @@ Keep this section concise. Historical milestones and validation evidence are in
 `docs/project-history.md`; focused details belong in the relevant design,
 testing, safety, and build documents.
 
-- Current API: 0.9.
+- Current API: 0.10.
 - API 0.4 zero-output cyclic activation is hardware-proven on ED3L position 29
   with complete working counter and exact 28-byte PDO layout.
 - Deactivation waits for configured slaves to leave SAFEOP/OP and invalidates
@@ -325,10 +330,10 @@ testing, safety, and build documents.
   `docs/process-image-exchange.md`.
 - The 2026-07-24 architecture review is in
   `docs/architecture-review-2026-07-24.md`. The kernel-safety and documentation
-  gates remain open. Major blockers include per-configured-slave validity,
+  gates remain open. API 0.10 now supplies conservative per-configured-slave
+  validity; remaining major blockers include its offline-transition proof,
   current lifecycle/controller-death stress, allocation-failure/leak testing,
   debug-kernel testing, and manual EtherLab build compatibility.
-- Next step: add generation-bound per-configured-slave status so snapshot
-  consumers can determine which configured device data is valid/stale.
+- Next step: add current API lifecycle/controller-death stress tooling.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

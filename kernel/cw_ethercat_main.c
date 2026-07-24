@@ -137,6 +137,10 @@ struct cw_ec_slave_node {
 	struct cw_ec_config_node common;
 	struct cw_ec_config_slave cfg;
 	ec_slave_config_t *ec_config;
+	atomic_t state_result;
+	atomic_t state_online;
+	atomic_t state_operational;
+	atomic_t state_al_state;
 };
 
 struct cw_ec_sync_node {
@@ -406,10 +410,17 @@ static void cw_ec_update_io_health(struct cw_ec_file *ctx,
 		ec_slave_config_state_t state = {};
 
 		ret = ecrt_slave_config_state(slave->ec_config, &state);
+		atomic_set(&slave->state_result, ret);
 		if (ret) {
+			atomic_set(&slave->state_online, 0);
+			atomic_set(&slave->state_operational, 0);
+			atomic_set(&slave->state_al_state, 0);
 			faults |= CW_EC_IO_FAULT_SLAVE_STATE;
 			continue;
 		}
+		atomic_set(&slave->state_online, state.online);
+		atomic_set(&slave->state_operational, state.operational);
+		atomic_set(&slave->state_al_state, state.al_state);
 		if (state.online)
 			online++;
 		else
@@ -1249,6 +1260,7 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	struct cw_ec_dc_node *dc;
 	struct cw_ec_entry_node *entry;
 	struct cw_ec_pdo_node *pdo;
+	struct cw_ec_slave_node *slave;
 	struct cw_ec_sync_node *sync;
 	struct cw_ec_cycle_activate result;
 	u64 first_bit;
@@ -1413,6 +1425,12 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	atomic64_set(&ctx->output_gate_request, 0);
 	atomic64_set(&ctx->output_gate_applied, 0);
 	ctx->io_ever_healthy = false;
+	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+		atomic_set(&slave->state_result, -ENODATA);
+		atomic_set(&slave->state_online, 0);
+		atomic_set(&slave->state_operational, 0);
+		atomic_set(&slave->state_al_state, 0);
+	}
 	ctx->input_active = 0;
 	ctx->input_reader = -1;
 	atomic64_set(&ctx->input_sequence, 0);
@@ -1829,6 +1847,69 @@ static long cw_ec_disarm_outputs(struct cw_ec_file *ctx, void __user *argp)
 	if (ret)
 		goto out;
 out:
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
+
+static long cw_ec_get_config_slave_status(struct cw_ec_file *ctx,
+					   void __user *argp)
+{
+	struct cw_ec_config_slave_status result;
+	struct cw_ec_slave_node *slave;
+	u64 requested_generation;
+	u32 config_id;
+	int ret;
+
+	if (copy_from_user(&result, argp, sizeof(result)))
+		return -EFAULT;
+	ret = cw_ec_check_header(result.struct_size, result.api_major,
+				 sizeof(result));
+	if (ret)
+		return ret;
+	if (result.reserved1 || result.reserved0[0] ||
+	    result.reserved0[1] || result.reserved0[2])
+		return -EINVAL;
+	config_id = result.config_id;
+	requested_generation = result.config_generation;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->config_validated ||
+	    requested_generation != ctx->config_generation) {
+		ret = -ESTALE;
+		goto out;
+	}
+	slave = cw_ec_find_slave(ctx, config_id);
+	if (!slave) {
+		ret = -ENOENT;
+		goto out;
+	}
+	memset(&result, 0, sizeof(result));
+	result.struct_size = sizeof(result);
+	result.api_major = CW_EC_API_VERSION_MAJOR;
+	result.config_id = config_id;
+	result.config_generation = ctx->config_generation;
+	result.active = ctx->active;
+	if (ctx->active) {
+		result.state_result = atomic_read(&slave->state_result);
+		result.online = atomic_read(&slave->state_online);
+		result.operational =
+			atomic_read(&slave->state_operational);
+		result.al_state = atomic_read(&slave->state_al_state);
+		result.cycle_count = atomic64_read(&ctx->cycle_count);
+		result.input_sequence =
+			atomic64_read(&ctx->input_sequence);
+		result.data_valid =
+			!result.state_result && result.online &&
+			result.operational && result.input_sequence &&
+			atomic_read(&ctx->working_counter_state) ==
+				EC_WC_COMPLETE;
+	} else {
+		result.state_result = -ENODATA;
+	}
+	ret = 0;
+out:
+	if (!ret && copy_to_user(argp, &result, sizeof(result)))
+		ret = -EFAULT;
 	mutex_unlock(&ctx->lock);
 	return ret;
 }
@@ -2438,6 +2519,8 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return cw_ec_arm_outputs(ctx, argp);
 	case CW_EC_IOC_DISARM_OUTPUTS:
 		return cw_ec_disarm_outputs(ctx, argp);
+	case CW_EC_IOC_GET_CONFIG_SLAVE_STATUS:
+		return cw_ec_get_config_slave_status(ctx, argp);
 	default:
 		break;
 	}
