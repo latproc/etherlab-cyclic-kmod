@@ -102,3 +102,10 @@ commands, outputs, and design details.
   activation. Its deeper unwind deactivated the master, freed copied images,
   invalidated EtherLab-owned pointers, and restored idle state without a new
   kernel warning/error.
+- Consolidated `AGENTS.md`, corrected stale API 0.4/0.9 documentation, and
+  added an end-to-end standalone operator guide covering build, discovery,
+  non-activating preparation, zero-output operation, teardown, stress, and
+  local cleanup.
+- Added `DESTDIR`-testable install/uninstall targets and completed the API 0.10
+  documentation acceptance audit. Staged installation/removal passed without
+  modifying the live module tree; the kernel-safety gate remains open.

@@ -21,7 +21,8 @@ Discovery is proven on the current 34-slave target. A single ED3L
 configuration has reached OP with complete working counter, recovered from
 servo-supply loss without restarting the controller, and passed zero-only
 output arm/disarm tests. No nonzero output has been authorized or tested. The
-standalone kernel-safety and documentation acceptance gates remain open; see
+documentation acceptance gate passes for API 0.10; the standalone
+kernel-safety gate remains open. See
 [the current architecture review](docs/architecture-review-2026-07-24.md).
 
 ```text
@@ -52,8 +53,17 @@ make check-build-env
 make
 ```
 
+Optional module-tree installation and removal:
+
+```sh
+sudo make install
+sudo make uninstall
+```
+
 See [the recorded DKMS environment](docs/building/etherlab-dkms-environment.md)
 for exact detected paths and explicit overrides.
+The complete build-to-teardown sequence is in the
+[standalone operator guide](docs/operator-guide.md).
 
 The build produces:
 
@@ -64,6 +74,7 @@ tools/cw_ec_bus
 tools/cw_ec_abi_test
 tools/cw_ec_sdo
 tools/cw_ec_config
+tools/cw_ec_config_stress
 ```
 
 ## Test the probe

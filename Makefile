@@ -9,7 +9,10 @@ ETHERLAB_SYMVERS ?= /var/lib/dkms/$(ETHERLAB_DKMS_NAME)/$(ETHERLAB_VERSION)/$(KE
 CPPFLAGS ?=
 CFLAGS ?= -O2 -g
 
-.PHONY: all modules tools check-build-env clean
+.PHONY: all modules tools check-build-env install uninstall clean
+
+MODULE_INSTALL_DIR := $(DESTDIR)/lib/modules/$(KERNEL_RELEASE)/extra/cw_ethercat
+MODULE_FILES := kernel/cw_ethercat.ko kernel/cw_ethercat_probe.ko
 
 all: modules tools
 
@@ -65,6 +68,16 @@ tools/cw_ec_config: tools/cw_ec_config.c include/cw_ethercat_uapi.h
 tools/cw_ec_config_stress: tools/cw_ec_config_stress.c include/cw_ethercat_uapi.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \
 		-I"$(CURDIR)/include" -o "$@" "$<"
+
+install: modules
+	install -d "$(MODULE_INSTALL_DIR)"
+	install -m 0644 $(MODULE_FILES) "$(MODULE_INSTALL_DIR)"
+	@if [ -z "$(DESTDIR)" ]; then depmod -a "$(KERNEL_RELEASE)"; fi
+
+uninstall:
+	$(RM) $(addprefix $(MODULE_INSTALL_DIR)/,$(notdir $(MODULE_FILES)))
+	@rmdir --ignore-fail-on-non-empty "$(MODULE_INSTALL_DIR)" 2>/dev/null || true
+	@if [ -z "$(DESTDIR)" ]; then depmod -a "$(KERNEL_RELEASE)"; fi
 
 clean:
 	$(MAKE) -C "$(KERNEL_BUILD)" M="$(CURDIR)/kernel" clean

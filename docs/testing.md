@@ -529,6 +529,20 @@ order plus vendor ID, product code, revision, and serial. They deliberately do
 not compare volatile AL state or DC receive timestamps. Operational recovery is
 checked separately through runtime status where the test requires it.
 
+## Staged install/uninstall
+
+`make install` and `make uninstall` were exercised with a temporary `DESTDIR`.
+The install created:
+
+```text
+lib/modules/6.1.0-49-rt-amd64/extra/cw_ethercat/cw_ethercat.ko
+lib/modules/6.1.0-49-rt-amd64/extra/cw_ethercat/cw_ethercat_probe.ko
+```
+
+Both files had mode 0644. The matching staged uninstall removed both files.
+This validates target paths and scope without modifying the live module tree;
+live `depmod` behavior was not exercised.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

@@ -5,7 +5,7 @@
 The standalone transport is ready for continued standalone hardening, but it
 is not ready for IOD integration or production use.
 
-API 0.9 proves the central transport shape: transactional generic
+API 0.10 proves the central transport shape: transactional generic
 configuration, EtherLab-owned recovery, distributed-clock cycling, copied
 process images, topology-derived output ownership, and an explicit
 generation/sequence arm gate. The remaining gaps are primarily observability,
@@ -45,23 +45,27 @@ No nonzero output has been authorized or tested.
   29 to OP/complete WC, and retained `rearm_required` without restart.
 - Zero-only arm gate: arm, synchronous disarm, stale-sequence rejection,
   fresh-sequence re-arm, and final disarm passed.
+- API 0.10 per-configured-slave status reported position 29 online,
+  operational, and data-valid with complete WC.
+- Controller death while zero-armed, all module-owned allocation/construction
+  failures, and ten maximum pending create/reset iterations unwind cleanly.
 
 ## Kernel-safety acceptance gate
 
 | Plan requirement | Status | Evidence or blocker |
 |---|---|---|
-| Repeated load/unload | Partial | Earlier probe/device repetitions plus five API 0.10 active lifecycles passed; increase repetition and add instrumented testing. |
-| Repeated master acquire/release | Pass for earlier stages | 120 open/scan/close iterations and continued CLI usability. Repeat with current cyclic API. |
+| Repeated load/unload | Partial | Earlier probe/device repetitions plus five API 0.10 active lifecycles passed; increase repetition under instrumentation. |
+| Repeated master acquire/release | Pass | 120 open/scan/close iterations, five current cyclic lifecycles, controller-death teardown, and continued CLI usability. |
 | Repeated scan memory stability | Partial | Functional repetitions passed; no allocator/leak instrumentation. |
 | Invalid ABI calls | Partial | Broad ABI suite passes; add active stale generation/size/sequence cases and fuzzed counts. |
-| Allocation failure paths | Not passed | Add deterministic fault injection and exercise every activation buffer/allocation unwind. |
-| Configuration create/destroy stress | Not passed | Add high-count repeated pending/apply/domain/close test and leak observation. |
+| Allocation failure paths | Partial | Every module-owned pending/image allocation and cyclic-task constructor passed deterministic unwind; external allocations require a fault-injection kernel. |
+| Configuration create/destroy stress | Partial | Ten maximum pending create/reset iterations passed; applied/domain stress still needs instrumentation. |
 | Cyclic start/stop stress | Partial | Five API 0.10 zero-arm lifecycles passed with no task leak or new warning; longer/instrumented stress remains. |
 | SDO failure teardown | Partial | Abort/error handling tested; allocation/close interruption stress remains. |
 | Unload with resources | Pass by design, needs current test | `file_operations.owner` blocks normal unload; explicitly test current API with an open/active fd. |
-| kmemleak/equivalent | Not passed | Target procedure and results required. |
-| KASAN/KFENCE | Not passed | Requires a suitable test kernel/environment. |
-| lockdep | Not passed | Requires a lockdep-enabled kernel and lifecycle/load tests. |
+| kmemleak/equivalent | Unsupported on target | `CONFIG_DEBUG_KMEMLEAK` is disabled. |
+| KASAN/KFENCE | Unsupported on target | `CONFIG_KFENCE` and fault injection are disabled; use a debug kernel. |
+| lockdep | Unsupported on target | `CONFIG_PROVE_LOCKING` is disabled; use a lockdep-enabled kernel. |
 | EtherLab usable after release | Pass | CLI repeatedly reports idle master and full topology after teardown. |
 
 The kernel-safety gate is not closed.
@@ -96,18 +100,26 @@ The kernel-safety gate is not closed.
 8. **Manual EtherLab build compatibility is untested.** Only the exact DKMS
    target has evidence.
 
-## Documentation gate
+## Documentation acceptance gate
 
-The detailed UAPI, process-image, DC, testing, and DKMS-environment documents
-contain useful evidence. At review start, however, `README.md`,
-`docs/architecture.md`, and `docs/safety-and-failure-behaviour.md` still
-described early phases and therefore failed the plan's documentation gate.
-They must be updated before integration.
+The plan's documentation gate now passes for standalone API 0.10:
 
-The repository also still needs an end-to-end standalone operator sequence
-covering build, load, configuration, zero-output cycling, status inspection,
-safe teardown, and uninstall. Memory/debug-kernel procedures must distinguish
-commands that were actually run from procedures that remain untested.
+| Requirement | Location |
+|---|---|
+| Purpose and architecture | `README.md`, `docs/architecture.md` |
+| Supported EtherLab build | `docs/building/etherlab-dkms-environment.md` |
+| Install, load, unload, uninstall | `docs/operator-guide.md`, Make targets |
+| Discovery and standalone tests | `docs/operator-guide.md`, `docs/testing.md` |
+| Lifecycle and state machine | `docs/architecture.md`, safety document |
+| User-space interface | `docs/uapi.md`, process-image document |
+| Safety/memory procedures | `docs/testing.md`, operator guide |
+| GPL-2.0-only requirements | `README.md`, `LICENSE`, SPDX identifiers |
+
+The install/uninstall layout was tested under a temporary `DESTDIR`: both
+modules were installed mode 0644 under the target release's
+`extra/cw_ethercat` directory and removed cleanly. The live module tree was not
+modified. Debug-kernel procedures distinguish unsupported target facilities
+from completed tests.
 
 ## Next work order
 
@@ -121,6 +133,6 @@ commands that were actually run from procedures that remain untested.
    require a fault-injection-capable debug kernel.
 4. Run available kmemleak/KFENCE/lockdep procedures, recording unsupported
    facilities explicitly.
-5. Finish end-to-end standalone documentation and repeat the gate review.
+5. Keep the passing documentation gate current as implementation changes.
 6. Only then decide on a bounded nonzero commissioning test.
-7. Do not begin IOD integration until both acceptance gates pass.
+7. Do not begin IOD integration until the kernel-safety gate also passes.

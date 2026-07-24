@@ -2,11 +2,11 @@
 
 ## Status
 
-The current experimental API is version 0.4. It supports read-only discovery,
-a provisional bounded ad-hoc SDO batch used for commissioning tests, and
-transactional construction of a slave/Sync Manager/PDO/PDO-entry hierarchy.
-It can activate a zero-initialized domain and pump it cyclically, but it does
-not yet expose process-image exchange or Distributed Clock configuration.
+The current experimental API is version 0.10. It supports discovery, a
+provisional bounded commissioning SDO batch, transactional
+slave/Sync/PDO/entry/DC configuration, domain registration, configurable
+cyclic pumping, copied process images, distributed clocks, health/fault
+status, explicit output arm/disarm, and per-configured-slave validity.
 
 ## Ownership and lifecycle
 
@@ -30,10 +30,17 @@ Linux UAPI types, contain no pointers, and have fixed layouts suitable for the
 compat ioctl path.
 
 The tool first calls `CW_EC_IOC_GET_API_VERSION`. Major versions must match.
-Minor version 0.2 added the provisional ad-hoc setup-SDO batch. Minor version
-0.3 adds the pending declarative configuration hierarchy and validation calls.
-Minor version 0.4 adds bounded activation, cycle status, and synchronous
-deactivation.
+Minor versions add:
+
+- 0.2: provisional ad-hoc setup-SDO batch;
+- 0.3: declarative configuration and stable entry offsets;
+- 0.4: bounded activation, cycle status, and synchronous deactivation;
+- 0.5: distributed-clock configuration, synchronization, and status;
+- 0.6: generation-bound health, fault, and re-arm status;
+- 0.7: coherent copied input snapshots;
+- 0.8: masked copied output publication while hard-disarmed;
+- 0.9: generation/sequence-bound arm and synchronous disarm; and
+- 0.10: stable-ID per-configured-slave state and conservative data validity.
 
 Input/output structures that accept caller fields include `struct_size` and
 `api_major`. The kernel rejects an unexpected size with `EINVAL` and an
@@ -102,7 +109,7 @@ CW_EC_IOC_SETUP_RESET
 CW_EC_IOC_SDO_UPLOAD
 ```
 
-They are deliberately separate from the future persistent configuration
+They are deliberately separate from the persistent declarative configuration
 transaction. The batch uses `ecrt_master_sdo_download()` and therefore applies
 only to online slaves; EtherLab does not retain or replay it after power loss.
 
@@ -132,7 +139,7 @@ position, object index/subindex, and a maximum result length from 1 to 256
 bytes. The result includes actual length, data, errno, and CoE abort code. It
 does not retain an asynchronous request.
 
-The production configuration path will instead store ordered
+The eventual ordinary-startup parameter path will store ordered
 `ecrt_slave_config_sdo()` data for non-PDO startup parameters with each
 persistent slave configuration so EtherLab can replay it during PREOP
 reconfiguration. PDO mapping and assignment must use
@@ -140,8 +147,9 @@ reconfiguration. PDO mapping and assignment must use
 
 ## Pending declarative configuration validation
 
-The following operations build and validate kernel-owned pending metadata but
-do not yet call EtherLab configuration or activation APIs:
+The following operations build and validate kernel-owned pending metadata.
+`CONFIG_APPLY` subsequently constructs EtherLab configuration objects but does
+not activate the master:
 
 ```text
 CW_EC_IOC_CONFIG_BEGIN

@@ -1,6 +1,6 @@
 # Architecture
 
-## Current API 0.9 boundary
+## Current API 0.10 boundary
 
 ```text
 standalone controller
@@ -104,10 +104,14 @@ control session.
 
 ## Process image and DC
 
-The complete EtherLab domain is the stable byte/bit offset namespace. API 0.9
+The complete EtherLab domain is the stable byte/bit offset namespace. API 0.10
 copies it into a bounded double-buffered read-only snapshot. Output updates use
 a domain-sized data array plus per-bit update mask; the kernel intersects this
 with a mask derived from entries under output Sync Managers.
+
+Per-configured-slave status is keyed by stable configuration ID. Its
+conservative `data_valid` requires that slave online and operational, a
+published input snapshot, and complete global domain WC.
 
 When configured, the cyclic order is receive, domain process, input snapshot,
 reference/DC processing, health evaluation, gated output application,

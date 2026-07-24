@@ -44,6 +44,10 @@ decisions, risks, commands, or next steps change.
   and low-overhead status.
 - Detailed milestones and evidence live in `docs/project-history.md` and
   `docs/testing.md`. Do not duplicate them here.
+- `docs/operator-guide.md` is the end-to-end build, test, zero-output
+  operation, teardown, and cleanup sequence.
+- The API 0.10 documentation acceptance gate passes. The kernel-safety gate
+  remains open, so IOD integration is still blocked.
 - Do not modify Clockwork/IOD behavior in this repository.
 
 ## Non-Negotiable Architecture
@@ -253,10 +257,9 @@ testing, safety, and build documents.
 - Copied process-image concurrency and recovery rules are documented in
   `docs/process-image-exchange.md`.
 - The 2026-07-24 architecture review is in
-  `docs/architecture-review-2026-07-24.md`. Safety/documentation gates remain
-  open. Major gaps include per-slave offline-transition evidence, debug-kernel
+  `docs/architecture-review-2026-07-24.md`. The safety gate remains open.
+  Major gaps include per-slave offline-transition evidence, debug-kernel
   validation, and manual EtherLab build compatibility.
-- Next step: reassess the remaining standalone safety-gate gaps and select the
-  next independently testable blocker.
+- Next step: select the next independently testable kernel-safety blocker.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

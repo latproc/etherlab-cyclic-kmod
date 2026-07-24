@@ -2,13 +2,15 @@
 
 ## Status
 
-API 0.9 implements global configured-bus health, sticky fault/re-arm status,
+API 0.10 implements global configured-bus health, sticky fault/re-arm status,
 topology-derived output ownership, copied output shadows, and an explicit
 generation/sequence arm gate. A position-29 servo power-loss/restoration test
 recovered without restarting the controller while outputs remained disarmed.
 
-This is experimental evidence, not production safety certification. Per-slave
-data validity and several acceptance/stress gates remain unimplemented.
+Per-configured-slave online/operational/AL state and conservative data validity
+are now available by stable configuration ID. This is experimental evidence,
+not production safety certification; acceptance and debug-kernel gates remain
+open.
 
 ## Servo power observation
 
@@ -49,9 +51,10 @@ When a configured drive disappears, the current implementation:
 5. continues publishing snapshots and counters;
 6. permits EtherLab to reconfigure the returning slave without process restart.
 
-The missing part is per-configured-slave status/validity. A snapshot consumer
-cannot yet identify exactly which entry bytes are stale from the UAPI alone.
-This blocks IOD integration.
+API 0.10 reports each configured slave separately. Its `data_valid` requires
+that slave online and OP, at least one input snapshot, and complete global
+domain WC. This is intentionally conservative; offline-transition hardware
+evidence through the new ioctl is still required before IOD integration.
 
 If one powered device also disconnects downstream devices, every affected
 configuration must report offline. The kernel must not silently renumber
@@ -167,9 +170,9 @@ SAFEOP/OP. Failure poisons the current session and requires close/reopen. This
 does not solve or suppress a watchdog event during the transition itself.
 
 Generations, copied process images, explicit arm/re-arm, fault-triggered
-disarm, and zero-gated deactivation now exist. Controller-death teardown still
-requires an explicit live kill test, and per-slave input validity remains a
-design gap.
+disarm, zero-gated deactivation, and per-configured-slave validity now exist.
+An explicit live kill while an all-zero shadow was armed proved synchronous
+file-release teardown with no cyclic-task leak or new kernel warning.
 
 ## Tests required before production
 

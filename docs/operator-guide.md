@@ -1,0 +1,194 @@
+# Standalone Operator Guide
+
+This guide covers the current experimental standalone transport. It does not
+install or start IOD/Clockwork and does not authorize machine motion or nonzero
+EtherCAT output.
+
+## Preconditions
+
+- Use the recorded target kernel/EtherLab build or explicitly supply matching
+  paths as described in
+  `docs/building/etherlab-dkms-environment.md`.
+- Stop IOD and every other EtherLab application. Master 0 has one application
+  owner.
+- Confirm hardware motion inhibition using the site's commissioning procedure.
+- Run privileged hardware commands as root.
+- Confirm the working tree and selected fixture are the intended versions.
+
+## Build and verify the contract
+
+```sh
+uname -r
+make check-build-env
+make -j6
+```
+
+`check-build-env` must resolve `ecrt.h`, generated target headers, and
+`Module.symvers` from the same kernel/EtherLab build. Do not continue through
+an ambiguous or mismatched result.
+
+## Discovery-only check
+
+```sh
+sudo insmod kernel/cw_ethercat.ko
+sudo tools/cw_ec_bus
+sudo rmmod cw_ethercat
+ethercat master
+```
+
+After release, `ethercat master` must report `Phase: Idle` and `Active: no`.
+For the repeatable ABI and identity comparison:
+
+```sh
+sudo tools/cw_ec_test_bus.sh
+```
+
+## Validate configuration without hardware activation
+
+Syntax-only validation does not claim the master:
+
+```sh
+tools/cw_ec_config check \
+  tools/configs/ed3l_velocity_dc_pos29.conf
+```
+
+`prepare` claims master 0, constructs the declarative configuration/domain,
+prints stable entry IDs and offsets, but does not activate or send cyclic
+process data:
+
+```sh
+sudo insmod kernel/cw_ethercat.ko
+sudo tools/cw_ec_config prepare \
+  tools/configs/ed3l_velocity_dc_pos29.conf
+sudo rmmod cw_ethercat
+ethercat master
+```
+
+The ED3L fixture is target-specific commissioning input; it is not kernel
+policy.
+
+## Zero-output cyclic check
+
+Only after motion inhibition is confirmed:
+
+```sh
+sudo insmod kernel/cw_ethercat.ko
+sudo tools/cw_ec_config cycle \
+  tools/configs/ed3l_velocity_dc_pos29.conf 1000000 8
+sudo rmmod cw_ethercat
+ethercat master
+```
+
+The command prints cycle/WC/DC status, global I/O status,
+per-configured-slave status, publication sequence, and a copied input
+snapshot. `cycle` leaves outputs disarmed. The all-ones shadow it publishes is
+not allowed through the kernel output gate.
+
+Expected functional evidence for the current position-29 fixture includes:
+
+- `wc_state=2` (complete);
+- `healthy=1`, `armed=0`, and no current faults;
+- configured slave online, operational, and data-valid; and
+- a final idle/inactive master after close.
+
+Do not interpret a short functional run as timing acceptance. Record errors,
+overruns, maximum lateness, DC convergence, and the declared system load.
+
+## Zero-only arm and teardown checks
+
+These tests never request nonzero output but still require motion inhibition:
+
+```sh
+sudo env CW_EC_MOTION_INHIBITED=YES \
+  tools/cw_ec_test_cycle_lifecycle.sh
+
+sudo env CW_EC_MOTION_INHIBITED=YES \
+  tools/cw_ec_test_controller_death.sh
+
+sudo env CW_EC_MOTION_INHIBITED=YES \
+  tools/cw_ec_test_process_image_allocations.sh
+```
+
+Each harness verifies stable physical identity/topology, master release, task
+cleanup, and newly added kernel warning/error lines.
+
+## Non-activating stress checks
+
+These tests do not apply SDO writes or activate cyclic I/O:
+
+```sh
+sudo tools/cw_ec_test_allocation_failures.sh
+sudo tools/cw_ec_test_config_stress.sh
+```
+
+The allocation harness uses disabled-by-default test module parameters. Never
+load a production-intended instance with either failure parameter enabled.
+
+## SDO diagnostics and commissioning
+
+Read-only upload example:
+
+```sh
+sudo tools/cw_ec_sdo read 29 0x6060 0 1
+```
+
+Parse and stage an ordered recipe without applying it:
+
+```sh
+sudo tools/cw_ec_sdo stage \
+  tools/recipes/ed3l_velocity_pdo_pos29.txt
+```
+
+`write` and `recipe` mutate physical slave state. They require a separate
+commissioning decision, motion inhibition, exact target verification, and a
+rollback/readback plan.
+
+## Safe stop and recovery
+
+Normal tool exit closes the device. The kernel then disarms outputs, stops and
+joins the cyclic task, deactivates EtherLab, invalidates owned pointers, and
+releases master 0. If a controller is killed, file release is the final
+synchronous unwind.
+
+After any abnormal result:
+
+1. do not force-unload the module;
+2. confirm the controller process has exited;
+3. wait for `/dev/EtherCAT0` to return;
+4. run `ethercat master` and confirm idle/inactive;
+5. inspect `dmesg --level=err,warn`; and
+6. preserve logs and the exact fixture before retrying.
+
+If an open file still owns the module, normal `rmmod cw_ethercat` must fail.
+Resolve the owner; never bypass module reference protection.
+
+## Unload and local cleanup
+
+In-tree development teardown is:
+
+```sh
+sudo rmmod cw_ethercat
+ethercat master
+make clean
+```
+
+For a persistent module-tree installation:
+
+```sh
+sudo make install
+sudo modprobe cw_ethercat
+sudo rmmod cw_ethercat
+sudo make uninstall
+```
+
+`install` places only `cw_ethercat.ko` and `cw_ethercat_probe.ko` under
+`/lib/modules/$(uname -r)/extra/cw_ethercat/` and refreshes module
+dependencies. `uninstall` removes only those two files and refreshes
+dependencies. It does not remove EtherLab/DKMS artifacts.
+
+Packaging can stage the same layout without touching the live module tree:
+
+```sh
+make DESTDIR=/path/to/package-root install
+make DESTDIR=/path/to/package-root uninstall
+```
