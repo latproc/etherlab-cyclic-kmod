@@ -85,6 +85,20 @@ User space owns:
 - interpretation of process data;
 - runtime SDO policy and scheduling.
 
+Clockwork integration must support two explicit process-entry selector modes:
+
+- legacy flattened `pos`, preserved for unconverted systems;
+- durable EtherCAT object identity, normally `(index, subindex)`.
+
+If `(index, subindex)` is duplicated, require an additional PDO index or
+occurrence discriminator. Never infer selector mode from numeric magnitude and
+never silently fall back from a failed object selector to `pos`.
+
+Provide a separate conversion/audit tool for Clockwork configurations. It must
+use a captured matching topology/PDO description, default to dry-run, report
+ambiguous or missing entries, preserve backups, and only rewrite selectors
+that resolve uniquely.
+
 The kernel module owns:
 
 - EtherLab application/master lifecycle;
@@ -292,3 +306,8 @@ Update this section during work. Use dated entries for facts that may change.
   without activation, bus traffic, or kernel warning/error. Next: add the
   standalone declarative configuration tool and ED3L fixture before any
   activation.
+- 2026-07-24: `/tmp/ecat.log` and the current Clockwork
+  `EtherCATSetup.cpp` confirm POINT/ANALOGINPUT-style machines select entries
+  by flattened `pos`. Preserve this for unconverted systems, add explicit
+  `(index, subindex)` selection for converted systems, and provide a dry-run
+  conversion tool rather than changing selector meaning in place.

@@ -76,3 +76,48 @@ control open also returns `EBUSY`.
 
 Future configuration and running states will extend this model only after their
 ownership and teardown rules are documented.
+
+## Clockwork process-entry selectors
+
+The flattened entry `pos` in `/tmp/ecat.log` is an enumeration artifact. For
+example, the first EL2838 output currently appears as:
+
+```text
+pos = 0
+index = 0x7000
+subindex = 1
+```
+
+New Clockwork configuration should identify this entry by explicit object
+identity `(0x7000, 1)`. The user-space backend resolves that identity within
+the selected module's PDO hierarchy, assigns a stable kernel `entry_id`, and
+uses the returned domain byte/bit offset.
+
+Index alone is not guaranteed unique. A duplicated `(index, subindex)` must be
+disambiguated with PDO index or occurrence; ambiguity is a configuration
+error.
+
+Legacy positional configuration remains supported for systems that have not
+been converted. Selector mode must be explicit, not inferred from whether a
+number looks like an ordinal or object index, and an invalid object selector
+must never fall back to the same numeric value as `pos`.
+
+Migration requires a standalone conversion tool that combines a Clockwork
+configuration with a matching captured PDO description:
+
+```text
+Clockwork config + /tmp/ecat.log
+              |
+              v
+       audit positional selectors
+              |
+       uniquely resolve each pos
+              |
+              v
+  proposed index/subindex selectors
+```
+
+The converter defaults to dry-run, reports missing and ambiguous mappings,
+does not rewrite partially resolved files, and preserves a backup when an
+explicit write is requested. The original `pos` mode remains available as a
+deliberate compatibility path.
