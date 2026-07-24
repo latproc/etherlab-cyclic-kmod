@@ -37,6 +37,7 @@
 *.hex
 /tools/cw_ec_bus
 /tools/cw_ec_abi_test
+/tools/cw_ec_sdo
 
 # Debug files
 *.dSYM/

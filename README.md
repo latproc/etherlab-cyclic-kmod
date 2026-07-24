@@ -11,9 +11,10 @@ hardware safety systems.
 
 ## Current scope
 
-Phase 2 bus discovery is implemented and proven on the current 29-slave target.
-It does not configure slaves, exchange cyclic process data, or provide SDO/PDO
-operations.
+Phase 2 bus discovery and the provisional Phase 3 commissioning SDO interface
+are implemented. Discovery is proven on the current 34-slave target. The
+project does not yet provide persistent slave/PDO configuration or cyclic
+process data.
 
 ```text
 cw_ec_bus
@@ -53,6 +54,7 @@ kernel/cw_ethercat.ko
 kernel/cw_ethercat_probe.ko
 tools/cw_ec_bus
 tools/cw_ec_abi_test
+tools/cw_ec_sdo
 ```
 
 ## Test the probe
@@ -91,6 +93,22 @@ sudo tools/cw_ec_test_bus.sh
 
 The module claims master 0 only while a process has `/dev/cw_ethercat0` open.
 See [the UAPI documentation](docs/uapi.md).
+
+## Commissioning SDO tool
+
+`cw_ec_sdo` provides bounded diagnostic uploads, single writes, and ordered
+recipe execution. Writes require exclusive master ownership and alter physical
+slave state. They are not the future persistent recovery mechanism.
+
+Examples:
+
+```sh
+sudo tools/cw_ec_sdo read 29 0x6060 0 1
+tools/cw_ec_sdo validate 29 u32 0x1600 1 0x60400010
+```
+
+Do not run write/recipe commands while IOD owns the master or while machine
+motion is not safely inhibited.
 
 ## License
 

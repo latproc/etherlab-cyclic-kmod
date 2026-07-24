@@ -14,24 +14,58 @@ decisions, risks, commands, or next steps change.
 
 ## Current Status
 
-- Current phase: Phase 2 discovery prototype implemented and hardware-proven.
+- Current phase: Phase 2 complete; Phase 3 setup-SDO investigation/design.
 - The implementation plan has been read in full.
 - A minimal kernel probe, DKMS-aware build, environment documentation, and
   lifecycle test script exist.
 - With Clockwork stopped and the master idle, the probe builds against the
   exact target and passed ten live load/acquire/release/unload iterations
   without retaining the master.
-- Contention while Clockwork owns the master remains untested. EtherLab
-  ownership is exclusive; the required result is a clean probe load failure
-  that does not disturb Clockwork.
+- Contention while IOD owns master 0 is proven for both the minimal probe and
+  Phase 2 device: ownership attempts return `EBUSY` without disturbing IOD.
 - Versioned UAPI 0.1, `/dev/cw_ethercat0`, `cw_ec_bus`, ABI tests, and a
   repeatable topology comparison exist.
 - All 29 physical slave identity records matched `ethercat slaves -v`; topology
   was unchanged after release. An additional 120 open/scan/close lifecycle
   iterations completed, with the final 20 adding no kernel warning.
-- No configuration, setup SDO, PDO/domain, process-image, or cyclic code exists.
-- Immediate next task: test this exact character-device open while IOD owns
-  master 0, then review the Phase 2 checkpoint before beginning Phase 3.
+- No persistent configuration, PDO/domain, process-image, or cyclic code
+  exists.
+- A provisional bounded ad-hoc SDO batch now exists in uncommitted Phase 3
+  work for commissioning/decision-gate tests. It is not the persistent
+  production setup mechanism and has not been loaded or executed on hardware.
+- Bounded SDO upload is hardware-proven against ED3L `0x6060:00`; no write has
+  been issued. Post-power-up readback showed all five drives in the default
+  two-entry position PDO layout, not the planned velocity layout. Confirm the
+  legacy restart/recipe baseline before writing.
+- Installed `iod.sh` confirms the recovery gap: it configures only ED3Ls visible
+  during startup. The installed `sdo.sh` exactly matches the planned velocity
+  recipe. Running it is the next decision-gate step and requires motion safely
+  inhibited plus explicit approval because it mutates all five drives.
+- Test A legacy mapping is captured on all five drives. The legacy script
+  reaches the right final state but ignores aborts from unnecessary zero-entry
+  writes. A cleaned strict 21-write kernel batch succeeded on position 29 with
+  full final-state verification.
+- Installed `iod` and `iod_sdo` both compile with `USE_DC`. Preserve the
+  documented reference selection, application-time steering, cycle ordering,
+  monitoring, and adjustment algorithm in the eventual kernel cyclic thread.
+- Phase 2 acceptance is complete. Current work is Phase 3 investigation and
+  bounded ordered setup-SDO design.
+- Servo-off startup and live power-loss/restoration without restarting IOD are
+  now mandatory requirements. Recovery must gate stale outputs until user
+  space explicitly permits re-arm.
+- Distributed clocks are mandatory when configured. Preserve the installed
+  IOD algorithm first: user space owns DC policy/parameters; the kernel cyclic
+  backend owns reference selection, application time, cyclic sync calls, and
+  low-overhead DC status/statistics.
+- Research confirms the recommended production path is persistent EtherLab
+  slave configuration: declarative PDOs plus ordered configuration SDOs applied
+  by the EtherLab PREOP state machine and replayed on reconfiguration. Ad-hoc
+  master SDO downloads are for commissioning and the decision gate, not the
+  normal recovery mechanism.
+- EtherCAT station aliases are optional. Baseline matching must support alias
+  zero using configured physical topology and absolute position. Never
+  remap an absent logical axis to another identical device merely because its
+  vendor/product matches.
 - Do not modify Clockwork/IOD behavior in this repository.
 
 ## Non-Negotiable Architecture
@@ -225,5 +259,7 @@ Update this section during work. Use dated entries for facts that may change.
   up.
 - 2026-07-24: Phase 2 character device and `cw_ec_bus` reported all 29 slaves
   in physical order with identities matching EtherLab CLI. Malformed ABI,
-  exclusive-open, release, and repeated lifecycle smoke tests passed. The exact
-  character-device contention test with IOD remains outstanding.
+  exclusive-open, release, and repeated lifecycle smoke tests passed.
+- 2026-07-24: Exact Phase 2 contention test completed: module registration
+  succeeded while IOD ran, `cw_ec_bus` received `EBUSY`, and IOD retained
+  active Operation state with 29 slaves/link up.

@@ -28,6 +28,32 @@ int main(int argc, char **argv)
 {
 	const char *device = "/dev/cw_ethercat0";
 	struct cw_ec_slave_info slave;
+	struct cw_ec_setup_begin begin = {
+		.struct_size = sizeof(begin),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_setup_sdo setup_sdo = {
+		.struct_size = sizeof(setup_sdo),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.sequence = 1,
+		.position = 0,
+		.index = 0x2000,
+		.subindex = 0,
+		.type = CW_EC_SDO_U8,
+		.data_len = 1,
+		.data = { 0 },
+	};
+	struct cw_ec_setup_apply apply = {
+		.struct_size = sizeof(apply),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_sdo_upload upload = {
+		.struct_size = sizeof(upload),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.position = 0,
+		.index = 0x2000,
+		.subindex = 0,
+	};
 	unsigned long unknown_ioctl = _IO(CW_EC_IOC_MAGIC, 0x7f);
 	int failures = 0;
 	int second_fd;
@@ -81,6 +107,58 @@ int main(int argc, char **argv)
 	failures += expect_errno("invalid slave position",
 				 ioctl(fd, CW_EC_IOC_GET_SLAVE_INFO, &slave),
 				 ENOENT);
+
+	errno = 0;
+	failures += expect_errno("setup add before begin",
+				 ioctl(fd, CW_EC_IOC_SETUP_ADD_SDO,
+				       &setup_sdo),
+				 EINVAL);
+
+	if (ioctl(fd, CW_EC_IOC_SETUP_BEGIN, &begin) < 0) {
+		fprintf(stderr, "FAIL: setup begin: %s\n", strerror(errno));
+		failures++;
+	}
+
+	setup_sdo.data_len = 2;
+	errno = 0;
+	failures += expect_errno("setup scalar length mismatch",
+				 ioctl(fd, CW_EC_IOC_SETUP_ADD_SDO,
+				       &setup_sdo),
+				 EINVAL);
+	setup_sdo.data_len = 1;
+
+	if (ioctl(fd, CW_EC_IOC_SETUP_ADD_SDO, &setup_sdo) < 0) {
+		fprintf(stderr, "FAIL: valid setup add: %s\n", strerror(errno));
+		failures++;
+	}
+
+	errno = 0;
+	failures += expect_errno("duplicate setup sequence",
+				 ioctl(fd, CW_EC_IOC_SETUP_ADD_SDO,
+				       &setup_sdo),
+				 EEXIST);
+
+	if (ioctl(fd, CW_EC_IOC_SETUP_RESET, &begin) < 0) {
+		fprintf(stderr, "FAIL: setup reset: %s\n", strerror(errno));
+		failures++;
+	}
+
+	errno = 0;
+	failures += expect_errno("apply empty setup batch",
+				 ioctl(fd, CW_EC_IOC_SETUP_APPLY, &apply),
+				 EINVAL);
+
+	errno = 0;
+	failures += expect_errno("zero-length SDO upload",
+				 ioctl(fd, CW_EC_IOC_SDO_UPLOAD, &upload),
+				 EINVAL);
+
+	upload.requested_len = 1;
+	upload.index = 0;
+	errno = 0;
+	failures += expect_errno("zero-index SDO upload",
+				 ioctl(fd, CW_EC_IOC_SDO_UPLOAD, &upload),
+				 EINVAL);
 
 	if (close(fd) < 0) {
 		fprintf(stderr, "FAIL: close: %s\n", strerror(errno));

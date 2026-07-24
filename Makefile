@@ -43,7 +43,7 @@ modules: check-build-env
 		ETHERLAB_INCLUDE="$(ETHERLAB_INCLUDE)" \
 		KBUILD_EXTRA_SYMBOLS="$(ETHERLAB_SYMVERS)" modules
 
-tools: tools/cw_ec_bus tools/cw_ec_abi_test
+tools: tools/cw_ec_bus tools/cw_ec_abi_test tools/cw_ec_sdo
 
 tools/cw_ec_bus: tools/cw_ec_bus.c include/cw_ethercat_uapi.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \
@@ -53,6 +53,10 @@ tools/cw_ec_abi_test: tools/cw_ec_abi_test.c include/cw_ethercat_uapi.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \
 		-I"$(CURDIR)/include" -o "$@" "$<"
 
+tools/cw_ec_sdo: tools/cw_ec_sdo.c include/cw_ethercat_uapi.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \
+		-I"$(CURDIR)/include" -o "$@" "$<"
+
 clean:
 	$(MAKE) -C "$(KERNEL_BUILD)" M="$(CURDIR)/kernel" clean
-	$(RM) tools/cw_ec_bus tools/cw_ec_abi_test
+	$(RM) tools/cw_ec_bus tools/cw_ec_abi_test tools/cw_ec_sdo

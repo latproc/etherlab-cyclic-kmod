@@ -2,8 +2,9 @@
 
 ## Status
 
-The current experimental API is version 0.1 and supports read-only master and
-slave discovery. It is not stable and provides no configuration or cyclic I/O.
+The current experimental API is version 0.2. It supports read-only discovery
+and a provisional bounded ad-hoc SDO batch used for commissioning tests. It is
+not stable and provides no persistent slave/PDO configuration or cyclic I/O.
 
 ## Ownership and lifecycle
 
@@ -27,7 +28,7 @@ Linux UAPI types, contain no pointers, and have fixed layouts suitable for the
 compat ioctl path.
 
 The tool first calls `CW_EC_IOC_GET_API_VERSION`. Major versions must match.
-Minor version 0.1 currently identifies the discovery prototype.
+Minor version 0.2 adds the provisional ad-hoc setup-SDO batch.
 
 Input/output structures that accept caller fields include `struct_size` and
 `api_major`. The kernel rejects an unexpected size with `EINVAL` and an
@@ -82,3 +83,50 @@ incompatible API major, and invalid slave position.
   operation phase until close, although it does not activate a PDO domain.
 - There is no wait-for-scan operation. `scan_busy` is reported to user space.
 - Slave state is a scan snapshot. No topology generation is exposed yet.
+
+## Provisional ad-hoc setup-SDO batch
+
+The following operations exist only to prove ordered blocking SDO downloads
+and reproduce commissioning recipes:
+
+```text
+CW_EC_IOC_SETUP_BEGIN
+CW_EC_IOC_SETUP_ADD_SDO
+CW_EC_IOC_SETUP_APPLY
+CW_EC_IOC_SETUP_RESET
+CW_EC_IOC_SDO_UPLOAD
+```
+
+They are deliberately separate from the future persistent configuration
+transaction. The batch uses `ecrt_master_sdo_download()` and therefore applies
+only to online slaves; EtherLab does not retain or replay it after power loss.
+
+Limits are:
+
+- 256 operations;
+- 256 bytes per payload;
+- 16 KiB total payload.
+
+Sequences must be nonzero and strictly increasing. Scalar types require their
+exact width; `bytes` accepts a nonempty bounded payload. Payload bytes are
+already encoded in EtherCAT little-endian wire order by user space.
+
+`SETUP_APPLY` executes in insertion/sequence order and stops at the first
+failure. Its result identifies the failed sequence, slave, object, errno, and
+CoE abort code. A batch becomes non-retryable as soon as apply starts because
+earlier writes may have succeeded before a later failure. User space must
+explicitly begin and resubmit a new batch.
+
+There is no physical rollback for SDO writes. `SETUP_RESET`, close, or an
+allocation failure only frees kernel metadata; it cannot undo writes already
+accepted by a slave. A `copy_to_user()` failure after apply may prevent the
+caller from receiving results even though physical writes occurred.
+
+`SDO_UPLOAD` is a bounded blocking diagnostic read. The caller supplies slave
+position, object index/subindex, and a maximum result length from 1 to 256
+bytes. The result includes actual length, data, errno, and CoE abort code. It
+does not retain an asynchronous request.
+
+The production configuration path will instead store ordered
+`ecrt_slave_config_sdo()` data with each persistent slave configuration so
+EtherLab can replay it during PREOP reconfiguration.

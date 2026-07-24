@@ -185,8 +185,8 @@ The script refuses to disturb a probe module that was already loaded.
 
 ## Open items
 
-- The minimal probe contention test passed while IOD owned master 0. The exact
-  Phase 2 character-device open contention test remains to be recorded.
+- Both the minimal probe and Phase 2 character-device open contention tests
+  passed while IOD owned master 0.
 - Extend lifecycle repetition and run kmemleak/fault-injection testing when the
   module begins allocating persistent objects.
 - Obtain and test the older manual EtherLab build environment before claiming

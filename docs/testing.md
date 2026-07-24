@@ -51,7 +51,13 @@ PASS: unknown ioctl returned Inappropriate ioctl for device
 PASS: short slave structure returned Invalid argument
 PASS: wrong API major returned Protocol not supported
 PASS: invalid slave position returned No such file or directory
-PASS: 29 slave identities match; CLI topology unchanged
+PASS: setup add before begin returned Invalid argument
+PASS: setup scalar length mismatch returned Invalid argument
+PASS: duplicate setup sequence returned File exists
+PASS: apply empty setup batch returned Invalid argument
+PASS: zero-length SDO upload returned Invalid argument
+PASS: zero-index SDO upload returned Invalid argument
+PASS: 34 slave identities match; CLI topology unchanged
 ```
 
 An additional 100 open/scan/close iterations completed, followed by 20
@@ -59,9 +65,32 @@ instrumented iterations that added no kernel warning/error. Master 0 was idle
 and available afterward. This is lifecycle smoke testing, not kmemleak,
 KASAN/KFENCE, or fault-injection evidence.
 
-## Remaining Phase 2 test
+## Phase 3 commissioning SDO
 
-Load `cw_ethercat.ko` while IOD owns master 0, then run `cw_ec_bus`. Module load
-must succeed because it does not claim the master; tool open must fail with
-`EBUSY`; IOD must remain active and unchanged. This exact character-device
-contention path remains to be recorded.
+Read-only upload:
+
+```text
+EtherLab CLI: 0x03
+kernel UAPI:  03
+```
+
+for ED3L position 29 object `0x6060:00`.
+
+The legacy recipe was applied to all five ED3Ls and every final mapping object
+was verified. The legacy script ignored aborts from unnecessary zero-entry
+writes. A cleaned strict 21-write recipe was then applied through the kernel
+batch to position 29; all writes succeeded and final readback matched the
+velocity PDO layout.
+
+See `docs/ed3l-pdo-configuration-test.md` for exact values and remaining
+persistent/declarative decision-gate tests.
+
+## Phase 2 contention
+
+On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device
+without claiming the master. `cw_ec_bus` then failed to open the device with
+`EBUSY` and reported that master 0 was already owned. After module unload, IOD
+still held master 0 in active Operation phase with 29 slaves and link up.
+
+This closes the Phase 2 contention check: registering the transport module does
+not disturb the direct backend, and attempted control ownership fails cleanly.
