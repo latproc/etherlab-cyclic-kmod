@@ -14,8 +14,8 @@ decisions, risks, commands, or next steps change.
 
 ## Current Status
 
-- Current phase: Phase 2 complete; Phase 3 decision gate, preparing the
-  declarative PDO test path.
+- Current phase: Phase 2 complete; Phase 3 decision gate, implementing the
+  bounded zero-output declarative PDO activation test path.
 - The implementation plan has been read in full.
 - A minimal kernel probe, DKMS-aware build, environment documentation, and
   lifecycle test script exist.
@@ -36,6 +36,11 @@ decisions, risks, commands, or next steps change.
   persistent EtherLab configuration objects and register a domain without
   activation. Stable user entry IDs resolve to byte/bit offsets. It does not
   yet activate or cycle.
+- API 0.4 builds a configurable-period cyclic pump around an applied domain,
+  zeroes the image before its first send, reports basic timing/send counters,
+  and synchronously joins before deactivation. It intentionally has no
+  process-image writer or DC configuration yet. Position 29 has reached OP
+  with complete working counter under motion inhibit.
 - A provisional bounded ad-hoc SDO batch exists for commissioning and
   decision-gate tests. It is not the persistent production setup mechanism.
 - Bounded SDO upload is hardware-proven against ED3L `0x6060:00`; no write has
@@ -396,3 +401,16 @@ Update this section during work. Use dated entries for facts that may change.
   and the local production branch both resolve to
   `51af5222213ea49353982dafc31c456394baf27d` with zero divergence. Machine
   configuration remains committed at SVN revision 20001.
+- 2026-07-24: API 0.4 zero-output cyclic activation builds against the exact
+  RT kernel and EtherLab 1.6.9 artifacts. Exact source inspection proved that
+  deactivation destroys domain/configuration objects, so applied pointers and
+  entry offsets are invalidated after stop. The target does not export
+  `ecrt_master_set_send_interval()`. Hardware validation is pending; leave IOD
+  running until the prepared module and tests require master 0.
+- 2026-07-24: Declarative API 0.4 activation on ED3L position 29 reached OP
+  with WC 3/complete, exact 28-byte mapping, zero cycle API errors, and exact
+  typed mapping readback. Application time is now initialized and advanced.
+  Rapid deactivate/reacquire is not accepted: EtherLab's asynchronous
+  post-deactivation PREOP transition can race reacquisition and the enabled
+  drive output watchdog can expire after cyclic traffic stops. Do not hide
+  this by disabling the watchdog; add an observable settled lifecycle.

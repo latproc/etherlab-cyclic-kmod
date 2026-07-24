@@ -159,6 +159,58 @@ user-space convention, not a kernel requirement. The master was not activated,
 no configuration was sent to the drive, and recent kernel warnings/errors
 remained empty after release and unload.
 
+## API 0.4 cyclic preflight
+
+Build and syntax checks:
+
+```sh
+make -j2
+./tools/cw_ec_config check tools/configs/ed3l_velocity_pos29.conf
+```
+
+The no-activation ABI suite also verifies inactive status, inactive
+deactivation rejection, cycle periods below/above the hard limits, and
+unsupported activation flags.
+
+The bounded hardware command is:
+
+```sh
+./tools/cw_ec_config cycle \
+  tools/configs/ed3l_velocity_pos29.conf 1000000 10
+```
+
+Do not run it while IOD owns master 0. Motion must be safely inhibited. This
+activation applies the declarative PDO mapping to position 29, zeroes the
+domain before its first send, pumps for ten seconds, prints timing/send
+counters, stops and joins the thread, and deactivates EtherLab. Verify mapping
+readback, AL/working-counter state, EtherLab CLI recovery, and kernel warnings
+afterward.
+
+Hardware evidence on 2026-07-24:
+
+- position 29 was directly observed in OP during a 15-second run;
+- the 28-byte domain reported working counter 3 and `EC_WC_COMPLETE`;
+- 14,999 cycles completed with zero EtherLab API errors and zero full-period
+  overruns; maximum observed wake latency was 334,976 ns;
+- typed SDO readback exactly matched the six-entry `0x1600` and four-entry
+  `0x1a00` fixture, assigned through `0x1c12` and `0x1c13`;
+- the master returned idle with link up and all 34 slaves visible.
+
+Five short runs each maintained complete working counter and zero cycle API
+errors. Four had no overrun; one non-RT-scheduled run had one 1,889,557 ns
+wakeup. This is functional cycle evidence, not deterministic scheduling
+acceptance.
+
+Rapid stop/close/reopen is not yet a clean lifecycle acceptance result.
+EtherLab deactivation restarts its idle state machine and requests PREOP
+asynchronously after application traffic stops. Immediate reacquisition can
+collide with pending AL-state datagrams, and an output Sync Manager watchdog
+enabled in the fixture may expire during that gap. The target public API has
+no application operation to request OP→PREOP while cyclic traffic continues.
+Repetition testing must wait for idle/PREOP settlement, and the production
+lifecycle must define how that settlement is reported rather than relying on
+arbitrary sleeps.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

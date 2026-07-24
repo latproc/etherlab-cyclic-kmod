@@ -125,6 +125,31 @@ configuration and recovery implementation.
 Global transport state and per-slave state must remain separate. One absent
 optional drive must not force all available EtherCAT I/O offline.
 
+## API 0.4 zero-output cyclic increment
+
+The first activation increment exposes no user-space process-image writer.
+After EtherLab allocates the domain, the kernel zeroes the complete domain
+before starting its cycle thread. This gives the decision-gate test a
+non-commanding cyclic pump, not a production output protocol.
+
+The cycle thread is synchronously stopped before EtherLab deactivation or
+master release. The implementation waits one bounded cycle and drains the
+final response before deactivation. A missed activation result caused by
+`copy_to_user()` failure also triggers synchronous deactivation. Activation
+failure poisons the control session because EtherLab may have partially
+finished domain construction; the safe recovery is close and reopen.
+
+EtherLab 1.6.9 requests PREOP asynchronously during deactivation, after the
+application cyclic sender has stopped. With an enabled output Sync Manager
+watchdog, the drive can report a watchdog fault before that transition
+completes. Rapid reacquisition can also collide with pending idle-state-machine
+datagrams. This unresolved lifecycle boundary must not be hidden by disabling
+the production watchdog.
+
+This is not yet the final stale-output design. Before process-image writes are
+added, the transport still needs generations, controller liveness, explicit
+arm/re-arm, and forced-safe behavior for link/slave loss and power restoration.
+
 ## Tests required before production
 
 - start Clockwork/kernel transport with all five drives off;

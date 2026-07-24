@@ -109,6 +109,18 @@ int main(int argc, char **argv)
 		.api_major = CW_EC_API_VERSION_MAJOR,
 		.entry_id = 1001,
 	};
+	struct cw_ec_cycle_activate cycle_activate = {
+		.struct_size = sizeof(cycle_activate),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_cycle_status cycle_status = {
+		.struct_size = sizeof(cycle_status),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_cycle_deactivate cycle_deactivate = {
+		.struct_size = sizeof(cycle_deactivate),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
 	unsigned long unknown_ioctl = _IO(CW_EC_IOC_MAGIC, 0x7f);
 	int failures = 0;
 	int second_fd;
@@ -348,6 +360,41 @@ int main(int argc, char **argv)
 	failures += expect_errno("duplicate domain create",
 				 ioctl(fd, CW_EC_IOC_DOMAIN_CREATE,
 				       &domain_create),
+				 EINVAL);
+
+	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_STATUS, &cycle_status) < 0) {
+		fprintf(stderr, "FAIL: get inactive cycle status: %s\n",
+			strerror(errno));
+		failures++;
+	} else if (cycle_status.active || cycle_status.cycle_count) {
+		fprintf(stderr, "FAIL: initial cycle status is not inactive\n");
+		failures++;
+	} else {
+		printf("PASS: initial cycle status is inactive\n");
+	}
+	errno = 0;
+	failures += expect_errno("deactivate inactive cycle",
+				 ioctl(fd, CW_EC_IOC_CYCLE_DEACTIVATE,
+				       &cycle_deactivate),
+				 EINVAL);
+	cycle_activate.cycle_period_ns = CW_EC_CYCLE_PERIOD_MIN_NS - 1;
+	errno = 0;
+	failures += expect_errno("cycle period below minimum",
+				 ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE,
+				       &cycle_activate),
+				 EINVAL);
+	cycle_activate.cycle_period_ns = CW_EC_CYCLE_PERIOD_MAX_NS + 1U;
+	errno = 0;
+	failures += expect_errno("cycle period above maximum",
+				 ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE,
+				       &cycle_activate),
+				 EINVAL);
+	cycle_activate.cycle_period_ns = 1000000;
+	cycle_activate.flags = 1;
+	errno = 0;
+	failures += expect_errno("unsupported cycle flags",
+				 ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE,
+				       &cycle_activate),
 				 EINVAL);
 
 	if (close(fd) < 0) {

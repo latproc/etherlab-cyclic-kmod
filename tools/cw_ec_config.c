@@ -48,8 +48,9 @@ static void usage(const char *program)
 	fprintf(stderr,
 		"usage:\n"
 		"  %s check CONFIG\n"
-		"  %s prepare CONFIG [DEVICE]\n",
-		program, program);
+		"  %s prepare CONFIG [DEVICE]\n"
+		"  %s cycle CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n",
+		program, program, program);
 }
 
 static int parse_u64(const char *text, uint64_t maximum, uint64_t *value)
@@ -352,7 +353,8 @@ static int print_offsets(int fd, const char *path)
 	return 0;
 }
 
-static int prepare(const char *path, const char *device)
+static int configure_fd(int fd, const char *path,
+			struct cw_ec_config_validate *validated)
 {
 	struct cw_ec_config_begin begin = {
 		.struct_size = sizeof(begin),
@@ -370,6 +372,38 @@ static int prepare(const char *path, const char *device)
 		.struct_size = sizeof(domain),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &begin) < 0 ||
+	    submit_config(fd, path) < 0)
+		return -1;
+	if (ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE, &validate) < 0) {
+		fprintf(stderr, "cw_ec_config: validation failed: %s\n",
+			strerror(errno));
+		return -1;
+	}
+	if (ioctl(fd, CW_EC_IOC_CONFIG_APPLY, &apply) < 0) {
+		fprintf(stderr,
+			"cw_ec_config: apply failed: %s; kind=%u id=%" PRIu32
+			"\n",
+			strerror(errno), apply.failed_object_kind,
+			apply.failed_config_id);
+		return -1;
+	}
+	if (ioctl(fd, CW_EC_IOC_DOMAIN_CREATE, &domain) < 0) {
+		fprintf(stderr,
+			"cw_ec_config: domain registration failed: %s; id=%"
+			PRIu32 "\n",
+			strerror(errno), domain.failed_config_id);
+		return -1;
+	}
+	if (print_offsets(fd, path))
+		return -1;
+	*validated = validate;
+	return 0;
+}
+
+static int prepare(const char *path, const char *device)
+{
+	struct cw_ec_config_validate validate;
 	int fd = open(device, O_RDWR | O_CLOEXEC);
 	int ret = 1;
 
@@ -378,30 +412,7 @@ static int prepare(const char *path, const char *device)
 			device, strerror(errno));
 		return 1;
 	}
-	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &begin) < 0 ||
-	    submit_config(fd, path) < 0)
-		goto out;
-	if (ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE, &validate) < 0) {
-		fprintf(stderr, "cw_ec_config: validation failed: %s\n",
-			strerror(errno));
-		goto out;
-	}
-	if (ioctl(fd, CW_EC_IOC_CONFIG_APPLY, &apply) < 0) {
-		fprintf(stderr,
-			"cw_ec_config: apply failed: %s; kind=%u id=%" PRIu32
-			"\n",
-			strerror(errno), apply.failed_object_kind,
-			apply.failed_config_id);
-		goto out;
-	}
-	if (ioctl(fd, CW_EC_IOC_DOMAIN_CREATE, &domain) < 0) {
-		fprintf(stderr,
-			"cw_ec_config: domain registration failed: %s; id=%"
-			PRIu32 "\n",
-			strerror(errno), domain.failed_config_id);
-		goto out;
-	}
-	if (print_offsets(fd, path))
+	if (configure_fd(fd, path, &validate))
 		goto out;
 	printf("prepared %u slave(s), %u sync manager(s), %u PDO(s), "
 	       "%u entry/entries; master was not activated\n",
@@ -416,12 +427,89 @@ out:
 	return ret;
 }
 
+static int cycle(const char *path, uint32_t period_ns,
+		 unsigned int duration_seconds, const char *device)
+{
+	struct cw_ec_config_validate validate;
+	struct cw_ec_cycle_activate activate = {
+		.struct_size = sizeof(activate),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.cycle_period_ns = period_ns,
+	};
+	struct cw_ec_cycle_status status = {
+		.struct_size = sizeof(status),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_cycle_deactivate deactivate = {
+		.struct_size = sizeof(deactivate),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	int fd = open(device, O_RDWR | O_CLOEXEC);
+	bool active = false;
+	int ret = 1;
+
+	if (fd < 0) {
+		fprintf(stderr, "cw_ec_config: cannot open %s: %s\n",
+			device, strerror(errno));
+		return 1;
+	}
+	if (configure_fd(fd, path, &validate))
+		goto out;
+	if (ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE, &activate) < 0) {
+		fprintf(stderr, "cw_ec_config: activation failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	active = true;
+	printf("activated zero-output domain: size=%" PRIu32
+	       " period=%" PRIu32 " ns for %u second(s)\n",
+	       activate.domain_size, period_ns, duration_seconds);
+	while (duration_seconds)
+		duration_seconds = sleep(duration_seconds);
+	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_STATUS, &status) < 0) {
+		fprintf(stderr, "cw_ec_config: status failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	printf("cycle status: active=%u cycles=%" PRIu64
+	       " errors=%" PRIu64 " overruns=%" PRIu64
+	       " maximum_lateness=%" PRIu64 " ns wc=%" PRIu32
+	       " wc_state=%u last_result=%" PRId32 "\n",
+	       status.active, (uint64_t)status.cycle_count,
+	       (uint64_t)status.cycle_error_count,
+	       (uint64_t)status.cycle_overrun_count,
+	       (uint64_t)status.maximum_lateness_ns,
+	       status.working_counter, status.working_counter_state,
+	       status.last_cycle_result);
+	if (ioctl(fd, CW_EC_IOC_CYCLE_DEACTIVATE, &deactivate) < 0) {
+		fprintf(stderr, "cw_ec_config: deactivation failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	active = false;
+	ret = 0;
+out:
+	/*
+	 * Close is the kernel-enforced final unwind. It synchronously stops an
+	 * active cycle even if a status/deactivation ioctl failed.
+	 */
+	if (active)
+		fprintf(stderr, "cw_ec_config: closing active session for cleanup\n");
+	if (close(fd) < 0) {
+		fprintf(stderr, "cw_ec_config: close: %s\n", strerror(errno));
+		ret = 1;
+	}
+	return ret;
+}
+
 int main(int argc, char **argv)
 {
 	const char *device = "/dev/cw_ethercat0";
 	struct counts counts;
+	uint64_t duration;
+	uint64_t period;
 
-	if (argc < 3 || argc > 4) {
+	if (argc < 3 || argc > 6) {
 		usage(argv[0]);
 		return 2;
 	}
@@ -434,9 +522,24 @@ int main(int argc, char **argv)
 		return 0;
 	}
 	if (!strcmp(argv[1], "prepare")) {
+		if (argc > 4) {
+			usage(argv[0]);
+			return 2;
+		}
 		if (argc == 4)
 			device = argv[3];
 		return prepare(argv[2], device);
+	}
+	if (!strcmp(argv[1], "cycle") && (argc == 5 || argc == 6)) {
+		if (parse_u64(argv[3], CW_EC_CYCLE_PERIOD_MAX_NS, &period) ||
+		    period < CW_EC_CYCLE_PERIOD_MIN_NS ||
+		    parse_u64(argv[4], 3600, &duration) || !duration) {
+			fprintf(stderr, "cw_ec_config: invalid period or duration\n");
+			return 2;
+		}
+		if (argc == 6)
+			device = argv[5];
+		return cycle(argv[2], period, duration, device);
 	}
 	usage(argv[0]);
 	return 2;

@@ -2,11 +2,11 @@
 
 ## Status
 
-The current experimental API is version 0.3. It supports read-only discovery,
+The current experimental API is version 0.4. It supports read-only discovery,
 a provisional bounded ad-hoc SDO batch used for commissioning tests, and
-non-mutating validation of a pending slave/Sync Manager/PDO/PDO-entry
-hierarchy. It is not stable and does not yet apply persistent configuration or
-provide cyclic I/O.
+transactional construction of a slave/Sync Manager/PDO/PDO-entry hierarchy.
+It can activate a zero-initialized domain and pump it cyclically, but it does
+not yet expose process-image exchange or Distributed Clock configuration.
 
 ## Ownership and lifecycle
 
@@ -32,6 +32,8 @@ compat ioctl path.
 The tool first calls `CW_EC_IOC_GET_API_VERSION`. Major versions must match.
 Minor version 0.2 added the provisional ad-hoc setup-SDO batch. Minor version
 0.3 adds the pending declarative configuration hierarchy and validation calls.
+Minor version 0.4 adds bounded activation, cycle status, and synchronous
+deactivation.
 
 Input/output structures that accept caller fields include `struct_size` and
 `api_major`. The kernel rejects an unexpected size with `EINVAL` and an
@@ -191,6 +193,53 @@ user-supplied `entry_id` to its domain byte offset, bit position, and bit
 length. Unknown IDs return `ENOENT`. Domain creation does not activate the
 master, obtain the process-data pointer, or send traffic.
 
+## Initial cyclic lifecycle
+
+API 0.4 adds:
+
+```text
+CW_EC_IOC_CYCLE_ACTIVATE
+CW_EC_IOC_CYCLE_GET_STATUS
+CW_EC_IOC_CYCLE_DEACTIVATE
+```
+
+Activation requires an applied configuration and registered domain. The caller
+supplies a cycle period from 100 microseconds through one second; flags must be
+zero. The kernel activates EtherLab, obtains the internal domain memory,
+zeroes the complete image before the first application send, and starts one
+kernel thread. The thread calls receive, domain process, domain queue, and send
+in that order.
+
+Status returns active state, configured period, domain size, working counter
+and interpretation, completed cycles, cycle API errors, full-period overruns,
+maximum observed lateness, and the last aggregate cycle result. Any positive
+scheduler lateness contributes to the maximum, but only lateness of at least
+one full period is an overrun. There is no normal-cycle logging, allocation,
+blocking mailbox operation, or user-space callback.
+
+Application time is initialized to monotonic time rounded to the configured
+period before activation and advanced once per cycle before queue/send. This
+prevents EtherLab from activating without application time and establishes the
+required ordering for the later explicit DC policy.
+
+Deactivation first stops and joins the cycle thread, then calls
+`ecrt_master_deactivate()`. Before deactivation it waits one bounded cycle
+period and consumes/processes the response to the final send. Exact EtherLab
+1.6.9 source inspection confirms that deactivation destroys all domains and
+slave configurations. The kernel therefore invalidates applied EtherLab
+pointers and entry offsets while retaining validated user metadata; the caller
+must apply and create the domain again before another activation. Close
+performs the same synchronous stop before releasing master 0.
+
+This increment intentionally has no process-image writer and therefore cannot
+command motion. It also does not yet configure or service Distributed Clocks;
+DC-enabled activation is a separate required increment.
+
+The target DKMS `Module.symvers` does not export
+`ecrt_master_set_send_interval()`, although EtherLab declares it. This external
+module cannot provide that optional hint and uses the validated period only
+for its cyclic schedule.
+
 ## Standalone declarative file format
 
 `tools/cw_ec_config` provides a temporary dependency-free text format for
@@ -207,3 +256,10 @@ Numbers accept C base notation, including hexadecimal. Directions are `input`
 or `output`; watchdog values are `default`, `enable`, or `disable`. The tool
 first parses and bounds the complete file, then submits it in file order.
 `prepare` stops after domain registration and closes the device.
+
+`cycle CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]` performs the same
+preparation, activates the zero-output cyclic pump for a bounded duration,
+prints cycle status, and synchronously deactivates. Closing the descriptor is
+also a kernel-enforced cleanup path if status or explicit deactivation fails.
+This command changes EtherCAT slave PDO configuration during activation and is
+a hardware commissioning operation despite having no process-image writer.

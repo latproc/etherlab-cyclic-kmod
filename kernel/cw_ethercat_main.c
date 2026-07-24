@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 #include <linux/atomic.h>
+#include <linux/delay.h>
 #include <linux/errno.h>
 #include <linux/fs.h>
+#include <linux/hrtimer.h>
 #include <linux/init.h>
+#include <linux/kthread.h>
 #include <linux/list.h>
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/string.h>
+#include <linux/timekeeping.h>
 #include <linux/uaccess.h>
 
 #include <ecrt.h>
@@ -40,6 +44,19 @@ struct cw_ec_file {
 	bool config_applied;
 	bool config_poisoned;
 	bool domain_registered;
+	struct task_struct *cycle_thread;
+	u8 *domain_data;
+	u32 domain_size;
+	u32 cycle_period_ns;
+	u64 application_time_ns;
+	atomic64_t cycle_count;
+	atomic64_t cycle_error_count;
+	atomic64_t cycle_overrun_count;
+	atomic64_t maximum_lateness_ns;
+	atomic_t working_counter;
+	atomic_t working_counter_state;
+	atomic_t last_cycle_result;
+	bool active;
 };
 
 struct cw_ec_setup_entry {
@@ -87,6 +104,26 @@ static atomic_t cw_ec_control_open = ATOMIC_INIT(0);
 static int cw_ec_check_header(u16 struct_size, u16 api_major,
 			      size_t expected_size);
 
+static void cw_ec_invalidate_applied_config(struct cw_ec_file *ctx)
+{
+	struct cw_ec_entry_node *entry;
+	struct cw_ec_slave_node *slave;
+
+	list_for_each_entry(slave, &ctx->config_slaves, common.node)
+		slave->ec_config = NULL;
+	list_for_each_entry(entry, &ctx->config_entries, common.node) {
+		entry->domain_offset = 0;
+		entry->bit_position = 0;
+		entry->registered = false;
+	}
+	ctx->config_applied = false;
+	ctx->config_poisoned = false;
+	ctx->domain = NULL;
+	ctx->domain_registered = false;
+	ctx->domain_data = NULL;
+	ctx->domain_size = 0;
+}
+
 static void cw_ec_setup_clear(struct cw_ec_file *ctx)
 {
 	struct cw_ec_setup_entry *entry;
@@ -132,6 +169,116 @@ static void cw_ec_config_clear(struct cw_ec_file *ctx)
 	ctx->domain_registered = false;
 }
 
+static void cw_ec_update_maximum(atomic64_t *maximum, u64 value)
+{
+	s64 observed = atomic64_read(maximum);
+
+	while (value > observed) {
+		s64 previous = atomic64_cmpxchg(maximum, observed, value);
+
+		if (previous == observed)
+			break;
+		observed = previous;
+	}
+}
+
+static int cw_ec_cycle_thread(void *data)
+{
+	struct cw_ec_file *ctx = data;
+	u64 deadline = ktime_get_ns();
+
+	while (!kthread_should_stop()) {
+		ec_domain_state_t domain_state = {};
+		ktime_t expires;
+		u64 now;
+		int cycle_result = 0;
+		int operation_result;
+
+		deadline += ctx->cycle_period_ns;
+		expires = ns_to_ktime(deadline);
+		set_current_state(TASK_INTERRUPTIBLE);
+		schedule_hrtimeout(&expires, HRTIMER_MODE_ABS);
+		__set_current_state(TASK_RUNNING);
+		if (kthread_should_stop())
+			break;
+
+		now = ktime_get_ns();
+		if (now > deadline) {
+			u64 lateness = now - deadline;
+
+			cw_ec_update_maximum(&ctx->maximum_lateness_ns,
+					     lateness);
+			if (lateness >= ctx->cycle_period_ns) {
+				atomic64_inc(&ctx->cycle_overrun_count);
+				deadline = now;
+			}
+		}
+
+		operation_result = ecrt_master_receive(ctx->master);
+		if (operation_result && !cycle_result)
+			cycle_result = operation_result;
+		operation_result = ecrt_domain_process(ctx->domain);
+		if (operation_result && !cycle_result)
+			cycle_result = operation_result;
+		operation_result = ecrt_domain_state(ctx->domain, &domain_state);
+		if (operation_result && !cycle_result) {
+			cycle_result = operation_result;
+		} else if (!operation_result) {
+			atomic_set(&ctx->working_counter,
+				   domain_state.working_counter);
+			atomic_set(&ctx->working_counter_state,
+				   domain_state.wc_state);
+		}
+		ctx->application_time_ns += ctx->cycle_period_ns;
+		operation_result = ecrt_master_application_time(
+			ctx->master, ctx->application_time_ns);
+		if (operation_result && !cycle_result)
+			cycle_result = operation_result;
+		operation_result = ecrt_domain_queue(ctx->domain);
+		if (operation_result && !cycle_result)
+			cycle_result = operation_result;
+		operation_result = ecrt_master_send(ctx->master);
+		if (operation_result && !cycle_result)
+			cycle_result = operation_result;
+		if (cycle_result)
+			atomic64_inc(&ctx->cycle_error_count);
+		atomic_set(&ctx->last_cycle_result, cycle_result);
+		atomic64_inc(&ctx->cycle_count);
+	}
+
+	return 0;
+}
+
+static int cw_ec_deactivate_locked(struct cw_ec_file *ctx)
+{
+	int process_ret;
+	int receive_ret;
+	int ret;
+
+	if (!ctx->active)
+		return -EINVAL;
+
+	kthread_stop(ctx->cycle_thread);
+	ctx->cycle_thread = NULL;
+	/*
+	 * The last cyclic send can still have a response waiting in the NIC.
+	 * Consume it while the application callbacks/domain are valid, before
+	 * EtherLab restarts its idle thread during deactivation.
+	 */
+	usleep_range(DIV_ROUND_UP(ctx->cycle_period_ns, 1000U),
+		     DIV_ROUND_UP(ctx->cycle_period_ns, 1000U) + 100U);
+	receive_ret = ecrt_master_receive(ctx->master);
+	process_ret = ecrt_domain_process(ctx->domain);
+	ret = ecrt_master_deactivate(ctx->master);
+	ctx->active = false;
+	cw_ec_invalidate_applied_config(ctx);
+	if (ret)
+		return ret;
+	if (receive_ret)
+		return receive_ret;
+	return process_ret;
+}
+
 static int cw_ec_open(struct inode *inode, struct file *file)
 {
 	struct cw_ec_file *ctx;
@@ -160,6 +307,13 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	INIT_LIST_HEAD(&ctx->config_syncs);
 	INIT_LIST_HEAD(&ctx->config_pdos);
 	INIT_LIST_HEAD(&ctx->config_entries);
+	atomic64_set(&ctx->cycle_count, 0);
+	atomic64_set(&ctx->cycle_error_count, 0);
+	atomic64_set(&ctx->cycle_overrun_count, 0);
+	atomic64_set(&ctx->maximum_lateness_ns, 0);
+	atomic_set(&ctx->working_counter, 0);
+	atomic_set(&ctx->working_counter_state, EC_WC_ZERO);
+	atomic_set(&ctx->last_cycle_result, 0);
 	file->private_data = ctx;
 	nonseekable_open(inode, file);
 
@@ -173,6 +327,8 @@ static int cw_ec_release(struct inode *inode, struct file *file)
 
 	if (ctx) {
 		mutex_lock(&ctx->lock);
+		if (ctx->active)
+			cw_ec_deactivate_locked(ctx);
 		cw_ec_setup_clear(ctx);
 		cw_ec_config_clear(ctx);
 		if (ctx->master) {
@@ -588,6 +744,161 @@ static long cw_ec_get_entry_offset(struct cw_ec_file *ctx, void __user *argp)
 	}
 out:
 	if (!ret && copy_to_user(argp, &result, sizeof(result)))
+		ret = -EFAULT;
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
+
+static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_cycle_activate result;
+	size_t domain_size;
+	u32 period_ns;
+	int ret;
+
+	if (copy_from_user(&result, argp, sizeof(result)))
+		return -EFAULT;
+	ret = cw_ec_check_header(result.struct_size, result.api_major,
+				 sizeof(result));
+	if (ret)
+		return ret;
+	if (result.flags ||
+	    result.cycle_period_ns < CW_EC_CYCLE_PERIOD_MIN_NS ||
+	    result.cycle_period_ns > CW_EC_CYCLE_PERIOD_MAX_NS)
+		return -EINVAL;
+	period_ns = result.cycle_period_ns;
+
+	memset(&result, 0, sizeof(result));
+	result.struct_size = sizeof(result);
+	result.api_major = CW_EC_API_VERSION_MAJOR;
+	result.cycle_period_ns = period_ns;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->domain_registered || ctx->config_poisoned || ctx->active) {
+		ret = -EINVAL;
+		goto out;
+	}
+	domain_size = ecrt_domain_size(ctx->domain);
+	if (domain_size > U32_MAX) {
+		ret = -EOVERFLOW;
+		goto out;
+	}
+
+	ctx->cycle_period_ns = period_ns;
+	ctx->application_time_ns =
+		div64_u64(ktime_get_ns(), period_ns) * period_ns;
+	ret = ecrt_master_application_time(ctx->master,
+					  ctx->application_time_ns);
+	if (ret)
+		goto out;
+	ret = ecrt_master_activate(ctx->master);
+	if (ret) {
+		ctx->config_poisoned = true;
+		goto out;
+	}
+
+	ctx->domain_size = domain_size;
+	ctx->domain_data = ecrt_domain_data(ctx->domain);
+	if (ctx->domain_size && !ctx->domain_data) {
+		ret = -EFAULT;
+		ecrt_master_deactivate(ctx->master);
+		cw_ec_invalidate_applied_config(ctx);
+		goto out;
+	}
+
+	/*
+	 * No user-space process-image writer exists in API 0.4. Start every
+	 * mapped output at zero before the first application datagram is sent.
+	 */
+	if (ctx->domain_size)
+		memset(ctx->domain_data, 0, ctx->domain_size);
+	atomic64_set(&ctx->cycle_count, 0);
+	atomic64_set(&ctx->cycle_error_count, 0);
+	atomic64_set(&ctx->cycle_overrun_count, 0);
+	atomic64_set(&ctx->maximum_lateness_ns, 0);
+	atomic_set(&ctx->working_counter, 0);
+	atomic_set(&ctx->working_counter_state, EC_WC_ZERO);
+	atomic_set(&ctx->last_cycle_result, 0);
+	ctx->cycle_thread = kthread_run(cw_ec_cycle_thread, ctx,
+					"cw_ec_cycle");
+	if (IS_ERR(ctx->cycle_thread)) {
+		ret = PTR_ERR(ctx->cycle_thread);
+		ctx->cycle_thread = NULL;
+		ecrt_master_deactivate(ctx->master);
+		cw_ec_invalidate_applied_config(ctx);
+		goto out;
+	}
+	ctx->active = true;
+	result.domain_size = ctx->domain_size;
+	ret = 0;
+out:
+	result.result = ret;
+	if (copy_to_user(argp, &result, sizeof(result))) {
+		if (ctx->active)
+			cw_ec_deactivate_locked(ctx);
+		ret = -EFAULT;
+	}
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
+
+static long cw_ec_cycle_get_status(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_cycle_status result;
+	int ret;
+
+	if (copy_from_user(&result, argp, sizeof(result)))
+		return -EFAULT;
+	ret = cw_ec_check_header(result.struct_size, result.api_major,
+				 sizeof(result));
+	if (ret)
+		return ret;
+
+	memset(&result, 0, sizeof(result));
+	result.struct_size = sizeof(result);
+	result.api_major = CW_EC_API_VERSION_MAJOR;
+	mutex_lock(&ctx->lock);
+	result.active = ctx->active;
+	result.cycle_period_ns = ctx->cycle_period_ns;
+	result.domain_size = ctx->domain_size;
+	result.working_counter = atomic_read(&ctx->working_counter);
+	result.working_counter_state =
+		atomic_read(&ctx->working_counter_state);
+	result.last_cycle_result = atomic_read(&ctx->last_cycle_result);
+	result.cycle_count = atomic64_read(&ctx->cycle_count);
+	result.cycle_error_count = atomic64_read(&ctx->cycle_error_count);
+	result.cycle_overrun_count =
+		atomic64_read(&ctx->cycle_overrun_count);
+	result.maximum_lateness_ns =
+		atomic64_read(&ctx->maximum_lateness_ns);
+	mutex_unlock(&ctx->lock);
+
+	if (copy_to_user(argp, &result, sizeof(result)))
+		return -EFAULT;
+	return 0;
+}
+
+static long cw_ec_cycle_deactivate(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_cycle_deactivate result;
+	int ret;
+
+	if (copy_from_user(&result, argp, sizeof(result)))
+		return -EFAULT;
+	ret = cw_ec_check_header(result.struct_size, result.api_major,
+				 sizeof(result));
+	if (ret)
+		return ret;
+	if (result.reserved || result.reserved1)
+		return -EINVAL;
+
+	memset(&result, 0, sizeof(result));
+	result.struct_size = sizeof(result);
+	result.api_major = CW_EC_API_VERSION_MAJOR;
+	mutex_lock(&ctx->lock);
+	ret = cw_ec_deactivate_locked(ctx);
+	result.result = ret;
+	if (copy_to_user(argp, &result, sizeof(result)))
 		ret = -EFAULT;
 	mutex_unlock(&ctx->lock);
 	return ret;
@@ -1103,6 +1414,17 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return -ENOTTY;
 
 	switch (cmd) {
+	case CW_EC_IOC_CYCLE_GET_STATUS:
+		return cw_ec_cycle_get_status(ctx, argp);
+	case CW_EC_IOC_CYCLE_DEACTIVATE:
+		return cw_ec_cycle_deactivate(ctx, argp);
+	default:
+		break;
+	}
+	if (READ_ONCE(ctx->active))
+		return -EBUSY;
+
+	switch (cmd) {
 	case CW_EC_IOC_GET_API_VERSION:
 		return cw_ec_get_api_version(argp);
 	case CW_EC_IOC_GET_MASTER_INFO:
@@ -1137,6 +1459,8 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return cw_ec_domain_create(ctx, argp);
 	case CW_EC_IOC_GET_ENTRY_OFFSET:
 		return cw_ec_get_entry_offset(ctx, argp);
+	case CW_EC_IOC_CYCLE_ACTIVATE:
+		return cw_ec_cycle_activate(ctx, argp);
 	default:
 		return -ENOTTY;
 	}

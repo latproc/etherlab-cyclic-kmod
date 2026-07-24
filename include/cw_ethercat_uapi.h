@@ -11,7 +11,10 @@
 #endif
 
 #define CW_EC_API_VERSION_MAJOR 0U
-#define CW_EC_API_VERSION_MINOR 3U
+#define CW_EC_API_VERSION_MINOR 4U
+
+#define CW_EC_CYCLE_PERIOD_MIN_NS 100000U
+#define CW_EC_CYCLE_PERIOD_MAX_NS 1000000000U
 
 #define CW_EC_SLAVE_NAME_LEN 64U
 #define CW_EC_SETUP_SDO_DATA_MAX 256U
@@ -225,6 +228,40 @@ struct cw_ec_entry_offset {
 	__u8 reserved[2];
 };
 
+struct cw_ec_cycle_activate {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 cycle_period_ns;
+	__u32 flags;
+	__u32 domain_size;
+	__s32 result;
+};
+
+struct cw_ec_cycle_status {
+	__u16 struct_size;
+	__u16 api_major;
+	__u8 active;
+	__u8 reserved0[3];
+	__u32 cycle_period_ns;
+	__u32 domain_size;
+	__u32 working_counter;
+	__u8 working_counter_state;
+	__u8 reserved1[3];
+	__s32 last_cycle_result;
+	__u64 cycle_count;
+	__u64 cycle_error_count;
+	__u64 cycle_overrun_count;
+	__u64 maximum_lateness_ns;
+};
+
+struct cw_ec_cycle_deactivate {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 reserved;
+	__s32 result;
+	__u32 reserved1;
+};
+
 #define CW_EC_IOC_MAGIC 0xec
 
 #define CW_EC_IOC_GET_API_VERSION \
@@ -261,5 +298,11 @@ struct cw_ec_entry_offset {
 	_IOWR(CW_EC_IOC_MAGIC, 0x27, struct cw_ec_domain_create)
 #define CW_EC_IOC_GET_ENTRY_OFFSET \
 	_IOWR(CW_EC_IOC_MAGIC, 0x28, struct cw_ec_entry_offset)
+#define CW_EC_IOC_CYCLE_ACTIVATE \
+	_IOWR(CW_EC_IOC_MAGIC, 0x30, struct cw_ec_cycle_activate)
+#define CW_EC_IOC_CYCLE_GET_STATUS \
+	_IOWR(CW_EC_IOC_MAGIC, 0x31, struct cw_ec_cycle_status)
+#define CW_EC_IOC_CYCLE_DEACTIVATE \
+	_IOWR(CW_EC_IOC_MAGIC, 0x32, struct cw_ec_cycle_deactivate)
 
 #endif /* CW_ETHERCAT_UAPI_H */
