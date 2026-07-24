@@ -146,6 +146,17 @@ Neither command requests a nonzero transmitted output. These fixtures are
 commissioning examples for the recorded target, not device policy embedded in
 the module.
 
+Repeat the complete zero-only lifecycle only after confirming the commissioning
+state:
+
+```sh
+sudo env CW_EC_MOTION_INHIBITED=YES CW_EC_TEST_REPEAT=5 \
+  tools/cw_ec_test_cycle_lifecycle.sh
+```
+
+The script checks cyclic task cleanup, idle master release, unchanged topology,
+and newly added kernel warning/error lines.
+
 Examples:
 
 ```sh

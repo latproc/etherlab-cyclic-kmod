@@ -50,13 +50,13 @@ No nonzero output has been authorized or tested.
 
 | Plan requirement | Status | Evidence or blocker |
 |---|---|---|
-| Repeated load/unload | Partial | Earlier probe/device repetitions passed; repeat API 0.9 active lifecycle stress. |
+| Repeated load/unload | Partial | Earlier probe/device repetitions plus five API 0.10 active lifecycles passed; increase repetition and add instrumented testing. |
 | Repeated master acquire/release | Pass for earlier stages | 120 open/scan/close iterations and continued CLI usability. Repeat with current cyclic API. |
 | Repeated scan memory stability | Partial | Functional repetitions passed; no allocator/leak instrumentation. |
 | Invalid ABI calls | Partial | Broad ABI suite passes; add active stale generation/size/sequence cases and fuzzed counts. |
 | Allocation failure paths | Not passed | Add deterministic fault injection and exercise every activation buffer/allocation unwind. |
 | Configuration create/destroy stress | Not passed | Add high-count repeated pending/apply/domain/close test and leak observation. |
-| Cyclic start/stop stress | Partial | Earlier short repetitions passed; API 0.9 gate/buffer/thread lifecycle needs repetition. |
+| Cyclic start/stop stress | Partial | Five API 0.10 zero-arm lifecycles passed with no task leak or new warning; longer/instrumented stress remains. |
 | SDO failure teardown | Partial | Abort/error handling tested; allocation/close interruption stress remains. |
 | Unload with resources | Pass by design, needs current test | `file_operations.owner` blocks normal unload; explicitly test current API with an open/active fd. |
 | kmemleak/equivalent | Not passed | Target procedure and results required. |
@@ -77,9 +77,10 @@ The kernel-safety gate is not closed.
    controller while active/zero-armed, verify close synchronously sends zero,
    joins the thread, releases master 0, and leaves no task or warning beyond
    the known EtherLab/ED3L stop boundary.
-3. **Current cyclic lifecycle stress is incomplete.** Repeat API 0.9
-   configure/activate/zero-arm/disarm/deactivate/close, checking tasks, CLI,
-   counters, and new kernel diagnostics.
+3. **Current cyclic lifecycle stress is incomplete.** Five API 0.10
+   configure/activate/zero-arm/disarm/deactivate/close iterations passed with
+   task, CLI, topology, and kernel-log checks. Increase repetition and add
+   memory/debug-kernel instrumentation.
 4. **EtherLab public deactivation remains imperfect.** ED3L can report AL
    `0x001b` before EtherLab's asynchronous PREOP transition. The application
    now sends zero before stopping, but the watchdog/idle-FSM boundary remains.

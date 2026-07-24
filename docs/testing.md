@@ -400,6 +400,22 @@ complete domain WC and a published snapshot. An offline-transition query has
 not yet been captured in hardware; the earlier power-loss run predates this
 ioctl.
 
+## API 0.10 lifecycle repetition
+
+`tools/cw_ec_test_cycle_lifecycle.sh` requires the explicit
+`CW_EC_MOTION_INHIBITED=YES` acknowledgement and repeats the complete
+configure/activate/zero-publish/arm/disarm/deactivate/close lifecycle. It
+checks the cyclic task count after every iteration, requires the EtherLab
+master to be idle/inactive after close, compares topology before/after module
+unload, and reports new kernel warning/error lines.
+
+Five two-second iterations passed on the target:
+
+```text
+PASS: 5 API lifecycle iteration(s); no cyclic task leak; topology unchanged
+New kernel warning/error lines: none
+```
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

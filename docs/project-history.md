@@ -79,3 +79,6 @@ commands, outputs, and design details.
   data validity. Position 29 reported online, operational, AL OP, and valid at
   cycle/input sequence 5,000 with complete WC; stale, unknown, and inactive
   queries were rejected/reported correctly.
+- Added a current-API zero-only lifecycle harness. Five API 0.10 iterations
+  returned the master idle after every close, leaked no cyclic task, preserved
+  topology, and added no kernel warning/error line.

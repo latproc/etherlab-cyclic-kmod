@@ -63,6 +63,10 @@ decisions, risks, commands, or next steps change.
   `data_valid` bit requiring that slave OP plus complete domain WC. Position 29
   reported valid at cycle/input sequence 5,000; an offline transition query is
   not yet hardware-captured.
+- The current zero-only lifecycle test ran five complete API 0.10
+  configure/activate/arm/disarm/deactivate/close iterations. The EtherLab
+  master returned idle after every iteration, no cyclic task leaked, topology
+  was unchanged, and no new kernel warning/error line appeared.
 - A provisional bounded ad-hoc SDO batch exists for commissioning and
   decision-gate tests. It is not the persistent production setup mechanism.
 - Bounded SDO upload is hardware-proven against ED3L `0x6060:00`; no write has
@@ -334,6 +338,6 @@ testing, safety, and build documents.
   validity; remaining major blockers include its offline-transition proof,
   current lifecycle/controller-death stress, allocation-failure/leak testing,
   debug-kernel testing, and manual EtherLab build compatibility.
-- Next step: add current API lifecycle/controller-death stress tooling.
+- Next step: add and run the zero-armed controller-death teardown test.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.
