@@ -343,3 +343,13 @@ Update this section during work. Use dated entries for facts that may change.
   reports inconsistent metadata as a configuration error. Both Linux IOD
   targets rebuilt/installed and the syntax checker passed; live retest is
   pending.
+- 2026-07-24: The first conversion source was found invalid for XML-configured
+  modules. EtherLab discovery coalesces adjacent `0x0000:00` alignment entries,
+  while legacy Clockwork `pos` addresses IOD's uncoalesced configured XML
+  entry array. This shifted EL5152 identities and produced invalid padding
+  selectors. LatProc now exports a separate `configured_sync_managers` view;
+  the converter requires it for `config_file` modules and rejects padding
+  entries. The old `/tmp/ecat.log` is deliberately rejected. Capture a fresh
+  topology with the rebuilt IOD, restore the two LPC files from their
+  pre-conversion backups, and rerun the dry-run conversion before any live IO
+  validation.
