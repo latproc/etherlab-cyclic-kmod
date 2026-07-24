@@ -414,5 +414,14 @@ testing, safety, and build documents.
 - Implement Section 13B lease state internally as domain-set-scoped output
   authority even if the first compatible UAPI exposes only the existing
   all-domain owner. Do not deepen the current global-output-state assumption.
+- The first internal authority refactor is implemented without a UAPI change:
+  each configured domain points to the compatibility output authority, which
+  now owns publication buffers/masks, sequence, arm/re-arm, latched fault
+  epoch, gate acknowledgement, and stale-use state. The hostile ABI/topology
+  harness and five zero-output full lifecycle iterations pass against the final
+  code. Final teardown logged only the known position-29 ED3L watchdog
+  boundary; master 0 returned idle with all 34 slaves visible. An earlier
+  intermediate run also logged one AL-state datagram initialization failure
+  and one skipped master-FSM datagram.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

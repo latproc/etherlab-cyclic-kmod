@@ -969,3 +969,25 @@ Manager watchdog events for ED3L positions 29--33. The second stop also logged
 one AL-state datagram initialization failure and one skipped master-FSM
 datagram. The master recovered; these lifecycle diagnostics remain part of the
 open EtherLab deactivation boundary.
+
+## Domain-scoped output-authority refactor
+
+The first delegated-domain prerequisite moved all compatibility output state
+behind one internal `cw_ec_output_authority` without changing API 0.13. Each
+configured domain explicitly points to that authority. It owns the copied
+publication buffers and mask, generation, arm/re-arm state, fault publication
+epoch, gate request/acknowledgement, and stale-generation accounting. Bus
+health, master ownership and the common cyclic task remain coordinator-wide.
+
+The non-activating hostile ABI and discovery harness passed every check after
+the refactor and matched all 34 slave identities against the EtherLab CLI.
+After the final domain-to-authority ownership link was added, five
+full-topology zero-output lifecycle iterations passed with no cyclic task leak
+and unchanged topology. Master 0 returned `Idle` and `Active: no`.
+
+The final five-iteration harness recorded one ED3L position-29 Sync Manager
+watchdog event per teardown and no other new warning/error. An earlier
+intermediate five-iteration run also recorded one position-11 AL-state
+datagram initialization failure and one skipped master-FSM datagram. These are
+not a clean-log acceptance result; they remain evidence for the known
+asynchronous EtherLab deactivation boundary. No nonzero output was requested.
