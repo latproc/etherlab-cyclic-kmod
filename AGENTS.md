@@ -324,3 +324,12 @@ Update this section during work. Use dated entries for facts that may change.
   entry resolution with optional PDO disambiguation, legacy `pos` preserved,
   and a dry-run-by-default conversion/audit tool with focused tests. IOD
   builds successfully; no live runtime or bus action was performed.
+- 2026-07-24: LatProc commit `df10983e` changed converted Clockwork selectors
+  to the explicit positional form `module,index,subindex[,pdo][,settings]`.
+  Both Linux EtherCAT binaries built and installed. A captured matching
+  `/tmp/ecat.log` converted 212 declarations in `core_io.lpc` and
+  `grab_io.lpc`; timestamped backups were created, the converted files passed
+  the mandatory syntax/graph checker, and a repeat dry run reported zero
+  changes. Machine configuration under `code/*` is intentionally ignored by
+  the LatProc repository, so only the generic implementation/tooling is
+  mergeable. IOD is stopped and live machine I/O is not yet tested.
