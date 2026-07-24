@@ -64,8 +64,10 @@ static void usage(const char *program)
 		"  %s cycle-zero-arm CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-zero-hold CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-monitor CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
-		"  %s cycle-abi CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n",
-		program, program, program, program, program, program, program);
+		"  %s cycle-abi CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
+		"  %s pulse-entry CONFIG PERIOD_NS ENTRY_ID PULSE_MS [DEVICE]\n",
+		program, program, program, program, program, program, program,
+		program);
 }
 
 static int expect_ioctl_errno(int fd, unsigned long request, void *argument,
@@ -542,6 +544,254 @@ static int configure_fd(int fd, const char *path,
 		return -1;
 	*validated = validate;
 	return 0;
+}
+
+static int entry_is_single_bit_output(const char *path, uint32_t entry_id)
+{
+	FILE *stream;
+	char *line = NULL;
+	size_t capacity = 0;
+	uint32_t pdo_id = 0;
+	uint32_t sync_id = 0;
+	int result = 0;
+
+	stream = fopen(path, "r");
+	if (!stream)
+		return -1;
+	while (getline(&line, &capacity, stream) >= 0) {
+		struct record record;
+
+		if (parse_record(line, &record) < 0)
+			goto out;
+		if (record.kind == RECORD_ENTRY &&
+		    record.entry.entry_id == entry_id) {
+			if (record.entry.bit_length != 1 || pdo_id)
+				goto out;
+			pdo_id = record.entry.pdo_config_id;
+		}
+	}
+	if (!pdo_id || ferror(stream))
+		goto out;
+	rewind(stream);
+	while (getline(&line, &capacity, stream) >= 0) {
+		struct record record;
+
+		if (parse_record(line, &record) < 0)
+			goto out;
+		if (record.kind == RECORD_PDO &&
+		    record.pdo.config_id == pdo_id) {
+			if (sync_id)
+				goto out;
+			sync_id = record.pdo.sync_config_id;
+		}
+	}
+	if (!sync_id || ferror(stream))
+		goto out;
+	rewind(stream);
+	while (getline(&line, &capacity, stream) >= 0) {
+		struct record record;
+
+		if (parse_record(line, &record) < 0)
+			goto out;
+		if (record.kind == RECORD_SYNC &&
+		    record.sync.config_id == sync_id) {
+			if (result ||
+			    record.sync.direction != CW_EC_DIR_OUTPUT)
+				goto out;
+			result = 1;
+		}
+	}
+	if (ferror(stream))
+		result = 0;
+out:
+	free(line);
+	fclose(stream);
+	return result;
+}
+
+static int pulse_entry(const char *path, uint32_t period_ns,
+		       uint32_t entry_id, uint32_t pulse_ms,
+		       const char *device)
+{
+	struct cw_ec_config_validate validate;
+	struct cw_ec_cycle_activate activate = {
+		.struct_size = sizeof(activate),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.cycle_period_ns = period_ns,
+	};
+	struct cw_ec_entry_offset offset = {
+		.struct_size = sizeof(offset),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.entry_id = entry_id,
+	};
+	struct cw_ec_io_status io_status = {
+		.struct_size = sizeof(io_status),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_output_publish output = {
+		.struct_size = sizeof(output),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_output_arm arm = {
+		.struct_size = sizeof(arm),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_output_disarm disarm = {
+		.struct_size = sizeof(disarm),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_cycle_deactivate deactivate = {
+		.struct_size = sizeof(deactivate),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	uint8_t *data = NULL;
+	uint8_t *mask = NULL;
+	bool active = false;
+	bool armed = false;
+	unsigned int attempts;
+	int fd;
+	int ret = 1;
+
+	if (!getenv("CW_EC_NONZERO_OUTPUT_AUTHORIZED") ||
+	    strcmp(getenv("CW_EC_NONZERO_OUTPUT_AUTHORIZED"), "YES")) {
+		fprintf(stderr,
+			"cw_ec_config: set CW_EC_NONZERO_OUTPUT_AUTHORIZED=YES only for an approved, physically safe output\n");
+		return 2;
+	}
+	if (entry_is_single_bit_output(path, entry_id) != 1) {
+		fprintf(stderr,
+			"cw_ec_config: entry %" PRIu32
+			" is not one unique single-bit output in the configuration\n",
+			entry_id);
+		return 2;
+	}
+	fd = open(device, O_RDWR | O_CLOEXEC);
+	if (fd < 0) {
+		fprintf(stderr, "cw_ec_config: cannot open %s: %s\n",
+			device, strerror(errno));
+		return 1;
+	}
+	if (configure_fd(fd, path, &validate))
+		goto out;
+	if (ioctl(fd, CW_EC_IOC_GET_ENTRY_OFFSET, &offset) < 0) {
+		fprintf(stderr, "cw_ec_config: entry %" PRIu32
+			" offset lookup failed: %s\n", entry_id,
+			strerror(errno));
+		goto out;
+	}
+	if (offset.bit_length != 1) {
+		fprintf(stderr, "cw_ec_config: pulse entry must be exactly one bit\n");
+		goto out;
+	}
+	if (offset.bit_position >= 8) {
+		fprintf(stderr, "cw_ec_config: invalid pulse bit position\n");
+		goto out;
+	}
+	if (ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE, &activate) < 0) {
+		fprintf(stderr, "cw_ec_config: activation failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	active = true;
+	for (attempts = 0; attempts < 100; attempts++) {
+		io_status.struct_size = sizeof(io_status);
+		io_status.api_major = CW_EC_API_VERSION_MAJOR;
+		if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0) {
+			fprintf(stderr, "cw_ec_config: IO status failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		if (io_status.bus_healthy)
+			break;
+		usleep(50000);
+	}
+	if (!io_status.bus_healthy) {
+		fprintf(stderr, "cw_ec_config: bus did not become healthy\n");
+		goto out;
+	}
+	data = calloc(activate.domain_size, 1);
+	mask = calloc(activate.domain_size, 1);
+	if (!data || !mask) {
+		fprintf(stderr, "cw_ec_config: allocate pulse image: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	if (offset.domain_offset >= activate.domain_size) {
+		fprintf(stderr, "cw_ec_config: entry offset is outside image\n");
+		goto out;
+	}
+	data[offset.domain_offset] = (uint8_t)(1U << offset.bit_position);
+	mask[offset.domain_offset] = data[offset.domain_offset];
+	output.data_ptr = (uintptr_t)data;
+	output.mask_ptr = (uintptr_t)mask;
+	output.data_size = activate.domain_size;
+	output.config_generation = io_status.config_generation;
+	if (ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output) < 0) {
+		fprintf(stderr, "cw_ec_config: pulse publication failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	arm.config_generation = output.config_generation;
+	arm.output_sequence = output.output_sequence;
+	if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) < 0) {
+		fprintf(stderr, "cw_ec_config: pulse arm failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	armed = true;
+	io_status.struct_size = sizeof(io_status);
+	io_status.api_major = CW_EC_API_VERSION_MAJOR;
+	if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0 ||
+	    !io_status.outputs_armed) {
+		fprintf(stderr,
+			"cw_ec_config: pulse was not reported armed\n");
+		goto out;
+	}
+	printf("PULSE: entry=%" PRIu32 " offset=%" PRIu32
+	       " bit=%u duration=%" PRIu32 " ms\n",
+	       entry_id, offset.domain_offset, offset.bit_position, pulse_ms);
+	fflush(stdout);
+	usleep((useconds_t)pulse_ms * 1000U);
+	disarm.config_generation = output.config_generation;
+	if (ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm) < 0) {
+		fprintf(stderr, "cw_ec_config: pulse disarm failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	armed = false;
+	io_status.struct_size = sizeof(io_status);
+	io_status.api_major = CW_EC_API_VERSION_MAJOR;
+	if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0 ||
+	    io_status.outputs_armed || !io_status.rearm_required) {
+		fprintf(stderr,
+			"cw_ec_config: pulse disarm state was not latched\n");
+		goto out;
+	}
+	printf("PULSE: synchronously disarmed; output returned to zero\n");
+	if (ioctl(fd, CW_EC_IOC_CYCLE_DEACTIVATE, &deactivate) < 0) {
+		fprintf(stderr, "cw_ec_config: deactivation failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	active = false;
+	ret = 0;
+out:
+	if (armed) {
+		disarm.config_generation = output.config_generation;
+		if (ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm) < 0)
+			fprintf(stderr,
+				"cw_ec_config: cleanup disarm failed: %s\n",
+				strerror(errno));
+	}
+	if (active)
+		fprintf(stderr, "cw_ec_config: closing active pulse session for cleanup\n");
+	free(mask);
+	free(data);
+	if (close(fd) < 0) {
+		fprintf(stderr, "cw_ec_config: close: %s\n", strerror(errno));
+		ret = 1;
+	}
+	return ret;
 }
 
 static int print_slave_statuses(int fd, const char *path,
@@ -1214,9 +1464,10 @@ int main(int argc, char **argv)
 	const char *device = "/dev/cw_ethercat0";
 	struct counts counts;
 	uint64_t duration;
+	uint64_t entry_id;
 	uint64_t period;
 
-	if (argc < 3 || argc > 6) {
+	if (argc < 3 || argc > 7) {
 		usage(argv[0]);
 		return 2;
 	}
@@ -1237,6 +1488,21 @@ int main(int argc, char **argv)
 		if (argc == 4)
 			device = argv[3];
 		return prepare(argv[2], device);
+	}
+	if (!strcmp(argv[1], "pulse-entry") &&
+	    (argc == 6 || argc == 7)) {
+		if (parse_u64(argv[3], CW_EC_CYCLE_PERIOD_MAX_NS, &period) ||
+		    period < CW_EC_CYCLE_PERIOD_MIN_NS ||
+		    parse_u64(argv[4], UINT32_MAX, &entry_id) || !entry_id ||
+		    parse_u64(argv[5], 5000, &duration) || !duration) {
+			fprintf(stderr,
+				"cw_ec_config: invalid period, entry ID, or pulse duration\n");
+			return 2;
+		}
+		if (argc == 7)
+			device = argv[6];
+		return pulse_entry(argv[2], period, entry_id, duration,
+				   device);
 	}
 	if ((!strcmp(argv[1], "cycle") ||
 	     !strcmp(argv[1], "cycle-zero-arm") ||

@@ -198,6 +198,14 @@ commands, outputs, and design details.
 - Extended active hostile-ABI coverage to domain status. Stale generation,
   unknown domain, and nonzero reserved fields were rejected; valid domain
   status remained available and all output paths stayed disarmed.
+- Added a bounded stable-entry commissioning command and captured
+  core-console EL2034 position-15 fixture. It requires explicit
+  acknowledgement, accepts only a unique one-bit output, masks every other
+  bit, and synchronously disarms. Software commands pulsed the status LED for
+  one second and buzzer for 300 ms with actuator/servo power unavailable;
+  physical observation remains unrecorded. Killing the controller during a
+  five-second LED pulse released the master, permitted normal module unload,
+  preserved topology, and added no kernel warning/error.
 - Validated that explicit EtherLab header/symbol overrides work outside the
   DKMS directory layout by staging the exact installed 1.6.9 artifacts under
   arbitrary source/build paths and rebuilding both modules. Wrong kernel

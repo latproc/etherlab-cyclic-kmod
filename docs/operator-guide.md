@@ -193,6 +193,29 @@ After any abnormal result:
 If an open file still owns the module, normal `rmmod cw_ethercat` must fail.
 Resolve the owner; never bypass module reference protection.
 
+## Bounded one-bit output commissioning
+
+Use this only after reviewing the exact output and physical power state. The
+command rejects an entry unless the configuration proves it is one unique,
+single-bit output. Its update mask contains only that bit, the pulse is
+limited to five seconds, and cleanup closes the control fd so the kernel
+returns configured outputs to zero.
+
+The current machine fixture is limited to the core-console EL2034 at position
+15. Stable entry ID `0x701001` is the panel status indicator and `0x700001` is
+the buzzer:
+
+```sh
+sudo env CW_EC_NONZERO_OUTPUT_AUTHORIZED=YES \
+  ./tools/cw_ec_config pulse-entry \
+  tools/configs/el2034_core_console_pos15.conf \
+  1000000 0x701001 1000
+```
+
+This acknowledgement does not authorize other entries. Confirm terminal
+identity, power isolation, and the intended observable output at the machine.
+Never use it for drive enable or motion.
+
 ## Unload and local cleanup
 
 In-tree development teardown is:

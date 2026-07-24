@@ -776,3 +776,32 @@ PASS: killed zero-armed controller; no cyclic task leak; master released;
 These tests prove multi-domain lifetime/unwind behavior with two configured
 domains; the ABI limit is 256 domains and is separately covered by the
 maximum-count reset test.
+
+## Bounded nonzero console-output commissioning
+
+With servo three-phase power absent, the E-stop circuit pressed, and other
+machine outputs without E-stop power, the core-console EL2034 at position 15
+was configured alone. Its zero-only test reached OP with complete WC and valid
+data, then passed zero arm/disarm and stale-sequence checks.
+
+`pulse-entry` requires `CW_EC_NONZERO_OUTPUT_AUTHORIZED=YES`. It resolves the
+stable entry ID, proves the entry is uniquely linked through a PDO to an
+output Sync Manager, requires a one-bit entry, and publishes an update mask
+containing only that bit. A diagnostic input was rejected before opening the
+device.
+
+```text
+status indicator 0x7010:01: entry 0x701001, offset 0, bit 1, 1000 ms
+buzzer           0x7000:01: entry 0x700001, offset 0, bit 0,  300 ms
+PULSE: synchronously disarmed; output returned to zero
+```
+
+Both software commands returned success. Physical LED/audible observation was
+not reported, so it remains unconfirmed. This evidence does not validate an
+actuator, drive-enable, or motion output.
+
+A separate controller-death test started a five-second status-indicator pulse
+and terminated the controller after 1.5 seconds. Kernel file release gated the
+output and stopped the cyclic task; master 0 returned idle/inactive, normal
+module unload succeeded, all 34 slaves remained visible, and no new kernel
+warning/error appeared.

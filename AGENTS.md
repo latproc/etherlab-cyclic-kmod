@@ -25,8 +25,13 @@ decisions, risks, commands, or next steps change.
 - Master contention, discovery, lifecycle, declarative PDO mapping, DC,
   zero-output cycling, live servo power loss/restoration, stale-output
   re-arming, and controller-death teardown have hardware evidence.
-- No nonzero output has been requested or tested. Motion remains inhibited for
-  hardware tests.
+- Nonzero output testing is limited to one-bit core-console EL2034 status-LED
+  and buzzer commands while servo three-phase and E-stop output power were
+  absent. Physical observation is not yet recorded. No actuator, drive-enable,
+  or motion output has been requested or tested.
+- Killing the controller during a bounded console-LED pulse gates output via
+  file release, stops cyclic work, returns master 0 idle, and permits normal
+  module unload without a topology or kernel-log regression.
 - PDO assignment/mapping belongs to `ecrt_slave_config_pdos()`. Persistent
   configuration SDOs are for ordinary startup parameters; ad-hoc master SDOs
   are commissioning fallback only.
@@ -261,13 +266,14 @@ testing, safety, and build documents.
   publication sequence, and a healthy bus. Disarm/fault requires a newer
   publication before re-arm.
 - Live servo power loss/restoration recovers without transport restart and
-  leaves `rearm_required` latched. Nonzero output remains untested.
+  leaves `rearm_required` latched. Nonzero actuator/drive output remains
+  untested.
 - Copied process-image concurrency and recovery rules are documented in
   `docs/process-image-exchange.md`.
 - The 2026-07-24 architecture review is in
   `docs/architecture-review-2026-07-24.md`. The safety gate remains open.
   Major gaps include debug-kernel validation, manual EtherLab build
-  compatibility, nonzero-output commissioning, and timing acceptance.
+  compatibility, actuator/drive-output commissioning, and timing acceptance.
 - API 0.10 per-slave status is hardware-proven across live position-29 power
   loss and restoration: validity cleared offline, returned in OP, and
   `rearm_required` remained latched throughout recovery.
@@ -339,11 +345,9 @@ testing, safety, and build documents.
   compiled manual EtherLab revision exists locally, so binary/source-revision
   compatibility remains unclaimed. Reproduce the layout/fail-closed checks with
   `make test-build-contract`.
-- Next powered tests: capture the powered-off ED3L case showing EL5152 valid
-  and the ED3L domain invalid; then commission only an explicitly audited
-  non-motion 24 V output (prefer a console LED, optionally a brief buzzer)
-  while the stop circuit is pressed and servo three-phase power is absent.
-  Keep every actuator and drive output masked off. Nonzero output has not yet
-  been tested.
+- Next powered test: capture the powered-off ED3L case showing EL5152 valid
+  and the ED3L domain invalid. The bounded console LED/buzzer software commands
+  have passed; record physical observation when an operator is present. Keep
+  every actuator and drive output masked off.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

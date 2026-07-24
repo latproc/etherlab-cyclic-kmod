@@ -21,9 +21,10 @@ global output arm gate.
 Discovery is proven on the current 34-slave target. A single ED3L
 configuration has reached OP with complete working counter, recovered from
 servo-supply loss without restarting the controller, and passed zero-only
-output arm/disarm tests. No nonzero output has been authorized or tested. The
-API 0.12 documentation is being re-audited; the standalone kernel-safety gate
-remains open. See
+output arm/disarm tests. Nonzero testing is limited to one-bit core-console
+LED/buzzer commands with actuator and servo power unavailable; it does not
+authorize actuator, drive-enable, or motion output. The API 0.12 documentation
+gate passes; the standalone kernel-safety gate remains open. See
 [the current architecture review](docs/architecture-review-2026-07-24.md).
 
 ```text
@@ -186,6 +187,21 @@ sudo env CW_EC_MOTION_INHIBITED=YES \
 ```
 
 No nonzero output is requested.
+
+For an explicitly approved, physically safe one-bit commissioning output,
+`pulse-entry` resolves a stable entry ID, proves it belongs uniquely to an
+output Sync Manager, masks every other bit, waits for a healthy bus, pulses
+for at most five seconds, and synchronously disarms:
+
+```sh
+sudo env CW_EC_NONZERO_OUTPUT_AUTHORIZED=YES \
+  ./tools/cw_ec_config pulse-entry \
+  tools/configs/el2034_core_console_pos15.conf \
+  1000000 0x701001 1000
+```
+
+Audit the fixture and physical output before every use. This is not a general
+machine-output command.
 
 Deterministic module-owned allocation unwind can be tested without applying
 SDOs or activating cyclic I/O:
