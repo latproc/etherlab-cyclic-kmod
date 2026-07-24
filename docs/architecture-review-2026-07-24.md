@@ -9,7 +9,7 @@ API 0.10 proves the central transport shape: transactional generic
 configuration, EtherLab-owned recovery, distributed-clock cycling, copied
 process images, topology-derived output ownership, and an explicit
 generation/sequence arm gate. The remaining gaps are primarily observability,
-failure-injection/stress evidence, lifecycle behavior, and documentation—not a
+debug-kernel evidence, timing acceptance, and lifecycle edge cases—not a
 reason to move application policy into the kernel.
 
 No nonzero output has been authorized or tested.
@@ -70,13 +70,12 @@ No nonzero output has been authorized or tested.
 
 The kernel-safety gate is not closed.
 
-## Functional and safety gaps
+## Functional and safety findings
 
-1. **Per-slave validity transition evidence is incomplete.** API 0.10 now
-   reports each configured slave by stable ID and conservatively certifies
-   data only with individual OP plus complete domain WC. Online/valid hardware
-   evidence exists; capture the offline transition and recovery through the
-   new ioctl.
+1. **Per-slave validity transition evidence passes.** A current API 0.10
+   disarmed hardware run captured position 29 becoming invalid, then offline,
+   then online/OP/valid again without restarting the transport. The explicit
+   re-arm requirement remained latched after recovery.
 2. **Controller-death stress needs expansion.** One standalone controller was
    killed while explicitly zero-armed; file release left no cyclic task,
    returned master 0 idle, preserved topology, and added no warning/error.

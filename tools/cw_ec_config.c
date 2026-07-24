@@ -56,8 +56,9 @@ static void usage(const char *program)
 		"  %s prepare CONFIG [DEVICE]\n"
 		"  %s cycle CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-zero-arm CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
-		"  %s cycle-zero-hold CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n",
-		program, program, program, program, program);
+		"  %s cycle-zero-hold CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
+		"  %s cycle-monitor CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n",
+		program, program, program, program, program, program);
 }
 
 static int parse_u64(const char *text, uint64_t maximum, uint64_t *value)
@@ -568,7 +569,7 @@ out:
 
 static int cycle(const char *path, uint32_t period_ns,
 		 unsigned int duration_seconds, bool arm_zero,
-		 bool hold_zero,
+		 bool hold_zero, bool monitor,
 		 const char *device)
 {
 	struct cw_ec_config_validate validate;
@@ -633,7 +634,7 @@ static int cycle(const char *path, uint32_t period_ns,
 	printf("activated zero-output domain: size=%" PRIu32
 	       " period=%" PRIu32 " ns for %u second(s)\n",
 	       activate.domain_size, period_ns, duration_seconds);
-	if (hold_zero || arm_zero) {
+	if (hold_zero || arm_zero || monitor) {
 		unsigned int attempts;
 
 		for (attempts = 0; attempts < 100; attempts++) {
@@ -691,8 +692,56 @@ static int cycle(const char *path, uint32_t period_ns,
 		       (uint64_t)output.output_sequence);
 		fflush(stdout);
 	}
-	while (duration_seconds)
-		duration_seconds = sleep(duration_seconds);
+	if (monitor) {
+		unsigned int samples = duration_seconds * 4U;
+		struct cw_ec_io_status previous = { 0 };
+		bool have_previous = false;
+
+		printf("READY: disarmed per-slave monitoring started\n");
+		fflush(stdout);
+		while (samples--) {
+			io_status.struct_size = sizeof(io_status);
+			io_status.api_major = CW_EC_API_VERSION_MAJOR;
+			if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS,
+				  &io_status) < 0) {
+				fprintf(stderr,
+					"cw_ec_config: monitored IO status failed: %s\n",
+					strerror(errno));
+				goto out;
+			}
+			if (!have_previous ||
+			    io_status.bus_healthy != previous.bus_healthy ||
+			    io_status.outputs_armed != previous.outputs_armed ||
+			    io_status.rearm_required != previous.rearm_required ||
+			    io_status.current_faults != previous.current_faults ||
+			    io_status.configured_slaves_online !=
+				    previous.configured_slaves_online ||
+			    io_status.configured_slaves_operational !=
+				    previous.configured_slaves_operational) {
+				printf("monitor IO: healthy=%u armed=%u"
+				       " rearm_required=%u faults=0x%08" PRIx32
+				       " online=%" PRIu32
+				       " operational=%" PRIu32 "\n",
+				       io_status.bus_healthy,
+				       io_status.outputs_armed,
+				       io_status.rearm_required,
+				       io_status.current_faults,
+				       io_status.configured_slaves_online,
+				       io_status.configured_slaves_operational);
+				if (print_slave_statuses(
+					    fd, path,
+					    io_status.config_generation))
+					goto out;
+				fflush(stdout);
+				previous = io_status;
+				have_previous = true;
+			}
+			usleep(250000);
+		}
+	} else {
+		while (duration_seconds)
+			duration_seconds = sleep(duration_seconds);
+	}
 	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_STATUS, &status) < 0) {
 		fprintf(stderr, "cw_ec_config: status failed: %s\n",
 			strerror(errno));
@@ -940,7 +989,8 @@ int main(int argc, char **argv)
 	}
 	if ((!strcmp(argv[1], "cycle") ||
 	     !strcmp(argv[1], "cycle-zero-arm") ||
-	     !strcmp(argv[1], "cycle-zero-hold")) &&
+	     !strcmp(argv[1], "cycle-zero-hold") ||
+	     !strcmp(argv[1], "cycle-monitor")) &&
 	    (argc == 5 || argc == 6)) {
 		if (parse_u64(argv[3], CW_EC_CYCLE_PERIOD_MAX_NS, &period) ||
 		    period < CW_EC_CYCLE_PERIOD_MIN_NS ||
@@ -952,7 +1002,8 @@ int main(int argc, char **argv)
 			device = argv[5];
 		return cycle(argv[2], period, duration,
 			     !strcmp(argv[1], "cycle-zero-arm"),
-			     !strcmp(argv[1], "cycle-zero-hold"), device);
+			     !strcmp(argv[1], "cycle-zero-hold"),
+			     !strcmp(argv[1], "cycle-monitor"), device);
 	}
 	usage(argv[0]);
 	return 2;

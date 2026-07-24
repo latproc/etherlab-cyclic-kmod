@@ -116,3 +116,8 @@ commands, outputs, and design details.
   Requiring bounded bus health before zero-arm fixed the tool race; the
   corrected 20 iterations returned the master idle every time with no task,
   topology, or kernel-log regression.
+- Added a disarmed `cycle-monitor` commissioning mode and captured API 0.10
+  per-slave state through a live position-29 power cycle. Validity cleared
+  before the slave went offline, returned only after online/OP recovery in the
+  same active session, and `rearm_required` stayed latched with one fault
+  epoch.

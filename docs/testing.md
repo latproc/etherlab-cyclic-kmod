@@ -396,9 +396,22 @@ status cycle=5000 input_sequence=5000
 
 The query is keyed by the stable user-supplied ID and exact configuration
 generation. `data_valid` requires the individual slave online/operational plus
-complete domain WC and a published snapshot. An offline-transition query has
-not yet been captured in hardware; the earlier power-loss run predates this
-ioctl.
+complete domain WC and a published snapshot.
+
+A later 90-second `cycle-monitor` run power-cycled position 29 in the same
+active, disarmed session. The observed transitions were:
+
+```text
+healthy=1 rearm_required=0 faults=0x00000000 online=1 operational=1 valid=1 al=0x08
+healthy=0 rearm_required=1 faults=0x00000020 online=1 operational=1 valid=0
+healthy=0 rearm_required=1 faults=0x00000038 online=0 operational=0 valid=0 al=0x00
+healthy=1 rearm_required=1 faults=0x00000000 online=1 operational=1 valid=1 al=0x08
+```
+
+The transport was not restarted, outputs remained disarmed, the fault count
+was one, and the final status retained latched fault `0x20` while current
+faults cleared. This validates conservative per-slave invalidation and
+recovery without silently clearing the explicit re-arm requirement.
 
 ## API 0.10 lifecycle repetition
 

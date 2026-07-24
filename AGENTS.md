@@ -265,8 +265,11 @@ testing, safety, and build documents.
   `docs/process-image-exchange.md`.
 - The 2026-07-24 architecture review is in
   `docs/architecture-review-2026-07-24.md`. The safety gate remains open.
-  Major gaps include per-slave offline-transition evidence, debug-kernel
-  validation, and manual EtherLab build compatibility.
+  Major gaps include debug-kernel validation, manual EtherLab build
+  compatibility, nonzero-output commissioning, and timing acceptance.
+- API 0.10 per-slave status is hardware-proven across live position-29 power
+  loss and restoration: validity cleared offline, returned in OP, and
+  `rearm_required` remained latched throughout recovery.
 - Next step: select the next independently testable kernel-safety blocker.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

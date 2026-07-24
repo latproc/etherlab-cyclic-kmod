@@ -53,8 +53,11 @@ When a configured drive disappears, the current implementation:
 
 API 0.10 reports each configured slave separately. Its `data_valid` requires
 that slave online and OP, at least one input snapshot, and complete global
-domain WC. This is intentionally conservative; offline-transition hardware
-evidence through the new ioctl is still required before IOD integration.
+domain WC. This is intentionally conservative. A live position-29 power cycle
+proved `data_valid` clears first on domain-incomplete, remains clear while the
+slave is offline, and returns only after the slave is online and OP again.
+`rearm_required` remained latched after recovery and outputs remained
+disarmed.
 
 If one powered device also disconnects downstream devices, every affected
 configuration must report offline. The kernel must not silently renumber
