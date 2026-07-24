@@ -41,6 +41,12 @@ decisions, risks, commands, or next steps change.
   `configured_sync_managers`. EL5152 position 4 still emits fixed-map warnings
   because EtherLab/XML diagnostic-object identities differ from the fresh live
   PDO report at unchanged bit positions. Do not call this a clean-log result.
+- Five corrected full-topology zero-arm lifecycles and a full-topology
+  zero-armed controller-death test pass with no new kernel warning/error,
+  topology change, cyclic task leak, or retained master ownership.
+- Six no-hardware converter regression tests cover reported/requested source
+  selection, duplicate occurrences, padding, domain assignment, position
+  gaps, and malformed numeric fields.
 - PDO assignment/mapping belongs to `ecrt_slave_config_pdos()`. Persistent
   configuration SDOs are for ordinary startup parameters; ad-hoc master SDOs
   are commissioning fallback only.

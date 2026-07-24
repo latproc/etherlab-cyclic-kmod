@@ -54,13 +54,13 @@ No nonzero output has been authorized or tested.
 
 | Plan requirement | Status | Evidence or blocker |
 |---|---|---|
-| Repeated load/unload | Partial | Earlier probe/device repetitions plus 20 consecutive API 0.10 active lifecycles passed; instrumentation remains unavailable. |
-| Repeated master acquire/release | Pass | 120 open/scan/close iterations, 20 current cyclic lifecycles, controller-death teardown, and continued CLI usability. |
+| Repeated load/unload | Partial | Earlier probe/device repetitions, 20 single-device lifecycles, and five API 0.12 full-topology lifecycles passed; instrumentation remains unavailable. |
+| Repeated master acquire/release | Pass | 120 open/scan/close iterations, repeated current cyclic lifecycles, two controller-death variants, and continued CLI usability. |
 | Repeated scan memory stability | Partial | Functional repetitions passed; no allocator/leak instrumentation. |
-| Invalid ABI calls | Partial | Broad ABI suite passes; add active stale generation/size/sequence cases and fuzzed counts. |
+| Invalid ABI calls | Partial | Broad API 0.12 suite includes active stale generation/size/sequence/domain-status cases; broader fuzz and debug-kernel instrumentation remain. |
 | Allocation failure paths | Partial | Every module-owned pending/image allocation and cyclic-task constructor passed deterministic unwind; external allocations require a fault-injection kernel. |
-| Configuration create/destroy stress | Partial | Ten maximum pending create/reset iterations passed; applied/domain stress still needs instrumentation. |
-| Cyclic start/stop stress | Partial | Twenty API 0.10 zero-arm lifecycles passed with no task leak or new warning; instrumented stress remains. |
+| Configuration create/destroy stress | Partial | Ten maximum pending create/reset iterations include 256 domains and assignments; applied/domain stress passes functionally but still needs instrumentation. |
+| Cyclic start/stop stress | Partial | Twenty single-device and five full-topology zero-arm lifecycles passed with no task leak or new warning; instrumented stress remains. |
 | SDO failure teardown | Partial | Abort/error handling tested; allocation/close interruption stress remains. |
 | Unload with resources | Pass | Normal unload failed while a zero-armed control fd/task/master were live; controller continued, then file release and unload succeeded. |
 | kmemleak/equivalent | Unsupported on target | `CONFIG_DEBUG_KMEMLEAK` is disabled. |
@@ -76,11 +76,11 @@ The kernel-safety gate is not closed.
    disarmed hardware run captured position 29 becoming invalid, then offline,
    then online/OP/valid again without restarting the transport. The explicit
    re-arm requirement remained latched after recovery.
-2. **Controller-death stress needs expansion.** One standalone controller was
-   killed while explicitly zero-armed; file release left no cyclic task,
-   returned master 0 idle, preserved topology, and added no warning/error.
-   Repeat this under leak/debug-kernel instrumentation.
-3. **Current cyclic lifecycle functional stress passes 20 iterations.**
+2. **Controller-death functional stress passes single- and full-topology
+   cases.** File release left no cyclic task, returned master 0 idle, preserved
+   topology, and added no warning/error. Repeat under leak/debug-kernel
+   instrumentation.
+3. **Current cyclic lifecycle functional stress passes repeated runs.**
    Configure/activate/zero-arm/disarm/deactivate/close returned the master idle
    with no task leak after every iteration and no final topology/log change.
    Memory/debug-kernel instrumentation remains unavailable.
@@ -92,24 +92,25 @@ The kernel-safety gate is not closed.
    keeping `fault_count` as the healthy-to-unhealthy transition count. A
    repeated disarmed hardware power cycle proved final mask `0x38` with one
    transition and recovery to OP/valid.
-6. **Nonzero output is untested.** A bounded commissioning output requires a
-   separate reviewed procedure, selected harmless output/object, physical
-   observation, rollback, and explicit authorization.
+6. **Nonzero output is bounded to console commissioning.** One-bit status-LED
+   and buzzer commands passed with all other update bits masked and
+   actuator/servo power unavailable. Controller death during the LED pulse
+   gated output and released the master. Physical observation remains
+   unrecorded; actuator, drive-enable, and motion output remain untested.
 7. **The RT scheduler foundation is proven, but comparable timing acceptance
    remains.** CPU 1 / FIFO 70 is applied before the first task wake and is
    live-verified. Establish latency/WC/DC criteria and compare baseline with
    declared CPU and system load.
 8. **Manual EtherLab build compatibility is untested.** Only the exact DKMS
    target has evidence.
-9. **Active hostile-input coverage is established for process-image and
-   lifecycle controls.** Disarmed hardware checks cover invalid capacity,
-   flags, generation, size, sequence, and duplicate activation. Broader fuzz
-   and debug-kernel instrumentation remain future hardening.
-10. **Servo-off exchange works but independent validity needs multiple
-    domains.** A present EL5152 reached OP and returned live data with an
-    expected ED3L absent. EtherLab's combined domain WC remained incomplete,
-    so conservative validity stayed false. Separate domains are required for
-    independently recoverable groups.
+9. **Active hostile-input coverage includes process-image, lifecycle, and
+   domain controls.** Hardware checks cover invalid capacity, flags,
+   generation, size, sequence, domain ID/reserved fields, and duplicate
+   activation. Broader fuzz and debug-kernel instrumentation remain.
+10. **Multiple domains are implemented and powered-operation proven.** The
+    full topology reached 34/34 OP/valid with separate Beckhoff and drive
+    domains complete. The drive-power-off independence capture is deferred
+    because power switching is currently unavailable.
 
 ## Documentation acceptance gate
 

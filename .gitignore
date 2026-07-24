@@ -40,6 +40,8 @@
 /tools/cw_ec_sdo
 /tools/cw_ec_config
 /tools/cw_ec_config_stress
+__pycache__/
+*.pyc
 
 # Debug files
 *.dSYM/

@@ -846,3 +846,25 @@ reports channel status objects. Bit positions, PDO sizes, counter values, and
 frequency values are unchanged. The corrected run reaches complete WC and OP,
 but this fixed-mapping warning remains a documented compatibility issue rather
 than a clean-kernel-log result.
+
+The corrected full fixture then passed five consecutive zero-output lifecycle
+iterations. Every iteration returned master 0 idle with no cyclic task leak;
+the final topology was unchanged and no new kernel warning/error appeared.
+Killing a controller while the full 290-byte image was zero-armed also blocked
+normal unload while live, released all resources on file close, preserved
+topology, and added no kernel warning/error.
+
+Six no-hardware converter regression tests cover:
+
+- preference for slave-reported mappings over requested mappings;
+- distinct occurrence IDs for duplicate EtherCAT objects;
+- unregistered `entry_id=0` padding;
+- complete explicit-domain assignment;
+- rejection of noncontiguous physical positions; and
+- rejection of malformed numeric fields.
+
+Run them with:
+
+```sh
+python3 tools/test_cw_ec_config_from_topology.py -v
+```

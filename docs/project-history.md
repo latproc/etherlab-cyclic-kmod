@@ -214,6 +214,11 @@ commands, outputs, and design details.
   than requested mappings. EL5152 position 4 retains a documented fixed-map
   warning caused by differing diagnostic-object identities in EtherLab/XML
   metadata and the fresh live PDO report.
+- Five corrected full-topology zero-arm lifecycles and a full-topology
+  zero-armed controller-death test passed without a new kernel warning/error,
+  cyclic task leak, topology change, or retained master ownership. Added six
+  no-hardware converter regression tests for source selection, duplicate
+  objects, padding, domains, topology gaps, and malformed values.
 - Validated that explicit EtherLab header/symbol overrides work outside the
   DKMS directory layout by staging the exact installed 1.6.9 artifacts under
   arbitrary source/build paths and rebuilding both modules. Wrong kernel
