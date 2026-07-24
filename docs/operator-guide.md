@@ -17,6 +17,16 @@ EtherCAT output.
 
 ## Build and verify the contract
 
+Optional cyclic scheduler controls are immutable module parameters. For the
+tested target's installed-IOD baseline, load with:
+
+```sh
+sudo insmod kernel/cw_ethercat.ko cycle_cpu=1 cycle_fifo_priority=70
+```
+
+Omit both parameters to preserve normal scheduler policy and affinity.
+Activation rejects an offline/out-of-range CPU or invalid FIFO priority.
+
 ```sh
 uname -r
 make check-build-env

@@ -214,3 +214,15 @@ as kernel device policy.
 - repeated activate/deactivate and topology rescan;
 - all five ED3Ls power loss/restoration;
 - verify no divide-by-zero or overflow for validated cycle periods.
+
+## Cyclic task scheduling
+
+Scheduler policy is supplied at module load rather than embedded as device
+policy. `cycle_cpu=-1` leaves affinity unchanged and
+`cycle_fifo_priority=0` leaves normal scheduling in place. A nonnegative CPU
+must be online; a nonzero FIFO priority must be below `MAX_RT_PRIO`.
+
+The task is created stopped, configured, then woken, so no normal-priority or
+wrong-CPU cycle can precede the requested setup. CPU 1 / FIFO 70 matches the
+installed IOD baseline and is live-proven, but comparative load testing is
+still required.

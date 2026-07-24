@@ -481,6 +481,25 @@ slave id=1 online=1 operational=1 valid=1 al=0x08
 
 Close/unload returned master 0 idle/inactive with 34 slaves.
 
+## Cyclic scheduler controls
+
+The module-load parameters `cycle_cpu` and `cycle_fifo_priority` are immutable
+after load. Defaults `-1` and `0` preserve scheduler affinity and normal
+scheduling. The task is created stopped; requested affinity and policy are
+applied before its first cycle.
+
+A disarmed position-29 run loaded with CPU 1 and FIFO priority 70. Live process
+inspection reported `cw_ec_cycle` as class `FF`, RT priority 70, on CPU 1:
+
+```text
+cycles=31109 errors=0 overruns=0 maximum_lateness=51293 ns
+wc=3 wc_state=2 healthy=1 armed=0
+```
+
+An invalid CPU 99 was rejected with `EINVAL` before cyclic activation. Close
+and unload returned master 0 idle/inactive with 34 slaves. This establishes
+the scheduler foundation but is not baseline-versus-load timing acceptance.
+
 ## Zero-armed controller death
 
 `tools/cw_ec_test_controller_death.sh` starts `cycle-zero-hold`, waits until an

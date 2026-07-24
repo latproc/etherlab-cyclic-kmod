@@ -131,3 +131,8 @@ commands, outputs, and design details.
   duplicate activation. Position 29 recovered from post-power-cycle
   `SAFEOP+ERROR`, passed every rejection with OP/complete WC, and returned the
   master idle after close.
+- Added immutable module-load CPU-affinity and FIFO-priority controls for the
+  cyclic task. The task is configured before its first wake. CPU 1 / FIFO 70
+  was visible live and completed a 30-second disarmed run with zero
+  errors/overruns and 51,293 ns maximum lateness; invalid CPU 99 was rejected
+  before activation.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 #include <linux/atomic.h>
+#include <linux/cpu.h>
 #include <linux/delay.h>
 #include <linux/errno.h>
 #include <linux/fs.h>
@@ -11,6 +12,8 @@
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/sched.h>
+#include <uapi/linux/sched/types.h>
 #include <linux/spinlock.h>
 #include <linux/string.h>
 #include <linux/timekeeping.h>
@@ -171,6 +174,8 @@ static atomic64_t cw_ec_next_config_generation = ATOMIC64_INIT(0);
 static atomic_t cw_ec_test_allocation_count = ATOMIC_INIT(0);
 static int cw_ec_test_fail_allocation;
 static bool cw_ec_test_fail_cycle_thread;
+static int cw_ec_cycle_cpu = -1;
+static uint cw_ec_cycle_fifo_priority;
 module_param_named(test_fail_allocation, cw_ec_test_fail_allocation, int, 0444);
 MODULE_PARM_DESC(test_fail_allocation,
 		 "fail the Nth module-owned allocation (test only; 0 disables)");
@@ -178,6 +183,12 @@ module_param_named(test_fail_cycle_thread, cw_ec_test_fail_cycle_thread,
 		   bool, 0444);
 MODULE_PARM_DESC(test_fail_cycle_thread,
 		 "fail cyclic task construction after activation (test only)");
+module_param_named(cycle_cpu, cw_ec_cycle_cpu, int, 0444);
+MODULE_PARM_DESC(cycle_cpu,
+		 "cyclic task CPU affinity (-1 leaves scheduler affinity unchanged)");
+module_param_named(cycle_fifo_priority, cw_ec_cycle_fifo_priority, uint, 0444);
+MODULE_PARM_DESC(cycle_fifo_priority,
+		 "cyclic task SCHED_FIFO priority (0 leaves normal scheduling)");
 
 static int cw_ec_check_header(u16 struct_size, u16 api_major,
 			      size_t expected_size);
@@ -1318,6 +1329,12 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	    result.cycle_period_ns < CW_EC_CYCLE_PERIOD_MIN_NS ||
 	    result.cycle_period_ns > CW_EC_CYCLE_PERIOD_MAX_NS)
 		return -EINVAL;
+	if (cw_ec_cycle_cpu < -1 ||
+	    (cw_ec_cycle_cpu >= 0 &&
+	     (cw_ec_cycle_cpu >= nr_cpu_ids ||
+	      !cpu_online(cw_ec_cycle_cpu))) ||
+	    cw_ec_cycle_fifo_priority >= MAX_RT_PRIO)
+		return -EINVAL;
 	period_ns = result.cycle_period_ns;
 
 	memset(&result, 0, sizeof(result));
@@ -1478,8 +1495,8 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	if (cw_ec_test_fail_cycle_thread)
 		ctx->cycle_thread = ERR_PTR(-ENOMEM);
 	else
-		ctx->cycle_thread = kthread_run(cw_ec_cycle_thread, ctx,
-						"cw_ec_cycle");
+		ctx->cycle_thread = kthread_create(cw_ec_cycle_thread, ctx,
+						   "cw_ec_cycle");
 	if (IS_ERR(ctx->cycle_thread)) {
 		ret = PTR_ERR(ctx->cycle_thread);
 		ctx->cycle_thread = NULL;
@@ -1489,9 +1506,36 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 		cw_ec_invalidate_applied_config(ctx);
 		goto out;
 	}
+	if (cw_ec_cycle_cpu >= 0) {
+		ret = set_cpus_allowed_ptr(ctx->cycle_thread,
+					   cpumask_of(cw_ec_cycle_cpu));
+		if (ret)
+			goto thread_config_failed;
+	}
+	if (cw_ec_cycle_fifo_priority) {
+		struct sched_attr attr = {
+			.size = sizeof(attr),
+			.sched_policy = SCHED_FIFO,
+			.sched_priority = cw_ec_cycle_fifo_priority,
+		};
+
+		ret = sched_setattr_nocheck(ctx->cycle_thread, &attr);
+		if (ret)
+			goto thread_config_failed;
+	}
+	wake_up_process(ctx->cycle_thread);
 	ctx->active = true;
 	result.domain_size = ctx->domain_size;
 	ret = 0;
+	goto out;
+
+thread_config_failed:
+	kthread_stop(ctx->cycle_thread);
+	ctx->cycle_thread = NULL;
+	ecrt_master_deactivate(ctx->master);
+	cw_ec_free_input_buffers(ctx);
+	cw_ec_free_output_buffers(ctx);
+	cw_ec_invalidate_applied_config(ctx);
 out:
 	result.result = ret;
 	if (copy_to_user(argp, &result, sizeof(result))) {

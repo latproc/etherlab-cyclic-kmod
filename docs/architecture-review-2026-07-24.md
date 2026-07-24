@@ -95,9 +95,10 @@ The kernel-safety gate is not closed.
 6. **Nonzero output is untested.** A bounded commissioning output requires a
    separate reviewed procedure, selected harmless output/object, physical
    observation, rollback, and explicit authorization.
-7. **No comparable timing acceptance exists.** Functional runs are short and
-   mostly unloaded. Establish latency/WC/DC criteria and test under declared
-   CPU and system load.
+7. **The RT scheduler foundation is proven, but comparable timing acceptance
+   remains.** CPU 1 / FIFO 70 is applied before the first task wake and is
+   live-verified. Establish latency/WC/DC criteria and compare baseline with
+   declared CPU and system load.
 8. **Manual EtherLab build compatibility is untested.** Only the exact DKMS
    target has evidence.
 9. **Active hostile-input coverage is established for process-image and

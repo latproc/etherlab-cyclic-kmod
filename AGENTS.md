@@ -276,6 +276,9 @@ testing, safety, and build documents.
 - Active API 0.10 hostile-input checks pass for undersized snapshots, bad
   flags, stale generations, wrong output size, unknown output sequence, stale
   disarm, and duplicate activation. The checks leave outputs disarmed.
+- The cyclic task supports immutable module-load scheduler controls:
+  `cycle_cpu=-1` and `cycle_fifo_priority=0` preserve prior defaults. CPU 1 /
+  FIFO 70 is live-proven; configuration occurs before the task's first cycle.
 - Next step: select the next independently testable kernel-safety blocker.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.
