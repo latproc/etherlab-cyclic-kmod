@@ -598,17 +598,18 @@ idle/inactive, module unload succeeded, and the final topology matched the
 initial capture.
 
 The six copied process-image allocations were then tested separately using the
-motion-inhibited ED3L position-29 fixture. Allocations 18 through 23 (two input
+motion-inhibited ED3L position-29 fixture. In API 0.12, allocations 19 through
+24 (two input
 images, two output images, the output ownership mask, and the update mask)
 each returned `ENOMEM` before master activation and unwound to an idle master.
 The separate cyclic-task construction hook then returned `ENOMEM` after
 EtherLab activation; that path deactivated the master, freed all copied
 buffers, invalidated EtherLab-owned configuration/domain pointers, and closed
-cleanly. Allocation 24, immediately beyond the owned allocation paths,
+cleanly. Allocation 25, immediately beyond the owned allocation paths,
 completed an eight-second zero-output cycle:
 
 ```text
-cycles=7997 errors=0 overruns=1 maximum_lateness=2747281 ns
+cycles=8000 errors=0 overruns=0 maximum_lateness=75494 ns
 wc=3 wc_state=2
 healthy=1 armed=0 faults=0x00000000
 configured=1 online=1 operational=1
@@ -618,8 +619,8 @@ PASS: all six process-image and cyclic-task construction failures unwound;
       success boundary passed; topology unchanged
 ```
 
-The timing overrun is recorded evidence and is not a timing-acceptance result.
-No nonzero output was requested.
+This is allocation/unwind evidence, not a timing-acceptance result. No nonzero
+output was requested.
 
 ## Maximum pending configuration stress
 

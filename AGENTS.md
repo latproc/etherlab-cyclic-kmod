@@ -323,6 +323,10 @@ testing, safety, and build documents.
   process-image, safety, and operator guidance for explicit domains, global
   offsets, per-domain validity, and the still-global output gate. The
   documentation acceptance gate passes.
+- API 0.12 deterministic copied-image failures are allocations 19-24 because
+  the implicit domain owns allocation 18. All six failures and cyclic-task
+  construction failure unwind cleanly; allocation 25 completed 8,000 disarmed
+  cycles with zero errors/overruns and no topology/kernel-log regression.
 - Next step: capture the powered-off ED3L case showing EL5152 valid and the
   ED3L domain invalid, then re-audit API 0.12 documentation and safety status.
 - Do not begin IOD integration before the standalone architecture and

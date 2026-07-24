@@ -185,3 +185,8 @@ commands, outputs, and design details.
   global image offsets, per-domain validity, implicit compatibility behavior,
   and the still-global output gate. The standalone documentation gate passes;
   the kernel-safety gate remains open.
+- Corrected deterministic process-image allocation indices for the API 0.12
+  implicit-domain allocation. All six copied-image failures and cyclic-task
+  construction failure unwound cleanly; allocation 25 completed 8,000
+  disarmed cycles with zero errors/overruns, master idle after teardown,
+  unchanged topology, and no new kernel warning/error.

@@ -63,11 +63,11 @@ verify_idle()
 "$project_dir/tools/cw_ec_capture_topology.sh" >"$tmp_dir/slaves-before.txt"
 dmesg --level=err,warn >"$tmp_dir/dmesg-before.txt"
 
-# Allocations 1-17 are the file context and this fixture's pending records.
-# Allocations 18-23 are two input images, two output images, the output mask,
-# and the output update mask.
-fail=18
-while [ "$fail" -le 23 ]; do
+# Allocations 1-18 are the file context, pending records, and API 0.12 implicit
+# compatibility-domain node. Allocations 19-24 are two input images, two output
+# images, the output mask, and the output update mask.
+fail=19
+while [ "$fail" -le 24 ]; do
 	insmod "$module_path" test_fail_allocation="$fail"
 	wait_for_device
 	set +e
@@ -107,10 +107,10 @@ fi
 verify_idle
 rmmod "$module_name"
 
-# Allocation 24 is beyond every module-owned allocation reached by this
+# Allocation 25 is beyond every module-owned allocation reached by this
 # fixture. It must complete a normal zero-output cycle, reach a healthy bus,
 # and teardown.
-insmod "$module_path" test_fail_allocation=24
+insmod "$module_path" test_fail_allocation=25
 wait_for_device
 "$project_dir/tools/cw_ec_config" cycle "$config" "$period" 8 "$device" \
 	>"$tmp_dir/success-boundary.txt"
