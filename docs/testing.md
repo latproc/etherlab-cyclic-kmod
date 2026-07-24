@@ -622,6 +622,28 @@ PASS: all six process-image and cyclic-task construction failures unwound;
 This is allocation/unwind evidence, not a timing-acceptance result. No nonzero
 output was requested.
 
+The same harness was then parameterized for the explicit two-domain
+EL5152/ED3L fixture. Its 67 fixture-specific allocations precede the copied
+images. Injected failures 68 through 73 covered both input images, both output
+images, the output ownership mask, and the update mask; each unwound before
+activation. Cyclic-task construction failure also unwound after activation.
+Allocation 74 completed the eight-second disarmed success run:
+
+```text
+cycles=8000 errors=0 overruns=0 maximum_lateness=102428 ns
+domain 1: base=0  size=32 wc=3 complete valid=1
+domain 2: base=32 size=28 wc=3 complete valid=1
+healthy=1 armed=0 faults=0x00000000
+New kernel warning/error lines:
+  none
+PASS: all six process-image and cyclic-task construction failures unwound;
+      success boundary passed; topology unchanged
+```
+
+Use `CW_EC_PRE_IMAGE_ALLOCATIONS` when exercising another fixture; it is the
+number of module-owned allocations through the last pending configuration
+record, before activation allocates copied process images.
+
 ## Maximum pending configuration stress
 
 `tools/cw_ec_test_config_stress.sh` defaults to ten iterations. Each iteration
@@ -712,6 +734,13 @@ wc=3 complete; slave online=1 operational=1 valid=1
 The non-activating hostile ABI suite also rejected an explicit domain without
 an assignment and an assignment referencing an unknown domain. It retained
 the existing legacy-domain offset and padding checks.
+
+An active, disarmed `cycle-abi` run against the same explicit fixture rejected
+stale-generation, unknown-domain, and nonzero-reserved-field domain-status
+queries. A valid query reported both domains active and valid. Existing active
+snapshot, publication, arm/disarm, and duplicate-activation hostile checks
+also passed, outputs remained disarmed, and the 2.7-second run completed with
+2,701 cycles, zero errors/overruns, and 150,479 ns maximum lateness.
 
 The actual topology was 34 slaves, not the intended servo-off 29-slave state,
 so independent validity across an absent drive is still outstanding. The

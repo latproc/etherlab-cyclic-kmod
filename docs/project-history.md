@@ -190,6 +190,14 @@ commands, outputs, and design details.
   construction failure unwound cleanly; allocation 25 completed 8,000
   disarmed cycles with zero errors/overruns, master idle after teardown,
   unchanged topology, and no new kernel warning/error.
+- Generalized the copied-image allocation harness for fixture-specific pending
+  allocation counts. With the explicit EL5152/ED3L two-domain fixture,
+  allocations 68-73 and cyclic-task construction failure unwound cleanly;
+  allocation 74 completed 8,000 disarmed cycles with both domains complete and
+  valid, unchanged topology, and no new kernel warning/error.
+- Extended active hostile-ABI coverage to domain status. Stale generation,
+  unknown domain, and nonzero reserved fields were rejected; valid domain
+  status remained available and all output paths stayed disarmed.
 - Validated that explicit EtherLab header/symbol overrides work outside the
   DKMS directory layout by staging the exact installed 1.6.9 artifacts under
   arbitrary source/build paths and rebuilding both modules. Wrong kernel

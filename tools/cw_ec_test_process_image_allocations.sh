@@ -13,11 +13,18 @@ module_name=cw_ethercat
 device=${CW_EC_DEVICE:-/dev/cw_ethercat0}
 config=${CW_EC_CONFIG:-"$project_dir/tools/configs/ed3l_velocity_dc_pos29.conf"}
 period=${CW_EC_TEST_PERIOD_NS:-1000000}
+pre_image_allocations=${CW_EC_PRE_IMAGE_ALLOCATIONS:-18}
 
 if [ "${CW_EC_MOTION_INHIBITED:-}" != YES ]; then
 	echo "error: set CW_EC_MOTION_INHIBITED=YES only after motion is safely inhibited" >&2
 	exit 2
 fi
+case "$pre_image_allocations" in
+	''|*[!0-9]*|0)
+		echo "error: CW_EC_PRE_IMAGE_ALLOCATIONS must be a positive integer" >&2
+		exit 2
+		;;
+esac
 if [ "$(id -u)" -ne 0 ]; then
 	echo "error: run as root" >&2
 	exit 1
@@ -63,11 +70,14 @@ verify_idle()
 "$project_dir/tools/cw_ec_capture_topology.sh" >"$tmp_dir/slaves-before.txt"
 dmesg --level=err,warn >"$tmp_dir/dmesg-before.txt"
 
-# Allocations 1-18 are the file context, pending records, and API 0.12 implicit
-# compatibility-domain node. Allocations 19-24 are two input images, two output
-# images, the output mask, and the output update mask.
-fail=19
-while [ "$fail" -le 24 ]; do
+# The fixture-specific prefix contains the file context, pending records, and
+# any implicit domain. The next six allocations are two input images, two
+# output images, the output mask, and the output update mask.
+first_image_allocation=$((pre_image_allocations + 1))
+last_image_allocation=$((pre_image_allocations + 6))
+success_allocation=$((pre_image_allocations + 7))
+fail=$first_image_allocation
+while [ "$fail" -le "$last_image_allocation" ]; do
 	insmod "$module_path" test_fail_allocation="$fail"
 	wait_for_device
 	set +e
@@ -107,10 +117,10 @@ fi
 verify_idle
 rmmod "$module_name"
 
-# Allocation 25 is beyond every module-owned allocation reached by this
+# The success allocation is beyond every module-owned allocation reached by this
 # fixture. It must complete a normal zero-output cycle, reach a healthy bus,
 # and teardown.
-insmod "$module_path" test_fail_allocation=25
+insmod "$module_path" test_fail_allocation="$success_allocation"
 wait_for_device
 "$project_dir/tools/cw_ec_config" cycle "$config" "$period" 8 "$device" \
 	>"$tmp_dir/success-boundary.txt"

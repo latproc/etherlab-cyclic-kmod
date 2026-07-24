@@ -650,6 +650,36 @@ out:
 	return ret;
 }
 
+static int first_domain_id(const char *path, uint32_t *domain_id)
+{
+	FILE *stream;
+	char *line = NULL;
+	size_t capacity = 0;
+	int ret = 0;
+
+	*domain_id = UINT32_MAX;
+	stream = fopen(path, "r");
+	if (!stream)
+		return -1;
+	while (getline(&line, &capacity, stream) >= 0) {
+		struct record record;
+
+		if (parse_record(line, &record) < 0) {
+			ret = -1;
+			break;
+		}
+		if (record.kind == RECORD_DOMAIN) {
+			*domain_id = record.domain.config_id;
+			break;
+		}
+	}
+	if (ferror(stream))
+		ret = -1;
+	free(line);
+	fclose(stream);
+	return ret;
+}
+
 static int prepare(const char *path, const char *device)
 {
 	struct cw_ec_config_validate validate;
@@ -803,6 +833,7 @@ static int cycle(const char *path, uint32_t period_ns,
 	}
 	if (active_abi) {
 		uint8_t byte = 0;
+		uint32_t domain_id;
 		struct cw_ec_input_snapshot invalid_snapshot = {
 			.struct_size = sizeof(invalid_snapshot),
 			.api_major = CW_EC_API_VERSION_MAJOR,
@@ -829,6 +860,15 @@ static int cycle(const char *path, uint32_t period_ns,
 			.config_generation = io_status.config_generation - 1U,
 		};
 		struct cw_ec_cycle_activate duplicate_activate = activate;
+		struct cw_ec_domain_status invalid_domain = {
+			.struct_size = sizeof(invalid_domain),
+			.api_major = CW_EC_API_VERSION_MAJOR,
+			.config_generation = io_status.config_generation - 1U,
+		};
+
+		if (first_domain_id(path, &domain_id))
+			goto out;
+		invalid_domain.domain_config_id = domain_id;
 
 		if (expect_ioctl_errno(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT,
 				       &invalid_snapshot, ENOSPC,
@@ -869,6 +909,32 @@ static int cycle(const char *path, uint32_t period_ns,
 				       &duplicate_activate, EBUSY,
 				       "duplicate activation"))
 			goto out;
+		if (expect_ioctl_errno(fd, CW_EC_IOC_GET_DOMAIN_STATUS,
+				       &invalid_domain, ESTALE,
+				       "stale domain generation"))
+			goto out;
+		invalid_domain.config_generation =
+			io_status.config_generation;
+		invalid_domain.domain_config_id = 0;
+		if (expect_ioctl_errno(fd, CW_EC_IOC_GET_DOMAIN_STATUS,
+				       &invalid_domain, ENOENT,
+				       "unknown domain ID"))
+			goto out;
+		invalid_domain.domain_config_id = domain_id;
+		invalid_domain.reserved0[0] = 1;
+		if (expect_ioctl_errno(fd, CW_EC_IOC_GET_DOMAIN_STATUS,
+				       &invalid_domain, EINVAL,
+				       "domain status reserved fields"))
+			goto out;
+		invalid_domain.reserved0[0] = 0;
+		if (ioctl(fd, CW_EC_IOC_GET_DOMAIN_STATUS,
+			  &invalid_domain) < 0 ||
+		    !invalid_domain.active || !invalid_domain.data_valid) {
+			fprintf(stderr,
+				"cw_ec_config: active domain status validation failed: %s\n",
+				errno ? strerror(errno) : "invalid state");
+			goto out;
+		}
 		printf("PASS: active hostile-ABI checks left outputs disarmed\n");
 	}
 	if (monitor) {
