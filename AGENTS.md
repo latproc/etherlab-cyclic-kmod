@@ -79,6 +79,12 @@ decisions, risks, commands, or next steps change.
   declarative preparation failed individually and unwound cleanly; both
   success boundaries passed, topology was unchanged, and no new kernel
   warning/error line appeared.
+- Ten maximum pending create/reset iterations passed. Each iteration filled
+  the 256-operation setup batch and every declarative limit (256 slaves, 1024
+  Sync Managers, 4096 PDOs, 16384 entries, and 256 DC records), verified the
+  next record returned `E2BIG`, then synchronously cleared the transaction.
+  Master 0 remained idle, topology was unchanged, and no new kernel
+  warning/error line appeared.
 - A provisional bounded ad-hoc SDO batch exists for commissioning and
   decision-gate tests. It is not the persistent production setup mechanism.
 - Bounded SDO upload is hardware-proven against ED3L `0x6060:00`; no write has
@@ -350,6 +356,7 @@ testing, safety, and build documents.
   validity; remaining major blockers include its offline-transition proof,
   current lifecycle/controller-death stress, allocation-failure/leak testing,
   debug-kernel testing, and manual EtherLab build compatibility.
-- Next step: add high-count configuration create/destroy stress.
+- Next step: extend deterministic allocation-failure coverage through cyclic
+  process-image buffer construction.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

@@ -174,6 +174,13 @@ SDOs or activating cyclic I/O:
 sudo tools/cw_ec_test_allocation_failures.sh
 ```
 
+Maximum pending configuration limits and repeated synchronous cleanup can be
+tested without applying configuration or activating the master:
+
+```sh
+sudo tools/cw_ec_test_config_stress.sh
+```
+
 Examples:
 
 ```sh

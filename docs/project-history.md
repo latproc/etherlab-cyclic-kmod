@@ -89,3 +89,7 @@ commands, outputs, and design details.
   non-applying SDO staging mode. All 39 allocations reached by SDO staging and
   declarative preparation failed individually and unwound cleanly; both
   success boundaries passed without topology or kernel-log changes.
+- Added a maximum pending-configuration stress tool. Ten iterations filled all
+  setup/configuration hard limits, required `E2BIG` at each boundary, and
+  synchronously reset more than 220,000 records without changing master idle
+  state, topology, or the kernel warning/error log.

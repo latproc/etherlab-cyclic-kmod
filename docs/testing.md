@@ -472,6 +472,35 @@ idle/inactive, module unload succeeded, and the final topology matched the
 initial capture. Cyclic process-image allocations still require separate
 failure coverage because reaching them activates the master.
 
+## Maximum pending configuration stress
+
+`tools/cw_ec_test_config_stress.sh` defaults to ten iterations. Each iteration
+constructs and resets:
+
+- 256 pending ordered setup SDOs;
+- 256 slaves;
+- 1024 Sync Managers;
+- 4096 PDOs;
+- 16384 PDO entries; and
+- 256 distributed-clock records.
+
+For each collection, the tool also submits one extra valid record and requires
+`E2BIG`. It does not validate, apply, or activate the synthetic hierarchy.
+
+The ten-iteration target run passed:
+
+```text
+PASS: 10 maximum pending configuration iteration(s)
+New kernel warning/error lines:
+  none
+PASS: 10 maximum pending configuration iteration(s);
+      master idle; topology unchanged
+```
+
+This exercised more than 220,000 pending record allocations plus synchronous
+list teardown. It is limit and lifetime evidence, not evidence that the
+synthetic hierarchy represents valid EtherCAT hardware.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

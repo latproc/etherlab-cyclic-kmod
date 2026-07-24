@@ -115,7 +115,8 @@ commands that were actually run from procedures that remain untested.
 2. Expand current API 0.10 lifecycle/controller-death stress under
    instrumentation.
 3. Extend the passing deterministic pending-configuration allocation tests to
-   cyclic process-image allocation, and add high-count configuration stress.
+   cyclic process-image allocation. Maximum pending configuration stress now
+   passes ten full-limit create/reset iterations.
 4. Run available kmemleak/KFENCE/lockdep procedures, recording unsupported
    facilities explicitly.
 5. Finish end-to-end standalone documentation and repeat the gate review.
