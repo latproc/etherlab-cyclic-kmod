@@ -32,6 +32,10 @@ int main(int argc, char **argv)
 {
 	const char *device = "/dev/cw_ethercat0";
 	struct cw_ec_api_version version;
+	struct cw_ec_capabilities capabilities = {
+		.struct_size = sizeof(capabilities),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
 	struct cw_ec_master_info master;
 	unsigned int position;
 	int fd;
@@ -69,6 +73,12 @@ int main(int argc, char **argv)
 		close(fd);
 		return 1;
 	}
+	if (ioctl(fd, CW_EC_IOC_GET_CAPABILITIES, &capabilities) < 0) {
+		fprintf(stderr, "cw_ec_bus: GET_CAPABILITIES: %s\n",
+			strerror(errno));
+		close(fd);
+		return 1;
+	}
 
 	memset(&master, 0, sizeof(master));
 	if (ioctl(fd, CW_EC_IOC_GET_MASTER_INFO, &master) < 0) {
@@ -79,6 +89,8 @@ int main(int argc, char **argv)
 	}
 
 	printf("API: %u.%u\n", version.major, version.minor);
+	printf("capabilities: 0x%016" PRIx64 "\n",
+	       (uint64_t)capabilities.capabilities);
 	printf("master: 0\n");
 	printf("link: %s\n", master.link_up ? "up" : "down");
 	printf("scan: %s\n", master.scan_busy ? "busy" : "complete");

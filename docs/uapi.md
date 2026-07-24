@@ -2,12 +2,13 @@
 
 ## Status
 
-The current experimental API is version 0.12. It supports discovery, a
+The current experimental API is version 0.13. It supports discovery, a
 provisional bounded commissioning SDO batch, transactional
 slave/Sync/PDO/entry/DC configuration, domain registration, configurable
 cyclic pumping, copied process images, distributed clocks, health/fault
 status, explicit output arm/disarm, per-configured-slave validity, mandatory
-PDO padding, and explicit multiple validity domains.
+PDO padding, explicit multiple validity domains, coherent per-cycle timing,
+capability discovery, and interruptible cycle notification.
 
 ## Ownership and lifecycle
 
@@ -44,7 +45,9 @@ Minor versions add:
 - 0.10: stable-ID per-configured-slave state and conservative data validity;
 - 0.11: explicit mandatory PDO padding with `entry_id=0`; and
 - 0.12: explicit ordered domains, slave-domain assignments, and per-domain
-  status.
+  status; and
+- 0.13: capability discovery, coherent cycle timing/generation records, and
+  interruptible wait-for-cycle.
 
 Input/output structures that accept caller fields include `struct_size` and
 `api_major`. The kernel rejects an unexpected size with `EINVAL` and an
@@ -57,6 +60,13 @@ declared reserved field. The kernel rejects nonzero reserved input with
 ### `CW_EC_IOC_GET_API_VERSION`
 
 Returns `struct cw_ec_api_version`.
+
+### `CW_EC_IOC_GET_CAPABILITIES`
+
+Returns `struct cw_ec_capabilities`. API 0.13 reports only implemented,
+documented features: coherent copied process images, cycle timing,
+wait-for-cycle, and DC diagnostics. Scheduled output and controller leases are
+not currently reported.
 
 ### `CW_EC_IOC_GET_MASTER_INFO`
 
@@ -279,6 +289,41 @@ the API 0.4 cycle-status structure. The DC snapshot reports enable/reference/
 monitor state, the last reference result and phase difference, bounded cycle
 adjustment, last/maximum synchrony deviation, reference read errors and
 resumptions, and monitor results/timeouts.
+
+API 0.13 adds `CW_EC_IOC_CYCLE_GET_INFO` and `CW_EC_IOC_CYCLE_WAIT`.
+`GET_INFO` returns one coherent record for the most recently completed cycle.
+`WAIT` takes the active configuration generation, the last cycle index seen,
+and a timeout from 1 through 60,000 ms. It sleeps interruptibly until a
+different completed cycle is published. Timeout returns `ETIMEDOUT`, a signal
+returns the normal restart/interruption errno, stale generation returns
+`ESTALE`, and deactivation wakes the waiter with `ESHUTDOWN`.
+
+Cycle indices start at one and increase once per completed cyclic iteration.
+They reset on activation; the associated nonzero configuration generation
+disambiguates different activations. `scheduled_time_ns` is the absolute
+deadline passed to the high-resolution scheduler before that iteration.
+`actual_wake_time_ns` is sampled from `ktime_get_ns()` immediately after the
+thread wakes. Both therefore use the kernel monotonic clock.
+`wake_lateness_ns` is exactly actual minus scheduled and may be negative.
+
+`input_sequence` is the coherent image generation published by that cycle.
+The copied input snapshot now stores the exact cycle index alongside each
+buffer, so its `cycle_count` identifies the cycle that produced those bytes
+rather than whichever cycle happened to be current during the ioctl.
+
+`output_sequence_consumed` means the user-space output generation selected by
+the kernel before queue/send in that cycle. It is zero when the health/arm gate
+selected the zero image. It does not claim network acknowledgement.
+`stale_output_cycles` increments when an armed, healthy cycle selects the same
+nonzero generation as the preceding cycle. Disarmed zero-image cycling does
+not count as stale output. `missed_deadlines` increments when wake lateness is
+at least one configured period. The record also associates WC state, health,
+arm state, and aggregate cycle result with that cycle.
+
+The cycle record is published under a dedicated short spinlock after
+`ecrt_master_send()` returns. Waiters observe a separate published sequence
+only after that coherent record is complete. The cyclic task neither waits for
+nor calls user space.
 
 API 0.6 adds `CW_EC_IOC_GET_IO_STATUS`. Each successfully validated
 configuration receives a nonzero monotonically increasing generation for the

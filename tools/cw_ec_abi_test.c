@@ -29,6 +29,10 @@ int main(int argc, char **argv)
 {
 	const char *device = "/dev/cw_ethercat0";
 	struct cw_ec_slave_info slave;
+	struct cw_ec_capabilities capabilities = {
+		.struct_size = sizeof(capabilities),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
 	struct cw_ec_setup_begin begin = {
 		.struct_size = sizeof(begin),
 		.api_major = CW_EC_API_VERSION_MAJOR,
@@ -161,6 +165,15 @@ int main(int argc, char **argv)
 		.struct_size = sizeof(cycle_status),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	struct cw_ec_cycle_info cycle_info = {
+		.struct_size = sizeof(cycle_info),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_cycle_wait cycle_wait = {
+		.struct_size = sizeof(cycle_wait),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.timeout_ms = 1,
+	};
 	struct cw_ec_cycle_deactivate cycle_deactivate = {
 		.struct_size = sizeof(cycle_deactivate),
 		.api_major = CW_EC_API_VERSION_MAJOR,
@@ -237,6 +250,60 @@ int main(int argc, char **argv)
 	errno = 0;
 	failures += expect_errno("unknown ioctl",
 				 ioctl(fd, unknown_ioctl, NULL), ENOTTY);
+
+	capabilities.reserved0 = 1;
+	errno = 0;
+	failures += expect_errno("capabilities reserved field",
+				 ioctl(fd, CW_EC_IOC_GET_CAPABILITIES,
+				       &capabilities), EINVAL);
+	capabilities.reserved0 = 0;
+	if (ioctl(fd, CW_EC_IOC_GET_CAPABILITIES, &capabilities) < 0) {
+		fprintf(stderr, "FAIL: capabilities query: %s\n",
+			strerror(errno));
+		failures++;
+	} else if ((capabilities.capabilities &
+		    (CW_EC_CAP_COHERENT_PROCESS_IMAGE |
+		     CW_EC_CAP_CYCLE_TIMING | CW_EC_CAP_CYCLE_WAIT |
+		     CW_EC_CAP_DC_DIAGNOSTICS)) !=
+		   (CW_EC_CAP_COHERENT_PROCESS_IMAGE |
+		    CW_EC_CAP_CYCLE_TIMING | CW_EC_CAP_CYCLE_WAIT |
+		    CW_EC_CAP_DC_DIAGNOSTICS)) {
+		fprintf(stderr, "FAIL: required capability bits missing\n");
+		failures++;
+	} else {
+		printf("PASS: API 0.13 capabilities reported\n");
+	}
+
+	cycle_info.flags = 1;
+	errno = 0;
+	failures += expect_errno("cycle info flags",
+				 ioctl(fd, CW_EC_IOC_CYCLE_GET_INFO,
+				       &cycle_info), EINVAL);
+	cycle_info.flags = 0;
+	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_INFO, &cycle_info) < 0) {
+		fprintf(stderr, "FAIL: inactive cycle info: %s\n",
+			strerror(errno));
+		failures++;
+	} else {
+		printf("PASS: inactive cycle info is available\n");
+	}
+
+	cycle_wait.flags = 1;
+	errno = 0;
+	failures += expect_errno("cycle wait flags",
+				 ioctl(fd, CW_EC_IOC_CYCLE_WAIT, &cycle_wait),
+				 EINVAL);
+	cycle_wait.flags = 0;
+	cycle_wait.timeout_ms = CW_EC_CYCLE_WAIT_TIMEOUT_MAX_MS + 1U;
+	errno = 0;
+	failures += expect_errno("cycle wait timeout limit",
+				 ioctl(fd, CW_EC_IOC_CYCLE_WAIT, &cycle_wait),
+				 EINVAL);
+	cycle_wait.timeout_ms = 1;
+	errno = 0;
+	failures += expect_errno("inactive cycle wait",
+				 ioctl(fd, CW_EC_IOC_CYCLE_WAIT, &cycle_wait),
+				 EINVAL);
 
 	memset(&slave, 0, sizeof(slave));
 	slave.struct_size = sizeof(slave) - 1;

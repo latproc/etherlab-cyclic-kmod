@@ -108,11 +108,22 @@ struct cw_ec_file {
 	atomic64_t output_gate_request;
 	atomic64_t output_gate_applied;
 	wait_queue_head_t output_gate_wait;
+	/* Published records are copied under cycle_info_lock; the atomic sequence
+	 * changes only after the complete record is visible to waiters.
+	 */
+	wait_queue_head_t cycle_wait;
+	spinlock_t cycle_info_lock;
+	struct cw_ec_cycle_info cycle_info;
+	atomic64_t cycle_info_sequence;
+	u64 last_output_sequence_consumed;
+	u64 stale_output_cycles;
 	bool io_ever_healthy;
 	spinlock_t input_lock;
 	u8 *input_buffers[2];
 	u8 input_active;
 	int input_reader;
+	/* Cycle identity belongs to the buffer, not to the later snapshot call. */
+	u64 input_cycle_index[2];
 	atomic64_t input_sequence;
 	spinlock_t output_lock;
 	u8 *output_buffers[2];
@@ -277,6 +288,8 @@ static void cw_ec_free_input_buffers(struct cw_ec_file *ctx)
 	ctx->input_buffers[1] = NULL;
 	ctx->input_active = 0;
 	ctx->input_reader = -1;
+	ctx->input_cycle_index[0] = 0;
+	ctx->input_cycle_index[1] = 0;
 	atomic64_set(&ctx->input_sequence, 0);
 }
 
@@ -542,7 +555,8 @@ static void cw_ec_update_io_health(struct cw_ec_file *ctx,
 	}
 }
 
-static void cw_ec_publish_input_snapshot(struct cw_ec_file *ctx)
+static void cw_ec_publish_input_snapshot(struct cw_ec_file *ctx,
+					 u64 cycle_index)
 {
 	struct cw_ec_domain_node *domain;
 	unsigned long irq_flags;
@@ -562,16 +576,18 @@ static void cw_ec_publish_input_snapshot(struct cw_ec_file *ctx)
 
 	spin_lock_irqsave(&ctx->input_lock, irq_flags);
 	ctx->input_active = target;
+	ctx->input_cycle_index[target] = cycle_index;
 	atomic64_inc(&ctx->input_sequence);
 	spin_unlock_irqrestore(&ctx->input_lock, irq_flags);
 }
 
-static void cw_ec_apply_outputs(struct cw_ec_file *ctx)
+static u64 cw_ec_apply_outputs(struct cw_ec_file *ctx)
 {
 	struct cw_ec_domain_node *domain;
 	unsigned long irq_flags;
 	u8 *source = NULL;
 	u8 reader = 0;
+	u64 output_sequence_consumed = 0;
 	u32 i;
 
 	if (atomic_read(&ctx->io_outputs_armed) &&
@@ -580,6 +596,8 @@ static void cw_ec_apply_outputs(struct cw_ec_file *ctx)
 		reader = ctx->output_active;
 		ctx->output_reader = reader;
 		source = ctx->output_buffers[reader];
+		output_sequence_consumed =
+			atomic64_read(&ctx->output_sequence);
 		spin_unlock_irqrestore(&ctx->output_lock, irq_flags);
 	}
 	list_for_each_entry(domain, &ctx->config_domains, common.node) {
@@ -598,6 +616,45 @@ static void cw_ec_apply_outputs(struct cw_ec_file *ctx)
 		ctx->output_reader = -1;
 		spin_unlock_irqrestore(&ctx->output_lock, irq_flags);
 	}
+	return output_sequence_consumed;
+}
+
+static void cw_ec_publish_cycle_info(struct cw_ec_file *ctx, u64 cycle_index,
+				     u64 scheduled_time_ns,
+				     u64 actual_wake_time_ns,
+				     s64 wake_lateness_ns,
+				     u64 output_sequence_consumed,
+				     int cycle_result)
+{
+	struct cw_ec_cycle_info info = {
+		.struct_size = sizeof(info),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.config_generation = ctx->config_generation,
+		.cycle_index = cycle_index,
+		.cycle_period_ns = ctx->cycle_period_ns,
+		.scheduled_time_ns = scheduled_time_ns,
+		.actual_wake_time_ns = actual_wake_time_ns,
+		.wake_lateness_ns = wake_lateness_ns,
+		.input_sequence = atomic64_read(&ctx->input_sequence),
+		.output_sequence_consumed = output_sequence_consumed,
+		.missed_deadlines =
+			atomic64_read(&ctx->cycle_overrun_count),
+		.stale_output_cycles = ctx->stale_output_cycles,
+		.working_counter = atomic_read(&ctx->working_counter),
+		.working_counter_state =
+			atomic_read(&ctx->working_counter_state),
+		.outputs_armed = atomic_read(&ctx->io_outputs_armed),
+		.bus_healthy = atomic_read(&ctx->io_bus_healthy),
+		.cycle_result = cycle_result,
+	};
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&ctx->cycle_info_lock, irq_flags);
+	ctx->cycle_info = info;
+	spin_unlock_irqrestore(&ctx->cycle_info_lock, irq_flags);
+	/* Publish the wait predicate only after the coherent record above. */
+	atomic64_set(&ctx->cycle_info_sequence, cycle_index);
+	wake_up_interruptible(&ctx->cycle_wait);
 }
 
 static int cw_ec_cycle_thread(void *data)
@@ -611,10 +668,15 @@ static int cw_ec_cycle_thread(void *data)
 		bool domains_complete = true;
 		ktime_t expires;
 		u64 now;
+		u64 scheduled_time_ns;
+		u64 output_sequence_consumed;
+		u64 cycle_index;
+		s64 wake_lateness;
 		int cycle_result = 0;
 		int operation_result;
 
 		deadline += ctx->cycle_period_ns;
+		scheduled_time_ns = deadline;
 		expires = ns_to_ktime(deadline);
 		set_current_state(TASK_INTERRUPTIBLE);
 		schedule_hrtimeout(&expires, HRTIMER_MODE_ABS);
@@ -623,6 +685,10 @@ static int cw_ec_cycle_thread(void *data)
 			break;
 
 		now = ktime_get_ns();
+		cycle_index = atomic64_read(&ctx->cycle_count) + 1;
+		wake_lateness = now >= scheduled_time_ns ?
+			(s64)(now - scheduled_time_ns) :
+			-(s64)(scheduled_time_ns - now);
 		if (now > deadline) {
 			u64 lateness = now - deadline;
 
@@ -663,7 +729,7 @@ static int cw_ec_cycle_thread(void *data)
 		aggregate_state.wc_state = domains_complete ?
 			EC_WC_COMPLETE : EC_WC_INCOMPLETE;
 		if (!cycle_result)
-			cw_ec_publish_input_snapshot(ctx);
+			cw_ec_publish_input_snapshot(ctx, cycle_index);
 		if (ctx->config_dc_count)
 			operation_result = cw_ec_dc_process_receive(ctx);
 		else
@@ -675,7 +741,16 @@ static int cw_ec_cycle_thread(void *data)
 		atomic_set(&ctx->working_counter_state,
 			   aggregate_state.wc_state);
 		cw_ec_update_io_health(ctx, &aggregate_state);
-		cw_ec_apply_outputs(ctx);
+		output_sequence_consumed = cw_ec_apply_outputs(ctx);
+		/* Zero means the safety gate selected zeros, so disarmed cycles are
+		 * deliberately excluded from stale output reuse accounting.
+		 */
+		if (output_sequence_consumed &&
+		    output_sequence_consumed ==
+			    ctx->last_output_sequence_consumed)
+			ctx->stale_output_cycles++;
+		ctx->last_output_sequence_consumed =
+			output_sequence_consumed;
 		if (ctx->config_dc_count) {
 			operation_result = cw_ec_dc_prepare_send(ctx);
 		} else {
@@ -705,7 +780,12 @@ static int cw_ec_cycle_thread(void *data)
 		if (cycle_result)
 			atomic64_inc(&ctx->cycle_error_count);
 		atomic_set(&ctx->last_cycle_result, cycle_result);
-		atomic64_inc(&ctx->cycle_count);
+		atomic64_set(&ctx->cycle_count, cycle_index);
+		cw_ec_publish_cycle_info(ctx, cycle_index,
+					 scheduled_time_ns, now,
+					 wake_lateness,
+					 output_sequence_consumed,
+					 cycle_result);
 	}
 
 	return 0;
@@ -796,7 +876,8 @@ static int cw_ec_deactivate_locked(struct cw_ec_file *ctx)
 			process_ret = domain_ret;
 	}
 	ret = ecrt_master_deactivate(ctx->master);
-	ctx->active = false;
+	WRITE_ONCE(ctx->active, false);
+	wake_up_interruptible_all(&ctx->cycle_wait);
 	settle_ret = ret ? 0 : cw_ec_wait_configured_slaves_settled(ctx);
 	cw_ec_free_input_buffers(ctx);
 	cw_ec_free_output_buffers(ctx);
@@ -839,7 +920,9 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	mutex_init(&ctx->lock);
 	spin_lock_init(&ctx->input_lock);
 	spin_lock_init(&ctx->output_lock);
+	spin_lock_init(&ctx->cycle_info_lock);
 	init_waitqueue_head(&ctx->output_gate_wait);
+	init_waitqueue_head(&ctx->cycle_wait);
 	ctx->input_reader = -1;
 	ctx->output_reader = -1;
 	INIT_LIST_HEAD(&ctx->setup_sdos);
@@ -854,6 +937,14 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	atomic64_set(&ctx->cycle_error_count, 0);
 	atomic64_set(&ctx->cycle_overrun_count, 0);
 	atomic64_set(&ctx->maximum_lateness_ns, 0);
+	atomic64_set(&ctx->cycle_info_sequence, 0);
+	memset(&ctx->cycle_info, 0, sizeof(ctx->cycle_info));
+	ctx->cycle_info.struct_size = sizeof(ctx->cycle_info);
+	ctx->cycle_info.api_major = CW_EC_API_VERSION_MAJOR;
+	ctx->cycle_info.config_generation = ctx->config_generation;
+	ctx->cycle_info.cycle_period_ns = ctx->cycle_period_ns;
+	ctx->last_output_sequence_consumed = 0;
+	ctx->stale_output_cycles = 0;
 	atomic_set(&ctx->working_counter, 0);
 	atomic_set(&ctx->working_counter_state, EC_WC_ZERO);
 	atomic_set(&ctx->last_cycle_result, 0);
@@ -1641,6 +1732,14 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	atomic64_set(&ctx->cycle_error_count, 0);
 	atomic64_set(&ctx->cycle_overrun_count, 0);
 	atomic64_set(&ctx->maximum_lateness_ns, 0);
+	atomic64_set(&ctx->cycle_info_sequence, 0);
+	memset(&ctx->cycle_info, 0, sizeof(ctx->cycle_info));
+	ctx->cycle_info.struct_size = sizeof(ctx->cycle_info);
+	ctx->cycle_info.api_major = CW_EC_API_VERSION_MAJOR;
+	ctx->cycle_info.config_generation = ctx->config_generation;
+	ctx->cycle_info.cycle_period_ns = ctx->cycle_period_ns;
+	ctx->last_output_sequence_consumed = 0;
+	ctx->stale_output_cycles = 0;
 	atomic_set(&ctx->working_counter, 0);
 	atomic_set(&ctx->working_counter_state, EC_WC_ZERO);
 	atomic_set(&ctx->last_cycle_result, 0);
@@ -1722,8 +1821,8 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 		if (ret)
 			goto thread_config_failed;
 	}
+	WRITE_ONCE(ctx->active, true);
 	wake_up_process(ctx->cycle_thread);
-	ctx->active = true;
 	result.domain_size = ctx->domain_size;
 	ret = 0;
 	goto out;
@@ -1783,6 +1882,106 @@ static long cw_ec_cycle_get_status(struct cw_ec_file *ctx, void __user *argp)
 	if (copy_to_user(argp, &result, sizeof(result)))
 		return -EFAULT;
 	return 0;
+}
+
+static void cw_ec_copy_cycle_info(struct cw_ec_file *ctx,
+				  struct cw_ec_cycle_info *result)
+{
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&ctx->cycle_info_lock, irq_flags);
+	*result = ctx->cycle_info;
+	spin_unlock_irqrestore(&ctx->cycle_info_lock, irq_flags);
+}
+
+static long cw_ec_cycle_get_info(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_cycle_info request;
+	struct cw_ec_cycle_info result;
+	int ret;
+
+	if (copy_from_user(&request, argp, sizeof(request)))
+		return -EFAULT;
+	ret = cw_ec_check_header(request.struct_size, request.api_major,
+				 sizeof(request));
+	if (ret)
+		return ret;
+	if (request.flags || request.reserved0 || request.reserved1)
+		return -EINVAL;
+
+	cw_ec_copy_cycle_info(ctx, &result);
+	if (copy_to_user(argp, &result, sizeof(result)))
+		return -EFAULT;
+	return 0;
+}
+
+static long cw_ec_cycle_wait(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_cycle_wait request;
+	struct cw_ec_cycle_wait result;
+	unsigned long timeout;
+	long wait_result;
+	int ret;
+
+	if (copy_from_user(&request, argp, sizeof(request)))
+		return -EFAULT;
+	ret = cw_ec_check_header(request.struct_size, request.api_major,
+				 sizeof(request));
+	if (ret)
+		return ret;
+	if (request.flags || request.reserved0 || !request.timeout_ms ||
+	    request.timeout_ms > CW_EC_CYCLE_WAIT_TIMEOUT_MAX_MS)
+		return -EINVAL;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->active) {
+		ret = -EINVAL;
+		goto out_unlock;
+	}
+	if (request.config_generation != ctx->config_generation) {
+		ret = -ESTALE;
+		goto out_unlock;
+	}
+	if (request.after_cycle_index >
+	    atomic64_read(&ctx->cycle_info_sequence)) {
+		ret = -EINVAL;
+		goto out_unlock;
+	}
+	mutex_unlock(&ctx->lock);
+
+	timeout = msecs_to_jiffies(request.timeout_ms);
+	/* User tasks sleep here; the cyclic thread only performs a wake-up after
+	 * publishing its record and never waits for a consumer.
+	 */
+	wait_result = wait_event_interruptible_timeout(
+		ctx->cycle_wait,
+		atomic64_read(&ctx->cycle_info_sequence) !=
+				request.after_cycle_index ||
+			!READ_ONCE(ctx->active),
+		timeout);
+	if (wait_result < 0)
+		return wait_result;
+	if (!wait_result)
+		return -ETIMEDOUT;
+	if (!READ_ONCE(ctx->active))
+		return -ESHUTDOWN;
+
+	memset(&result, 0, sizeof(result));
+	result.struct_size = sizeof(result);
+	result.api_major = CW_EC_API_VERSION_MAJOR;
+	result.config_generation = request.config_generation;
+	result.after_cycle_index = request.after_cycle_index;
+	result.timeout_ms = request.timeout_ms;
+	cw_ec_copy_cycle_info(ctx, &result.cycle);
+	if (result.cycle.config_generation != request.config_generation)
+		return -ESTALE;
+	if (copy_to_user(argp, &result, sizeof(result)))
+		return -EFAULT;
+	return 0;
+
+out_unlock:
+	mutex_unlock(&ctx->lock);
+	return ret;
 }
 
 static long cw_ec_cycle_deactivate(struct cw_ec_file *ctx, void __user *argp)
@@ -1954,7 +2153,7 @@ static long cw_ec_get_input_snapshot(struct cw_ec_file *ctx,
 	reader = ctx->input_active;
 	ctx->input_reader = reader;
 	result.input_sequence = atomic64_read(&ctx->input_sequence);
-	result.cycle_count = atomic64_read(&ctx->cycle_count);
+	result.cycle_count = ctx->input_cycle_index[reader];
 	spin_unlock_irqrestore(&ctx->input_lock, irq_flags);
 
 	if (copy_to_user(data_ptr, ctx->input_buffers[reader],
@@ -2866,6 +3065,34 @@ static long cw_ec_get_api_version(void __user *argp)
 	return 0;
 }
 
+static long cw_ec_get_capabilities(void __user *argp)
+{
+	struct cw_ec_capabilities request;
+	struct cw_ec_capabilities result = {
+		.struct_size = sizeof(result),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.capabilities =
+			CW_EC_CAP_COHERENT_PROCESS_IMAGE |
+			CW_EC_CAP_CYCLE_TIMING |
+			CW_EC_CAP_CYCLE_WAIT |
+			CW_EC_CAP_DC_DIAGNOSTICS,
+	};
+	int ret;
+
+	if (copy_from_user(&request, argp, sizeof(request)))
+		return -EFAULT;
+	ret = cw_ec_check_header(request.struct_size, request.api_major,
+				 sizeof(request));
+	if (ret)
+		return ret;
+	if (request.reserved0 ||
+	    memchr_inv(request.reserved1, 0, sizeof(request.reserved1)))
+		return -EINVAL;
+	if (copy_to_user(argp, &result, sizeof(result)))
+		return -EFAULT;
+	return 0;
+}
+
 static long cw_ec_get_master_info(struct cw_ec_file *ctx, void __user *argp)
 {
 	struct cw_ec_master_info info = {
@@ -2947,12 +3174,18 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return -ENOTTY;
 
 	switch (cmd) {
+	case CW_EC_IOC_GET_CAPABILITIES:
+		return cw_ec_get_capabilities(argp);
 	case CW_EC_IOC_CYCLE_GET_STATUS:
 		return cw_ec_cycle_get_status(ctx, argp);
 	case CW_EC_IOC_CYCLE_DEACTIVATE:
 		return cw_ec_cycle_deactivate(ctx, argp);
 	case CW_EC_IOC_CYCLE_GET_DC_STATUS:
 		return cw_ec_cycle_get_dc_status(ctx, argp);
+	case CW_EC_IOC_CYCLE_GET_INFO:
+		return cw_ec_cycle_get_info(ctx, argp);
+	case CW_EC_IOC_CYCLE_WAIT:
+		return cw_ec_cycle_wait(ctx, argp);
 	case CW_EC_IOC_GET_IO_STATUS:
 		return cw_ec_get_io_status(ctx, argp);
 	case CW_EC_IOC_GET_INPUT_SNAPSHOT:

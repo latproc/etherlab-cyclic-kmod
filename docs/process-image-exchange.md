@@ -42,7 +42,7 @@ returned the configured drive to OP and complete WC without restarting the
 transport. `rearm_required` remained set and the fault epoch count remained
 one after recovery.
 
-API 0.12 exposes each configured slave's online, operational, and AL state by
+API 0.13 exposes each configured slave's online, operational, and AL state by
 stable `config_id`. Its `data_valid` flag additionally requires a published
 snapshot and complete WC for that slave's assigned domain. Snapshots remain
 inspectable when another domain is incomplete. Aggregate health and the output
@@ -60,7 +60,13 @@ mask arrays from user space without holding the spinlock, intersects that mask
 with the topology-derived output mask, and merges the selected bits over the
 previous shadow. The cyclic thread reads only the published active buffer at a
 cycle boundary, so it never waits for or copies from a buffer being modified.
-API 0.12 retains one global publication and arm gate across all domains.
+API 0.13 retains one global publication and arm gate across all domains.
+
+Each published input buffer also stores the exact cycle index that produced
+its bytes. `GET_INPUT_SNAPSHOT` returns that per-buffer index rather than a
+separately sampled global counter. `CYCLE_GET_INFO` associates the same
+cycle's input sequence with the output generation selected before queue/send.
+The selected generation is zero when the output gate chooses the zero image.
 
 ## IOD format compatibility
 

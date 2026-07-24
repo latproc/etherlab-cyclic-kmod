@@ -11,7 +11,7 @@
 #endif
 
 #define CW_EC_API_VERSION_MAJOR 0U
-#define CW_EC_API_VERSION_MINOR 12U
+#define CW_EC_API_VERSION_MINOR 13U
 
 #define CW_EC_CYCLE_PERIOD_MIN_NS 100000U
 #define CW_EC_CYCLE_PERIOD_MAX_NS 1000000000U
@@ -27,6 +27,12 @@
 #define CW_EC_CONFIG_DC_MAX CW_EC_CONFIG_SLAVE_MAX
 #define CW_EC_CONFIG_DOMAIN_MAX CW_EC_CONFIG_SLAVE_MAX
 #define CW_EC_PROCESS_IMAGE_MAX (64U * 1024U)
+#define CW_EC_CYCLE_WAIT_TIMEOUT_MAX_MS 60000U
+
+#define CW_EC_CAP_COHERENT_PROCESS_IMAGE (1ULL << 0)
+#define CW_EC_CAP_CYCLE_TIMING (1ULL << 1)
+#define CW_EC_CAP_CYCLE_WAIT (1ULL << 2)
+#define CW_EC_CAP_DC_DIAGNOSTICS (1ULL << 3)
 
 enum cw_ec_sdo_type {
 	CW_EC_SDO_U8 = 1,
@@ -82,6 +88,14 @@ struct cw_ec_api_version {
 	__u16 major;
 	__u16 minor;
 	__u16 reserved;
+};
+
+struct cw_ec_capabilities {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 reserved0;
+	__u64 capabilities;
+	__u64 reserved1[3];
 };
 
 struct cw_ec_master_info {
@@ -317,6 +331,45 @@ struct cw_ec_cycle_status {
 	__u64 maximum_lateness_ns;
 };
 
+struct cw_ec_cycle_info {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 config_generation;
+	__u64 cycle_index;
+	__u64 cycle_period_ns;
+	__u64 scheduled_time_ns;
+	__u64 actual_wake_time_ns;
+	__s64 wake_lateness_ns;
+	__u64 input_sequence;
+	__u64 output_sequence_consumed;
+	__u64 missed_deadlines;
+	__u64 stale_output_cycles;
+	__u32 working_counter;
+	__u8 working_counter_state;
+	__u8 outputs_armed;
+	__u8 bus_healthy;
+	__u8 reserved0;
+	__s32 cycle_result;
+	__u32 reserved1;
+};
+
+/*
+ * Wait for a cycle record newer than after_cycle_index in the exact active
+ * configuration generation. The kernel returns a coherent cycle snapshot;
+ * timeout_ms bounds an interruptible sleep and is never used by the RT task.
+ */
+struct cw_ec_cycle_wait {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 config_generation;
+	__u64 after_cycle_index;
+	__u32 timeout_ms;
+	__u32 reserved0;
+	struct cw_ec_cycle_info cycle;
+};
+
 struct cw_ec_cycle_deactivate {
 	__u16 struct_size;
 	__u16 api_major;
@@ -447,6 +500,8 @@ struct cw_ec_domain_status {
 	_IOR(CW_EC_IOC_MAGIC, 0x01, struct cw_ec_master_info)
 #define CW_EC_IOC_GET_SLAVE_INFO \
 	_IOWR(CW_EC_IOC_MAGIC, 0x02, struct cw_ec_slave_info)
+#define CW_EC_IOC_GET_CAPABILITIES \
+	_IOWR(CW_EC_IOC_MAGIC, 0x03, struct cw_ec_capabilities)
 #define CW_EC_IOC_SETUP_BEGIN \
 	_IOW(CW_EC_IOC_MAGIC, 0x10, struct cw_ec_setup_begin)
 #define CW_EC_IOC_SETUP_ADD_SDO \
@@ -491,6 +546,10 @@ struct cw_ec_domain_status {
 	_IOWR(CW_EC_IOC_MAGIC, 0x32, struct cw_ec_cycle_deactivate)
 #define CW_EC_IOC_CYCLE_GET_DC_STATUS \
 	_IOWR(CW_EC_IOC_MAGIC, 0x33, struct cw_ec_dc_status)
+#define CW_EC_IOC_CYCLE_GET_INFO \
+	_IOWR(CW_EC_IOC_MAGIC, 0x34, struct cw_ec_cycle_info)
+#define CW_EC_IOC_CYCLE_WAIT \
+	_IOWR(CW_EC_IOC_MAGIC, 0x35, struct cw_ec_cycle_wait)
 #define CW_EC_IOC_GET_IO_STATUS \
 	_IOWR(CW_EC_IOC_MAGIC, 0x40, struct cw_ec_io_status)
 #define CW_EC_IOC_GET_INPUT_SNAPSHOT \

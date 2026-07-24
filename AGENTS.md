@@ -16,10 +16,11 @@ decisions, risks, commands, or next steps change.
 
 - Current phase: standalone Phase 3 hardening after the first architecture
   review. IOD integration remains blocked.
-- Current UAPI is 0.12. It covers discovery, ordered setup SDOs, declarative
+- Current UAPI is 0.13. It covers discovery, ordered setup SDOs, declarative
   PDO/DC configuration, domain registration, cyclic pumping, copied input and
   masked output images, explicit arm/disarm, health, timing/DC statistics, and
-  per-configured-slave validity.
+  per-configured-slave validity, coherent cycle timing, capability discovery,
+  and interruptible cycle notification.
 - Target is Debian RT kernel `6.1.0-49-rt-amd64` with EtherLab DKMS 1.6.9.
   Exact build artifacts are documented.
 - Master contention, discovery, lifecycle, declarative PDO mapping, DC,
@@ -73,9 +74,10 @@ decisions, risks, commands, or next steps change.
   `docs/testing.md`. Do not duplicate them here.
 - `docs/operator-guide.md` is the end-to-end build, test, zero-output
   operation, teardown, and cleanup sequence.
-- The API 0.12 documentation acceptance gate passes after the multi-domain
-  audit. The kernel-safety gate remains open, so IOD integration is still
-  blocked.
+- The API 0.12 documentation acceptance gate passed after the multi-domain
+  audit. API 0.13 timing documentation must be re-audited after live
+  validation. The kernel-safety gate remains open, so IOD integration is
+  still blocked.
 - Do not modify Clockwork/IOD behavior in this repository.
 
 ## Non-Negotiable Architecture
@@ -269,7 +271,7 @@ Keep this section concise. Historical milestones and validation evidence are in
 `docs/project-history.md`; focused details belong in the relevant design,
 testing, safety, and build documents.
 
-- Current API: 0.12.
+- Current API: 0.13.
 - Deactivation synchronously gates outputs and joins the cyclic thread, then
   waits for configured slaves to leave SAFEOP/OP before invalidating
   EtherLab-owned pointers. The public EtherLab lifecycle can still expose
@@ -369,6 +371,17 @@ testing, safety, and build documents.
   against the declared 250,000 ns Phase 3 gate, both domains were complete and
   valid, and all 34 slaves were operational. This is not DC or production
   timing acceptance.
+- API 0.13 adds an additive coherent per-cycle record and interruptible
+  wait-for-cycle ioctl. It reports monotonic scheduled/actual wake times,
+  exact input-image cycle identity, selected output generation, armed reuse,
+  missed deadlines, WC, health, and cycle result. Capability discovery does
+  not advertise deferred scheduled output. Non-activating ABI checks pass. A
+  2,001-cycle full-topology disarmed run proved coherent wait/timing and exact
+  input cycle identity; a zero-only arm proved consumed generation 1 and nine
+  stale reuse cycles. Both domains were complete and all 34 slaves OP/valid.
+  Teardown again logged the known asynchronous watchdog boundary, plus one
+  AL-state datagram initialization failure and one skipped master-FSM
+  datagram, so clean-log/lifecycle acceptance remains open.
 - The build contract is proven with explicit EtherLab header and matching
   symbol paths staged outside the DKMS layout. Missing headers, a kernel-only
   symbol file, and ambiguous DKMS auto-detection fail clearly. No independently
@@ -381,5 +394,10 @@ testing, safety, and build documents.
   every actuator and drive output masked off.
 - Before that power test is available, extend broader configuration
   fuzzing/SDO interruption coverage and plan longer timing/DC soak evidence.
+- Section 13B now distinguishes process death from a hung controller retaining
+  its fd. Plan a generic cycle-counted output-authority lease: expiry
+  zero-gates outputs but keeps cyclic input exchange alive, latches a distinct
+  controller-stale fault, and requires renewal, fresh output and explicit
+  re-arm. Implement and test this soon after the Section 13A timing foundation.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

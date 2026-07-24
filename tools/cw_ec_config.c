@@ -977,6 +977,15 @@ static int cycle(const char *path, uint32_t period_ns,
 		.struct_size = sizeof(status),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	struct cw_ec_cycle_info cycle_info = {
+		.struct_size = sizeof(cycle_info),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_cycle_wait cycle_wait = {
+		.struct_size = sizeof(cycle_wait),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.timeout_ms = 1000,
+	};
 	struct cw_ec_dc_status dc_status = {
 		.struct_size = sizeof(dc_status),
 		.api_major = CW_EC_API_VERSION_MAJOR,
@@ -1029,6 +1038,48 @@ static int cycle(const char *path, uint32_t period_ns,
 	printf("activated zero-output domain: size=%" PRIu32
 	       " period=%" PRIu32 " ns for %u second(s)\n",
 	       activate.domain_size, period_ns, duration_seconds);
+	if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0) {
+		fprintf(stderr, "cw_ec_config: initial IO status failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_INFO, &cycle_info) < 0) {
+		fprintf(stderr, "cw_ec_config: initial cycle info failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	cycle_wait.config_generation = io_status.config_generation;
+	cycle_wait.after_cycle_index = cycle_info.cycle_index;
+	if (ioctl(fd, CW_EC_IOC_CYCLE_WAIT, &cycle_wait) < 0) {
+		fprintf(stderr, "cw_ec_config: wait for cycle failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	if (cycle_wait.cycle.cycle_index == cycle_wait.after_cycle_index ||
+	    cycle_wait.cycle.cycle_period_ns != period_ns ||
+	    (cycle_wait.cycle.actual_wake_time_ns >=
+		     cycle_wait.cycle.scheduled_time_ns ?
+	     (int64_t)(cycle_wait.cycle.actual_wake_time_ns -
+		       cycle_wait.cycle.scheduled_time_ns) :
+	     -(int64_t)(cycle_wait.cycle.scheduled_time_ns -
+			cycle_wait.cycle.actual_wake_time_ns)) !=
+		    cycle_wait.cycle.wake_lateness_ns) {
+		fprintf(stderr,
+			"cw_ec_config: incoherent cycle timing result\n");
+		goto out;
+	}
+	printf("cycle timing: cycle=%" PRIu64 " scheduled=%" PRIu64
+	       " actual=%" PRIu64 " lateness=%" PRId64
+	       " ns input=%" PRIu64 " output_consumed=%" PRIu64
+	       " stale=%" PRIu64 " missed=%" PRIu64 "\n",
+	       (uint64_t)cycle_wait.cycle.cycle_index,
+	       (uint64_t)cycle_wait.cycle.scheduled_time_ns,
+	       (uint64_t)cycle_wait.cycle.actual_wake_time_ns,
+	       (int64_t)cycle_wait.cycle.wake_lateness_ns,
+	       (uint64_t)cycle_wait.cycle.input_sequence,
+	       (uint64_t)cycle_wait.cycle.output_sequence_consumed,
+	       (uint64_t)cycle_wait.cycle.stale_output_cycles,
+	       (uint64_t)cycle_wait.cycle.missed_deadlines);
 	if (hold_zero || arm_zero || monitor || active_abi) {
 		unsigned int attempts;
 
@@ -1121,6 +1172,18 @@ static int cycle(const char *path, uint32_t period_ns,
 			.api_major = CW_EC_API_VERSION_MAJOR,
 			.config_generation = io_status.config_generation - 1U,
 		};
+		struct cw_ec_cycle_info invalid_cycle_info = {
+			.struct_size = sizeof(invalid_cycle_info),
+			.api_major = CW_EC_API_VERSION_MAJOR,
+			.reserved1 = 1,
+		};
+		struct cw_ec_cycle_wait invalid_cycle_wait = {
+			.struct_size = sizeof(invalid_cycle_wait),
+			.api_major = CW_EC_API_VERSION_MAJOR,
+			.config_generation =
+				io_status.config_generation - 1U,
+			.timeout_ms = 100,
+		};
 
 		if (first_domain_id(path, &domain_id))
 			goto out;
@@ -1164,6 +1227,21 @@ static int cycle(const char *path, uint32_t period_ns,
 		if (expect_ioctl_errno(fd, CW_EC_IOC_CYCLE_ACTIVATE,
 				       &duplicate_activate, EBUSY,
 				       "duplicate activation"))
+			goto out;
+		if (expect_ioctl_errno(fd, CW_EC_IOC_CYCLE_GET_INFO,
+				       &invalid_cycle_info, EINVAL,
+				       "cycle info reserved fields"))
+			goto out;
+		if (expect_ioctl_errno(fd, CW_EC_IOC_CYCLE_WAIT,
+				       &invalid_cycle_wait, ESTALE,
+				       "stale cycle wait generation"))
+			goto out;
+		invalid_cycle_wait.config_generation =
+			io_status.config_generation;
+		invalid_cycle_wait.after_cycle_index = UINT64_MAX;
+		if (expect_ioctl_errno(fd, CW_EC_IOC_CYCLE_WAIT,
+				       &invalid_cycle_wait, EINVAL,
+				       "future cycle wait index"))
 			goto out;
 		if (expect_ioctl_errno(fd, CW_EC_IOC_GET_DOMAIN_STATUS,
 				       &invalid_domain, ESTALE,
@@ -1262,6 +1340,34 @@ static int cycle(const char *path, uint32_t period_ns,
 	       (uint64_t)status.maximum_lateness_ns,
 	       status.working_counter, status.working_counter_state,
 	       status.last_cycle_result);
+	cycle_info.struct_size = sizeof(cycle_info);
+	cycle_info.api_major = CW_EC_API_VERSION_MAJOR;
+	cycle_info.flags = 0;
+	cycle_info.reserved0 = 0;
+	cycle_info.reserved1 = 0;
+	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_INFO, &cycle_info) < 0) {
+		fprintf(stderr, "cw_ec_config: cycle info failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	printf("latest cycle: generation=%" PRIu64 " cycle=%" PRIu64
+	       " scheduled=%" PRIu64 " actual=%" PRIu64
+	       " lateness=%" PRId64 " ns input=%" PRIu64
+	       " output_consumed=%" PRIu64 " stale=%" PRIu64
+	       " missed=%" PRIu64 " wc=%" PRIu32 " wc_state=%u"
+	       " armed=%u healthy=%u result=%" PRId32 "\n",
+	       (uint64_t)cycle_info.config_generation,
+	       (uint64_t)cycle_info.cycle_index,
+	       (uint64_t)cycle_info.scheduled_time_ns,
+	       (uint64_t)cycle_info.actual_wake_time_ns,
+	       (int64_t)cycle_info.wake_lateness_ns,
+	       (uint64_t)cycle_info.input_sequence,
+	       (uint64_t)cycle_info.output_sequence_consumed,
+	       (uint64_t)cycle_info.stale_output_cycles,
+	       (uint64_t)cycle_info.missed_deadlines,
+	       cycle_info.working_counter, cycle_info.working_counter_state,
+	       cycle_info.outputs_armed, cycle_info.bus_healthy,
+	       cycle_info.cycle_result);
 	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_DC_STATUS, &dc_status) < 0) {
 		fprintf(stderr, "cw_ec_config: DC status failed: %s\n",
 			strerror(errno));
@@ -1365,8 +1471,24 @@ static int cycle(const char *path, uint32_t period_ns,
 					"cw_ec_config: zero-output arm was not reported active\n");
 				goto out;
 			}
+			cycle_info.struct_size = sizeof(cycle_info);
+			cycle_info.api_major = CW_EC_API_VERSION_MAJOR;
+			if (ioctl(fd, CW_EC_IOC_CYCLE_GET_INFO,
+				  &cycle_info) < 0 ||
+			    cycle_info.output_sequence_consumed !=
+				    output.output_sequence ||
+			    !cycle_info.stale_output_cycles) {
+				fprintf(stderr,
+					"cw_ec_config: armed output generation reuse was not reported\n");
+				goto out;
+			}
 			printf("zero-output shadow armed at sequence=%" PRIu64 "\n",
 			       (uint64_t)output.output_sequence);
+			printf("armed reuse reported: consumed=%" PRIu64
+			       " stale_cycles=%" PRIu64 "\n",
+			       (uint64_t)
+				       cycle_info.output_sequence_consumed,
+			       (uint64_t)cycle_info.stale_output_cycles);
 			disarm.config_generation = output.config_generation;
 			if (ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm) < 0) {
 				fprintf(stderr,

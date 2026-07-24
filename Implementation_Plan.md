@@ -2971,6 +2971,103 @@ The generic kernel transport should not be redesigned merely because one experim
 
 ---
 
+# 13B. Controller liveness and loss-of-control policy
+
+## Failure modes
+
+Controller process exit and controller loss of control are different events.
+
+If the exclusive controller exits or closes its file descriptor, the kernel
+release path can synchronously gate outputs, stop cyclic work, release the
+master and free the controller-owned configuration.
+
+A controller may instead deadlock, stop scheduling, lose its upstream command
+source, or otherwise retain the file descriptor without publishing control
+updates. File lifetime alone cannot detect this condition. Reusing the last
+armed output indefinitely is not an acceptable implicit policy.
+
+## Required transport behaviour
+
+Add a generic, bounded controller lease/heartbeat facility in a compatible
+UAPI revision. User space owns the timeout choice and the application decision
+to renew the lease. The kernel owns deterministic expiry detection and output
+gating.
+
+The design shall distinguish:
+
+```text
+controller file closed
+controller lease expired while the file remains open
+ordinary output-image reuse within a valid lease
+future scheduled-output queue underrun
+```
+
+The initial controller-liveness design should provide:
+
+```text
+pre-activation lease configuration
+explicit renewal by the exclusive control owner
+cycle-based or monotonic expiry checked by the cyclic kernel task
+low-overhead lease state and expiry statistics
+a distinct controller-stale fault cause
+```
+
+On lease expiry while outputs are armed, the kernel shall:
+
+1. atomically close the output gate;
+2. select the zero/fail-safe process image on the next deterministic cycle;
+3. continue EtherCAT receive/process/queue/send so inputs and recovery remain
+   observable;
+4. latch `rearm_required` and a controller-stale fault;
+5. increment an expiry counter; and
+6. require lease renewal, a fresh output generation and explicit re-arm before
+   nonzero output can be selected again.
+
+Renewing a lease must never arm outputs. Expiry must not silently stop the
+EtherCAT transport, release the master, or substitute for hardware safety.
+
+## Decisions required before implementation
+
+Resolve and document:
+
+- whether a lease is mandatory for every arm or is an explicit compatibility
+  option during migration;
+- whether timeout is expressed in cycles, monotonic nanoseconds, or both with
+  one authoritative representation;
+- minimum/maximum timeout and overflow-safe conversion;
+- whether the lease runs only while armed or whenever cycling is active;
+- how orderly deactivation and close report lease state;
+- how user space declares loss of its own upstream command authority while its
+  EtherCAT thread remains healthy; and
+- how lease expiry remains distinct from future scheduled-output underrun.
+
+The preferred initial model is a cycle-counted output-authority lease:
+disarmed transport can continue indefinitely without keepalives, while arm
+requires an enabled and currently valid lease. This makes expiry deterministic
+relative to the EtherCAT cycle and keeps policy out of the kernel.
+
+## Required tests
+
+Before enabling the lease in IOD, standalone tests must cover:
+
+```text
+expiry while armed with a retained file descriptor
+continued cyclic input exchange after expiry
+zero-gate acknowledgement
+renewal immediately before the boundary
+late renewal that cannot resurrect outputs
+fresh publication plus explicit re-arm after renewal
+controller close during expiry
+deactivation during expiry
+counter and arithmetic boundaries
+hostile timeout, generation, flags and reserved fields
+```
+
+Initial hardware tests remain zero-output or use only a separately authorized,
+physically safe bounded commissioning output.
+
+---
+
 # 14. Phase 7 — build a compatibility user-space library
 
 ## Goal

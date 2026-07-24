@@ -921,3 +921,51 @@ Run them with:
 ```sh
 python3 tools/test_cw_ec_config_from_topology.py -v
 ```
+
+## API 0.13 cycle identity and notification
+
+The non-activating ABI suite passed after adding capability, cycle-info, and
+cycle-wait header/reserved/timeout/inactive checks. It released master 0 and
+the module unloaded normally.
+
+Two full-topology, 1 ms, zero-output sessions then exercised the live API 0.13
+path. The first disarmed session completed 2,001 cycles with zero cycle errors
+and overruns. The initial blocking wait returned cycle 1 with internally
+consistent monotonic timestamps and 5,369 ns wake lateness. The final coherent
+record reported:
+
+```text
+cycle=2001 input_sequence=2001 output_consumed=0 stale=0 missed=0
+wc=64 complete armed=0 healthy=1 result=0
+domain 1: wc=49 complete valid=1
+domain 2: wc=15 complete valid=1
+```
+
+All 34 configured slaves were OP and valid. The copied snapshot later reported
+the exact matching per-buffer identity `input_sequence=2012 cycle=2012`.
+
+The second session used only an all-zero output shadow. After explicit arm,
+the cycle record reported the selected output sequence and nine repeated
+armed uses:
+
+```text
+output_consumed=1 stale_cycles=9
+```
+
+Synchronous disarm, stale-sequence rejection, fresh-zero publication/re-arm,
+and final disarm passed. No nonzero output was requested.
+
+A third active full-topology run exercised malformed cycle-info requests,
+stale-generation waits, and impossible future-cycle waits while cycling.
+Every rejection returned the expected error and left outputs disarmed. It
+completed 2,444 cycles with zero cycle errors and two missed deadlines under
+test load; the coherent record also reported `missed_deadlines=2`. Its maximum
+wake lateness was 6,596,000 ns, so this run is ABI/lifecycle evidence only and
+must not be used as timing acceptance.
+
+This is functional Section 13A evidence, not clean-log or production timing
+acceptance. EtherLab teardown emitted the known asynchronous-transition Sync
+Manager watchdog events for ED3L positions 29--33. The second stop also logged
+one AL-state datagram initialization failure and one skipped master-FSM
+datagram. The master recovered; these lifecycle diagnostics remain part of the
+open EtherLab deactivation boundary.

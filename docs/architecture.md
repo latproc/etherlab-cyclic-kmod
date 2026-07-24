@@ -1,6 +1,6 @@
 # Architecture
 
-## Current API 0.12 boundary
+## Current API 0.13 boundary
 
 ```text
 standalone controller
@@ -56,13 +56,16 @@ deregistered during module exit. An open fd holds the module reference through
 An atomic compare/exchange protects the single-controller admission decision.
 A mutex serializes process-context configuration, image publication, arm,
 disarm, and teardown. Separate short spinlocks protect input/output buffer
-selection and reader reservation. The cyclic thread never takes the process
-mutex, allocates, performs mailbox operations, or waits for user space.
+selection, reader reservation, and the coherent API 0.13 cycle record. The
+cyclic thread never takes the process mutex, allocates, performs mailbox
+operations, or waits for user space.
 
 Input publication skips a buffer swap if a process reader still reserves the
 inactive buffer. Output publication selects only a buffer not reserved by the
 cyclic reader. Disarm uses a monotonically increasing gate request and a
 waitqueue acknowledgement made after a successful EtherLab send.
+Cycle notification uses a separate waitqueue and published-cycle sequence.
+The sequence changes only after the complete cycle record is visible.
 
 EtherLab provides its own blocking `master_sem` protection for
 `ecrt_master_get_slave()`. None of these calls occur in real-time context.
@@ -141,6 +144,26 @@ Per-domain output safety state requires a later explicit ABI increment.
 
 Detailed concurrency and recovery rules are in
 `process-image-exchange.md`; DC behavior is in `distributed-clocks.md`.
+
+## API 0.13 transport timeline
+
+The cyclic kernel task is the authoritative EtherCAT timing source. Each
+activation starts cycle index one under a new configuration generation.
+Cycle timestamps use monotonic `ktime_get_ns()`: scheduled time is the
+absolute high-resolution wake deadline, and actual wake time is sampled
+immediately after scheduling returns.
+
+After receive/process, the task publishes the input image tagged with the
+current cycle index, evaluates health, and selects either the current armed
+output generation or the zero image. After DC/application time, every domain
+is queued and the master send returns; only then is one coherent cycle record
+published and waiters woken. The record identifies the input sequence and
+selected output sequence but does not claim slave acknowledgement.
+
+Repeated selection of the same nonzero output generation while armed counts as
+stale reuse. Disarmed zero-image cycles do not. This latest-output path remains
+separate from a future cycle-addressed scheduled-output queue. Capability
+discovery reports only the timing and wait features that are implemented.
 
 ## Clockwork process-entry selectors
 
