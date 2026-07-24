@@ -335,3 +335,11 @@ Update this section during work. Use dated entries for facts that may change.
   `/opt/latproc/code/config` (revision 19989); the two converted files are
   modified there but not yet committed. IOD is stopped and live machine I/O
   is not yet tested.
+- 2026-07-24: The first live start with positional selectors reproducibly
+  segfaulted in `generateIOComponentModules()`. Core analysis showed
+  XML-configured modules store PDO arrays under each Sync Manager and
+  intentionally leave `module->pdos` null. LatProc commit `4d757047` now
+  resolves flattened PDO identities through checked Sync Manager metadata and
+  reports inconsistent metadata as a configuration error. Both Linux IOD
+  targets rebuilt/installed and the syntax checker passed; live retest is
+  pending.
