@@ -164,6 +164,30 @@ The current conservative limits are 256 slaves, 1024 Sync Managers, 4096 PDOs,
 and 16384 entries. A successful validation freezes the pending transaction
 against further additions.
 
+API 0.5 adds bounded per-slave distributed-clock records and one optional
+master reference policy:
+
+```text
+CW_EC_IOC_CONFIG_ADD_DC
+CW_EC_IOC_CONFIG_SET_DC_POLICY
+```
+
+Each DC record references exactly one configured slave and supplies
+`assign_activate`, SYNC0/SYNC1 cycles, and signed shifts. The current
+validation requires nonzero `assign_activate` and SYNC0 cycle values, rejects
+duplicate DC records for one slave, and limits records to the configured slave
+limit. Reference policy is disabled by default and can instead request
+automatic EtherLab selection or an explicit slave configuration ID. An
+explicit reference must itself have a DC record.
+
+Apply calls `ecrt_slave_config_dc()` for each record and selects the requested
+reference before activation. These are idle, blocking configuration calls.
+Until the reference-led cyclic correction and monitoring implementation is
+present, activation of any DC-configured transaction returns `EOPNOTSUPP`.
+This prevents configured SYNC0 operation with an incomplete cyclic controller.
+At activation, the configured SYNC0 period must also equal the requested
+application cycle period.
+
 `CONFIG_APPLY` constructs persistent EtherLab slave configurations and copies
 the submitted hierarchy through the granular Sync Manager, PDO-assignment, and
 PDO-mapping calls. It preserves submission order and reports the object kind

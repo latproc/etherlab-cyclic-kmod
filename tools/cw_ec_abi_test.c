@@ -92,6 +92,20 @@ int main(int argc, char **argv)
 		.index = 0x6040,
 		.bit_length = 16,
 	};
+	struct cw_ec_config_dc config_dc = {
+		.struct_size = sizeof(config_dc),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.config_id = 5,
+		.slave_config_id = 1,
+		.assign_activate = 0x0300,
+		.sync0_cycle_ns = 1000000,
+	};
+	struct cw_ec_config_dc_policy dc_policy = {
+		.struct_size = sizeof(dc_policy),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.reference_mode = CW_EC_DC_REFERENCE_EXPLICIT,
+		.reference_slave_config_id = 1,
+	};
 	struct cw_ec_config_validate config_validate = {
 		.struct_size = sizeof(config_validate),
 		.api_major = CW_EC_API_VERSION_MAJOR,
@@ -232,6 +246,11 @@ int main(int argc, char **argv)
 				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE,
 				       &config_slave),
 				 EINVAL);
+	errno = 0;
+	failures += expect_errno("DC add before begin",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC,
+				       &config_dc),
+				 EINVAL);
 
 	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0) {
 		fprintf(stderr, "FAIL: config begin: %s\n", strerror(errno));
@@ -254,6 +273,27 @@ int main(int argc, char **argv)
 				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE,
 				       &config_slave),
 				 EEXIST);
+	config_dc.assign_activate = 0;
+	errno = 0;
+	failures += expect_errno("zero DC AssignActivate",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC,
+				       &config_dc),
+				 EINVAL);
+	config_dc.assign_activate = 0x0300;
+	config_dc.sync0_cycle_ns = 0;
+	errno = 0;
+	failures += expect_errno("zero DC SYNC0 cycle",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC,
+				       &config_dc),
+				 EINVAL);
+	config_dc.sync0_cycle_ns = 1000000;
+	dc_policy.reference_slave_config_id = 0;
+	errno = 0;
+	failures += expect_errno("explicit DC reference without slave",
+				 ioctl(fd, CW_EC_IOC_CONFIG_SET_DC_POLICY,
+				       &dc_policy),
+				 EINVAL);
+	dc_policy.reference_slave_config_id = 1;
 
 	config_sync.slave_config_id = 99;
 	if (ioctl(fd, CW_EC_IOC_CONFIG_ADD_SYNC, &config_sync) < 0) {
@@ -269,6 +309,25 @@ int main(int argc, char **argv)
 
 	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
 	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0) {
+		fprintf(stderr, "FAIL: restart DC config transaction: %s\n",
+			strerror(errno));
+		failures++;
+	}
+	config_dc.slave_config_id = 99;
+	if (ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC, &config_dc) < 0) {
+		fprintf(stderr, "FAIL: add orphan DC record: %s\n",
+			strerror(errno));
+		failures++;
+	}
+	errno = 0;
+	failures += expect_errno("validate orphan DC record",
+				 ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE,
+				       &config_validate),
+				 ENOENT);
+	config_dc.slave_config_id = config_slave.config_id;
+
+	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0) {
 		fprintf(stderr, "FAIL: restart config transaction: %s\n",
 			strerror(errno));
 		failures++;
@@ -276,7 +335,9 @@ int main(int argc, char **argv)
 	config_sync.slave_config_id = config_slave.config_id;
 	if (ioctl(fd, CW_EC_IOC_CONFIG_ADD_SYNC, &config_sync) < 0 ||
 	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_PDO, &config_pdo) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_ENTRY, &config_entry) < 0) {
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_ENTRY, &config_entry) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC, &config_dc) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_SET_DC_POLICY, &dc_policy) < 0) {
 		fprintf(stderr, "FAIL: add valid config hierarchy: %s\n",
 			strerror(errno));
 		failures++;
@@ -396,6 +457,12 @@ int main(int argc, char **argv)
 				 ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE,
 				       &cycle_activate),
 				 EINVAL);
+	cycle_activate.flags = 0;
+	errno = 0;
+	failures += expect_errno("DC activation before controller",
+				 ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE,
+				       &cycle_activate),
+				 EOPNOTSUPP);
 
 	if (close(fd) < 0) {
 		fprintf(stderr, "FAIL: close: %s\n", strerror(errno));

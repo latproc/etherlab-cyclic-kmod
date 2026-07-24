@@ -11,7 +11,7 @@
 #endif
 
 #define CW_EC_API_VERSION_MAJOR 0U
-#define CW_EC_API_VERSION_MINOR 4U
+#define CW_EC_API_VERSION_MINOR 5U
 
 #define CW_EC_CYCLE_PERIOD_MIN_NS 100000U
 #define CW_EC_CYCLE_PERIOD_MAX_NS 1000000000U
@@ -24,6 +24,7 @@
 #define CW_EC_CONFIG_SYNC_MAX 1024U
 #define CW_EC_CONFIG_PDO_MAX 4096U
 #define CW_EC_CONFIG_ENTRY_MAX 16384U
+#define CW_EC_CONFIG_DC_MAX CW_EC_CONFIG_SLAVE_MAX
 
 enum cw_ec_sdo_type {
 	CW_EC_SDO_U8 = 1,
@@ -52,6 +53,14 @@ enum cw_ec_config_object_kind {
 	CW_EC_CONFIG_OBJECT_SYNC = 2,
 	CW_EC_CONFIG_OBJECT_PDO = 3,
 	CW_EC_CONFIG_OBJECT_ENTRY = 4,
+	CW_EC_CONFIG_OBJECT_DC = 5,
+	CW_EC_CONFIG_OBJECT_DC_POLICY = 6,
+};
+
+enum cw_ec_dc_reference_mode {
+	CW_EC_DC_REFERENCE_DISABLED = 0,
+	CW_EC_DC_REFERENCE_AUTO = 1,
+	CW_EC_DC_REFERENCE_EXPLICIT = 2,
 };
 
 struct cw_ec_api_version {
@@ -188,6 +197,29 @@ struct cw_ec_config_entry {
 	__u8 bit_length;
 };
 
+struct cw_ec_config_dc {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 config_id;
+	__u32 slave_config_id;
+	__u16 assign_activate;
+	__u16 reserved0;
+	__u32 sync0_cycle_ns;
+	__s32 sync0_shift_ns;
+	__u32 sync1_cycle_ns;
+	__s32 sync1_shift_ns;
+	__u32 flags;
+};
+
+struct cw_ec_config_dc_policy {
+	__u16 struct_size;
+	__u16 api_major;
+	__u8 reference_mode;
+	__u8 reserved0[3];
+	__u32 reference_slave_config_id;
+	__u32 flags;
+};
+
 struct cw_ec_config_validate {
 	__u16 struct_size;
 	__u16 api_major;
@@ -298,6 +330,10 @@ struct cw_ec_cycle_deactivate {
 	_IOWR(CW_EC_IOC_MAGIC, 0x27, struct cw_ec_domain_create)
 #define CW_EC_IOC_GET_ENTRY_OFFSET \
 	_IOWR(CW_EC_IOC_MAGIC, 0x28, struct cw_ec_entry_offset)
+#define CW_EC_IOC_CONFIG_ADD_DC \
+	_IOW(CW_EC_IOC_MAGIC, 0x29, struct cw_ec_config_dc)
+#define CW_EC_IOC_CONFIG_SET_DC_POLICY \
+	_IOW(CW_EC_IOC_MAGIC, 0x2a, struct cw_ec_config_dc_policy)
 #define CW_EC_IOC_CYCLE_ACTIVATE \
 	_IOWR(CW_EC_IOC_MAGIC, 0x30, struct cw_ec_cycle_activate)
 #define CW_EC_IOC_CYCLE_GET_STATUS \

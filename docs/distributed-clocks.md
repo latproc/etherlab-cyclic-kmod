@@ -5,6 +5,12 @@
 Distributed clocks are mandatory for the kernel backend when enabled by user
 configuration.
 
+API 0.5 now accepts, validates, and applies generic per-slave DC parameters
+plus disabled/automatic/explicit reference policy. DC-configured activation is
+deliberately rejected with `EOPNOTSUPP` until the controller and status
+snapshot described below are implemented. No DC hardware run has yet been
+performed through this API.
+
 The installed Clockwork build enables `USE_DC` for both `iod` and `iod_sdo`:
 
 ```text
@@ -166,14 +172,15 @@ formatted log belongs in the DC cycle path.
 
 ## Configuration model
 
-The future configuration transaction needs:
+The configuration transaction now provides:
 
 - DC disabled/enabled;
 - automatic versus explicit reference selection;
 - explicit reference slave configuration ID when selected;
 - cycle period in nanoseconds;
 - per-slave `assign_activate`, Sync0/Sync1 cycle, and shift values;
-- monitoring interval and timeout, with conservative defaults;
+- monitoring interval and timeout remain to be added with conservative
+  defaults;
 - adjustment clamp/filter values only if operational evidence requires them
   configurable.
 

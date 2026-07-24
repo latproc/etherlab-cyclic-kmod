@@ -224,6 +224,27 @@ fixture, application datagrams necessarily stop before the public
 the public API exposes no earlier state request. Settled reuse is therefore
 proven, but warning-free watchdog-enabled deactivation is not.
 
+## API 0.5 DC configuration preflight
+
+With IOD stopped, API 0.5 was built against the exact target kernel and
+EtherLab artifacts. Both the unchanged non-DC fixture and the separate ED3L DC
+fixture passed standalone syntax validation. The non-activating ABI suite
+passed, including:
+
+- DC addition before a configuration transaction;
+- zero AssignActivate and zero SYNC0-cycle rejection;
+- explicit reference policy without a reference slave ID;
+- an orphan DC slave reference rejected at transaction validation;
+- all earlier malformed, hierarchy, domain, stable-entry, and inactive-cycle
+  checks.
+
+The suite applied only the existing fictitious absent-slave hierarchy. It did
+not activate EtherLab, configure a physical slave, issue an SDO, or enable
+distributed clocks. The module was unloaded afterward. Existing historical
+EtherLab warnings remained in the retained kernel log; this run did not
+capture a before/after log cursor, so it is not claimed as a strict
+no-new-warning comparison.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

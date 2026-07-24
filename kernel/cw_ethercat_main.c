@@ -37,10 +37,14 @@ struct cw_ec_file {
 	struct list_head config_syncs;
 	struct list_head config_pdos;
 	struct list_head config_entries;
+	struct list_head config_dcs;
 	u32 config_slave_count;
 	u32 config_sync_count;
 	u32 config_pdo_count;
 	u32 config_entry_count;
+	u32 config_dc_count;
+	struct cw_ec_config_dc_policy dc_policy;
+	bool dc_policy_set;
 	bool config_started;
 	bool config_validated;
 	bool config_applied;
@@ -101,6 +105,11 @@ struct cw_ec_entry_node {
 	bool registered;
 };
 
+struct cw_ec_dc_node {
+	struct cw_ec_config_node common;
+	struct cw_ec_config_dc cfg;
+};
+
 static atomic_t cw_ec_control_open = ATOMIC_INIT(0);
 
 static int cw_ec_check_header(u16 struct_size, u16 api_major,
@@ -154,6 +163,7 @@ static void cw_ec_config_clear(struct cw_ec_file *ctx)
 	}
 
 	CW_EC_CLEAR_CONFIG_LIST(config_entries);
+	CW_EC_CLEAR_CONFIG_LIST(config_dcs);
 	CW_EC_CLEAR_CONFIG_LIST(config_pdos);
 	CW_EC_CLEAR_CONFIG_LIST(config_syncs);
 	CW_EC_CLEAR_CONFIG_LIST(config_slaves);
@@ -163,6 +173,9 @@ static void cw_ec_config_clear(struct cw_ec_file *ctx)
 	ctx->config_sync_count = 0;
 	ctx->config_pdo_count = 0;
 	ctx->config_entry_count = 0;
+	ctx->config_dc_count = 0;
+	memset(&ctx->dc_policy, 0, sizeof(ctx->dc_policy));
+	ctx->dc_policy_set = false;
 	ctx->config_started = false;
 	ctx->config_validated = false;
 	ctx->config_applied = false;
@@ -348,6 +361,7 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	INIT_LIST_HEAD(&ctx->config_syncs);
 	INIT_LIST_HEAD(&ctx->config_pdos);
 	INIT_LIST_HEAD(&ctx->config_entries);
+	INIT_LIST_HEAD(&ctx->config_dcs);
 	atomic64_set(&ctx->cycle_count, 0);
 	atomic64_set(&ctx->cycle_error_count, 0);
 	atomic64_set(&ctx->cycle_overrun_count, 0);
@@ -503,8 +517,21 @@ cw_ec_find_pdo(struct cw_ec_file *ctx, u32 config_id)
 	return NULL;
 }
 
+static struct cw_ec_dc_node *
+cw_ec_find_dc_for_slave(struct cw_ec_file *ctx, u32 slave_config_id)
+{
+	struct cw_ec_dc_node *dc;
+
+	list_for_each_entry(dc, &ctx->config_dcs, common.node) {
+		if (dc->cfg.slave_config_id == slave_config_id)
+			return dc;
+	}
+	return NULL;
+}
+
 static long cw_ec_config_apply(struct cw_ec_file *ctx, void __user *argp)
 {
+	struct cw_ec_dc_node *dc;
 	struct cw_ec_config_apply result;
 	struct cw_ec_entry_node *entry;
 	struct cw_ec_sync_node *sync;
@@ -627,6 +654,54 @@ static long cw_ec_config_apply(struct cw_ec_file *ctx, void __user *argp)
 		if (ret) {
 			result.failed_config_id = entry->cfg.config_id;
 			result.failed_object_kind = CW_EC_CONFIG_OBJECT_ENTRY;
+			goto out;
+		}
+	}
+
+	list_for_each_entry(dc, &ctx->config_dcs, common.node) {
+		slave = cw_ec_find_slave(ctx, dc->cfg.slave_config_id);
+		if (!slave) {
+			ret = -ENOENT;
+			result.failed_config_id = dc->cfg.config_id;
+			result.failed_object_kind = CW_EC_CONFIG_OBJECT_DC;
+			goto out;
+		}
+		ret = ecrt_slave_config_dc(slave->ec_config,
+					   dc->cfg.assign_activate,
+					   dc->cfg.sync0_cycle_ns,
+					   dc->cfg.sync0_shift_ns,
+					   dc->cfg.sync1_cycle_ns,
+					   dc->cfg.sync1_shift_ns);
+		if (ret) {
+			result.failed_config_id = dc->cfg.config_id;
+			result.failed_object_kind = CW_EC_CONFIG_OBJECT_DC;
+			goto out;
+		}
+	}
+
+	if (ctx->dc_policy.reference_mode != CW_EC_DC_REFERENCE_DISABLED) {
+		ec_slave_config_t *reference = NULL;
+
+		if (ctx->dc_policy.reference_mode ==
+		    CW_EC_DC_REFERENCE_EXPLICIT) {
+			slave = cw_ec_find_slave(
+				ctx, ctx->dc_policy.reference_slave_config_id);
+			if (!slave) {
+				ret = -ENOENT;
+				result.failed_config_id =
+					ctx->dc_policy.reference_slave_config_id;
+				result.failed_object_kind =
+					CW_EC_CONFIG_OBJECT_DC_POLICY;
+				goto out;
+			}
+			reference = slave->ec_config;
+		}
+		ret = ecrt_master_select_reference_clock(ctx->master, reference);
+		if (ret) {
+			result.failed_config_id =
+				ctx->dc_policy.reference_slave_config_id;
+			result.failed_object_kind =
+				CW_EC_CONFIG_OBJECT_DC_POLICY;
 			goto out;
 		}
 	}
@@ -792,6 +867,7 @@ out:
 
 static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 {
+	struct cw_ec_dc_node *dc;
 	struct cw_ec_cycle_activate result;
 	size_t domain_size;
 	u32 period_ns;
@@ -817,6 +893,21 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	mutex_lock(&ctx->lock);
 	if (!ctx->domain_registered || ctx->config_poisoned || ctx->active) {
 		ret = -EINVAL;
+		goto out;
+	}
+	list_for_each_entry(dc, &ctx->config_dcs, common.node) {
+		if (dc->cfg.sync0_cycle_ns != period_ns) {
+			ret = -EINVAL;
+			goto out;
+		}
+	}
+	/*
+	 * DC metadata/application is API 0.5's independently testable first
+	 * increment. Do not start SYNC0 until the reference-led cyclic
+	 * controller and status snapshot are present.
+	 */
+	if (ctx->config_dc_count) {
+		ret = -EOPNOTSUPP;
 		goto out;
 	}
 	domain_size = ecrt_domain_size(ctx->domain);
@@ -1008,10 +1099,51 @@ CW_EC_CONFIG_ADD_CHILD(cw_ec_config_add_entry, cw_ec_entry_node, cfg,
 		       !node->cfg.pdo_config_id || !node->cfg.entry_id ||
 		       !node->cfg.index || !node->cfg.bit_length)
 
+CW_EC_CONFIG_ADD_CHILD(cw_ec_config_add_dc, cw_ec_dc_node, cfg,
+		       config_dcs, config_dc_count, CW_EC_CONFIG_DC_MAX,
+		       !node->cfg.slave_config_id ||
+		       !node->cfg.assign_activate ||
+		       !node->cfg.sync0_cycle_ns ||
+		       node->cfg.reserved0 || node->cfg.flags)
+
 #undef CW_EC_CONFIG_ADD_CHILD
+
+static long cw_ec_config_set_dc_policy(struct cw_ec_file *ctx,
+				       void __user *argp)
+{
+	struct cw_ec_config_dc_policy policy;
+	int ret;
+
+	if (copy_from_user(&policy, argp, sizeof(policy)))
+		return -EFAULT;
+	ret = cw_ec_check_header(policy.struct_size, policy.api_major,
+				 sizeof(policy));
+	if (ret)
+		return ret;
+	if (policy.reference_mode > CW_EC_DC_REFERENCE_EXPLICIT ||
+	    memchr_inv(policy.reserved0, 0, sizeof(policy.reserved0)) ||
+	    policy.flags ||
+	    (policy.reference_mode == CW_EC_DC_REFERENCE_EXPLICIT) !=
+		    !!policy.reference_slave_config_id)
+		return -EINVAL;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->config_started || ctx->config_validated)
+		ret = -EINVAL;
+	else if (ctx->dc_policy_set)
+		ret = -EEXIST;
+	else {
+		ctx->dc_policy = policy;
+		ctx->dc_policy_set = true;
+		ret = 0;
+	}
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
 
 static long cw_ec_config_validate(struct cw_ec_file *ctx, void __user *argp)
 {
+	struct cw_ec_dc_node *dc;
 	struct cw_ec_config_validate result;
 	struct cw_ec_entry_node *entry;
 	struct cw_ec_sync_node *sync;
@@ -1103,6 +1235,42 @@ static long cw_ec_config_validate(struct cw_ec_file *ctx, void __user *argp)
 				goto out;
 			}
 		}
+	}
+	list_for_each_entry(dc, &ctx->config_dcs, common.node) {
+		struct cw_ec_dc_node *other;
+
+		if (!cw_ec_config_id_exists(&ctx->config_slaves,
+					    dc->cfg.slave_config_id)) {
+			ret = -ENOENT;
+			goto out;
+		}
+		list_for_each_entry(other, &ctx->config_dcs, common.node) {
+			if (other != dc &&
+			    other->cfg.slave_config_id ==
+				    dc->cfg.slave_config_id) {
+				ret = -EEXIST;
+				goto out;
+			}
+		}
+	}
+	if (ctx->dc_policy.reference_mode == CW_EC_DC_REFERENCE_EXPLICIT &&
+	    (!cw_ec_config_id_exists(
+		     &ctx->config_slaves,
+		     ctx->dc_policy.reference_slave_config_id) ||
+	     !cw_ec_find_dc_for_slave(
+		     ctx, ctx->dc_policy.reference_slave_config_id))) {
+		ret = -ENOENT;
+		goto out;
+	}
+	if (ctx->dc_policy.reference_mode != CW_EC_DC_REFERENCE_DISABLED &&
+	    !ctx->config_dc_count) {
+		ret = -EINVAL;
+		goto out;
+	}
+	if (ctx->config_dc_count &&
+	    ctx->dc_policy.reference_mode == CW_EC_DC_REFERENCE_DISABLED) {
+		ret = -EINVAL;
+		goto out;
 	}
 	ctx->config_validated = true;
 out:
@@ -1492,6 +1660,10 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return cw_ec_config_add_pdo(ctx, argp);
 	case CW_EC_IOC_CONFIG_ADD_ENTRY:
 		return cw_ec_config_add_entry(ctx, argp);
+	case CW_EC_IOC_CONFIG_ADD_DC:
+		return cw_ec_config_add_dc(ctx, argp);
+	case CW_EC_IOC_CONFIG_SET_DC_POLICY:
+		return cw_ec_config_set_dc_policy(ctx, argp);
 	case CW_EC_IOC_CONFIG_VALIDATE:
 		return cw_ec_config_validate(ctx, argp);
 	case CW_EC_IOC_CONFIG_APPLY:

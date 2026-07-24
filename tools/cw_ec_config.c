@@ -24,6 +24,8 @@ enum record_kind {
 	RECORD_SYNC,
 	RECORD_PDO,
 	RECORD_ENTRY,
+	RECORD_DC,
+	RECORD_DC_POLICY,
 };
 
 struct record {
@@ -33,6 +35,8 @@ struct record {
 		struct cw_ec_config_sync sync;
 		struct cw_ec_config_pdo pdo;
 		struct cw_ec_config_entry entry;
+		struct cw_ec_config_dc dc;
+		struct cw_ec_config_dc_policy dc_policy;
 	};
 };
 
@@ -41,6 +45,7 @@ struct counts {
 	uint32_t syncs;
 	uint32_t pdos;
 	uint32_t entries;
+	uint32_t dcs;
 };
 
 static void usage(const char *program)
@@ -63,6 +68,20 @@ static int parse_u64(const char *text, uint64_t maximum, uint64_t *value)
 	errno = 0;
 	parsed = strtoumax(text, &end, 0);
 	if (errno || *end || parsed > maximum)
+		return -1;
+	*value = parsed;
+	return 0;
+}
+
+static int parse_s32(const char *text, int32_t *value)
+{
+	char *end;
+	intmax_t parsed;
+
+	errno = 0;
+	parsed = strtoimax(text, &end, 0);
+	if (errno || !text[0] || *end || parsed < INT32_MIN ||
+	    parsed > INT32_MAX)
 		return -1;
 	*value = parsed;
 	return 0;
@@ -206,6 +225,53 @@ static int parse_record(char *line, struct record *record)
 		return 1;
 	}
 
+	if (!strcmp(tokens[0], "dc") && count == 8) {
+		record->kind = RECORD_DC;
+		record->dc.struct_size = sizeof(record->dc);
+		record->dc.api_major = CW_EC_API_VERSION_MAJOR;
+		if (parse_u64(tokens[1], UINT32_MAX, &value))
+			return -1;
+		record->dc.config_id = value;
+		if (parse_u64(tokens[2], UINT32_MAX, &value))
+			return -1;
+		record->dc.slave_config_id = value;
+		if (parse_u64(tokens[3], UINT16_MAX, &value))
+			return -1;
+		record->dc.assign_activate = value;
+		if (parse_u64(tokens[4], UINT32_MAX, &value))
+			return -1;
+		record->dc.sync0_cycle_ns = value;
+		if (parse_s32(tokens[5], &record->dc.sync0_shift_ns))
+			return -1;
+		if (parse_u64(tokens[6], UINT32_MAX, &value))
+			return -1;
+		record->dc.sync1_cycle_ns = value;
+		if (parse_s32(tokens[7], &record->dc.sync1_shift_ns))
+			return -1;
+		return 1;
+	}
+
+	if (!strcmp(tokens[0], "dc_policy") && count == 3) {
+		record->kind = RECORD_DC_POLICY;
+		record->dc_policy.struct_size = sizeof(record->dc_policy);
+		record->dc_policy.api_major = CW_EC_API_VERSION_MAJOR;
+		if (!strcmp(tokens[1], "disabled"))
+			record->dc_policy.reference_mode =
+				CW_EC_DC_REFERENCE_DISABLED;
+		else if (!strcmp(tokens[1], "auto"))
+			record->dc_policy.reference_mode =
+				CW_EC_DC_REFERENCE_AUTO;
+		else if (!strcmp(tokens[1], "explicit"))
+			record->dc_policy.reference_mode =
+				CW_EC_DC_REFERENCE_EXPLICIT;
+		else
+			return -1;
+		if (parse_u64(tokens[2], UINT32_MAX, &value))
+			return -1;
+		record->dc_policy.reference_slave_config_id = value;
+		return 1;
+	}
+
 	return -1;
 }
 
@@ -255,6 +321,11 @@ static int scan_config(const char *path, struct counts *counts)
 		case RECORD_ENTRY:
 			counts->entries++;
 			break;
+		case RECORD_DC:
+			counts->dcs++;
+			break;
+		case RECORD_DC_POLICY:
+			break;
 		default:
 			break;
 		}
@@ -270,7 +341,8 @@ static int scan_config(const char *path, struct counts *counts)
 	    counts->slaves > CW_EC_CONFIG_SLAVE_MAX ||
 	    counts->syncs > CW_EC_CONFIG_SYNC_MAX ||
 	    counts->pdos > CW_EC_CONFIG_PDO_MAX ||
-	    counts->entries > CW_EC_CONFIG_ENTRY_MAX) {
+	    counts->entries > CW_EC_CONFIG_ENTRY_MAX ||
+	    counts->dcs > CW_EC_CONFIG_DC_MAX) {
 		fprintf(stderr, "cw_ec_config: invalid or excessive object counts\n");
 		return -1;
 	}
@@ -288,6 +360,11 @@ static int submit_record(int fd, const struct record *record)
 		return ioctl(fd, CW_EC_IOC_CONFIG_ADD_PDO, &record->pdo);
 	case RECORD_ENTRY:
 		return ioctl(fd, CW_EC_IOC_CONFIG_ADD_ENTRY, &record->entry);
+	case RECORD_DC:
+		return ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC, &record->dc);
+	case RECORD_DC_POLICY:
+		return ioctl(fd, CW_EC_IOC_CONFIG_SET_DC_POLICY,
+			     &record->dc_policy);
 	default:
 		return 0;
 	}
@@ -517,8 +594,9 @@ int main(int argc, char **argv)
 		return 1;
 	if (!strcmp(argv[1], "check") && argc == 3) {
 		printf("valid syntax: %u slave(s), %u sync manager(s), %u PDO(s), "
-		       "%u entry/entries\n",
-		       counts.slaves, counts.syncs, counts.pdos, counts.entries);
+		       "%u entry/entries, %u DC record(s)\n",
+		       counts.slaves, counts.syncs, counts.pdos, counts.entries,
+		       counts.dcs);
 		return 0;
 	}
 	if (!strcmp(argv[1], "prepare")) {
