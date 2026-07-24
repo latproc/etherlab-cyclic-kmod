@@ -709,6 +709,12 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 		fprintf(stderr, "cw_ec_config: bus did not become healthy\n");
 		goto out;
 	}
+	printf("active topology: responding=%" PRIu32
+	       " configured=%" PRIu32 " online=%" PRIu32
+	       " operational=%" PRIu32 "\n",
+	       io_status.slaves_responding, io_status.configured_slave_count,
+	       io_status.configured_slaves_online,
+	       io_status.configured_slaves_operational);
 	data = calloc(activate.domain_size, 1);
 	mask = calloc(activate.domain_size, 1);
 	if (!data || !mask) {

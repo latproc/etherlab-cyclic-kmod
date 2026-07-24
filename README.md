@@ -203,6 +203,11 @@ sudo env CW_EC_NONZERO_OUTPUT_AUTHORIZED=YES \
 Audit the fixture and physical output before every use. This is not a general
 machine-output command.
 
+`tools/cw_ec_config_from_topology.py` can emit a complete configuration from a
+captured generic topology JSON file. Generated entry IDs include the physical
+position and captured occurrence, so duplicate object identities remain
+distinct. Review the result; it registers every captured output.
+
 Deterministic module-owned allocation unwind can be tested without applying
 SDOs or activating cyclic I/O:
 

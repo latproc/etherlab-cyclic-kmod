@@ -32,6 +32,15 @@ decisions, risks, commands, or next steps change.
 - Killing the controller during a bounded console-LED pulse gates output via
   file release, stops cyclic work, returns master 0 idle, and permits normal
   module unload without a topology or kernel-log regression.
+- A captured-topology converter generated the full 34-slave configuration:
+  71 Sync Managers, 288 PDOs, and 508 entries in separate Beckhoff/drive
+  domains. All 34 slaves are hardware-proven online, OP, and valid
+  simultaneously with both domains complete. A following 34/34-healthy
+  session pulsed only the console LED update bit and synchronously disarmed.
+- The converter must use slave-reported `sync_managers`, not IOD's requested
+  `configured_sync_managers`. EL5152 position 4 still emits fixed-map warnings
+  because EtherLab/XML diagnostic-object identities differ from the fresh live
+  PDO report at unchanged bit positions. Do not call this a clean-log result.
 - PDO assignment/mapping belongs to `ecrt_slave_config_pdos()`. Persistent
   configuration SDOs are for ordinary startup parameters; ad-hoc master SDOs
   are commissioning fallback only.

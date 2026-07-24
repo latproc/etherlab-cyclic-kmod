@@ -805,3 +805,44 @@ and terminated the controller after 1.5 seconds. Kernel file release gated the
 output and stopped the cyclic task; master 0 returned idle/inactive, normal
 module unload succeeded, all 34 slaves remained visible, and no new kernel
 warning/error appeared.
+
+## Full captured topology OP test
+
+`cw_ec_config_from_topology.py` converts captured generic topology JSON into a
+reviewable text fixture. It preserves every captured Sync Manager, PDO, entry,
+and padding bit; emits revision zero because API 0.12 cannot enforce revision;
+and can split slaves into explicit availability domains. Generated stable
+entry IDs use `(position + 1, captured non-padding entry ordinal)`, so repeated
+objects such as EL5152 `0x1c32:20` remain unambiguous.
+
+The 34-slave capture generated 71 Sync Managers, 288 PDOs, and 508 entries.
+Positions 0-28 were assigned to the always-powered Beckhoff domain and
+positions 29-33 to the switchable-drive domain. A zero-only run reported:
+
+```text
+cycles=3501 errors=0 overruns=0 maximum_lateness=159161 ns
+responding=34 configured=34 online=34 operational=34
+domain 1: base=0   size=150 wc=49 complete valid=1
+domain 2: base=150 size=140 wc=15 complete valid=1
+aggregate wc=64 complete; healthy=1; armed=0
+```
+
+All 34 per-slave records reported `online=1 operational=1 valid=1 al=0x08`.
+The zero arm/disarm, stale-sequence rejection, fresh-zero re-arm, and final
+disarm passed. A subsequent session required the same 34/34 healthy state,
+then pulsed only the core-console status LED update bit for 300 ms and
+synchronously disarmed. The full fixture registers every captured output; the
+pulse mask selected only that entry and all other registered outputs remained
+zero.
+
+The first conversion attempt used the JSON `configured_sync_managers` view and
+was rejected as authoritative after EL5152 position 4 emitted fixed-mapping
+warnings. The converter now uses the slave-reported `sync_managers` view.
+Fresh idle-master `ethercat pdos -p 4` agrees with the corrected fixture.
+EtherLab still warns that the fixed mapping differs from its cached/default
+description: the installed Beckhoff XML variant names sync-error and
+TxPDO-toggle objects at four diagnostic-bit positions where the live slave
+reports channel status objects. Bit positions, PDO sizes, counter values, and
+frequency values are unchanged. The corrected run reaches complete WC and OP,
+but this fixed-mapping warning remains a documented compatibility issue rather
+than a clean-kernel-log result.

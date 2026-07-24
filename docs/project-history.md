@@ -206,6 +206,14 @@ commands, outputs, and design details.
   physical observation remains unrecorded. Killing the controller during a
   five-second LED pulse released the master, permitted normal module unload,
   preserved topology, and added no kernel warning/error.
+- Added a generic captured-topology-to-configuration converter with explicit
+  domain splitting and occurrence-based stable IDs for duplicate EtherCAT
+  objects. The generated 508-entry full 34-slave fixture reached 34/34 online, OP, and
+  valid with both domains complete, then pulsed only the selected console LED
+  bit and synchronously disarmed. The converter uses slave-reported rather
+  than requested mappings. EL5152 position 4 retains a documented fixed-map
+  warning caused by differing diagnostic-object identities in EtherLab/XML
+  metadata and the fresh live PDO report.
 - Validated that explicit EtherLab header/symbol overrides work outside the
   DKMS directory layout by staging the exact installed 1.6.9 artifacts under
   arbitrary source/build paths and rebuilding both modules. Wrong kernel
