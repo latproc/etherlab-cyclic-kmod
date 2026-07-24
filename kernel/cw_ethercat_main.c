@@ -1084,6 +1084,9 @@ static long cw_ec_config_apply(struct cw_ec_file *ctx, void __user *argp)
 				 sizeof(result));
 	if (ret)
 		return ret;
+	if (result.reserved1 ||
+	    memchr_inv(result.reserved0, 0, sizeof(result.reserved0)))
+		return -EINVAL;
 
 	memset(&result, 0, sizeof(result));
 	result.struct_size = sizeof(result);
@@ -1307,6 +1310,8 @@ static long cw_ec_domain_create(struct cw_ec_file *ctx, void __user *argp)
 				 sizeof(result));
 	if (ret)
 		return ret;
+	if (result.reserved)
+		return -EINVAL;
 
 	memset(&result, 0, sizeof(result));
 	result.struct_size = sizeof(result);
@@ -1458,6 +1463,8 @@ static long cw_ec_get_entry_offset(struct cw_ec_file *ctx, void __user *argp)
 				 sizeof(result));
 	if (ret)
 		return ret;
+	if (memchr_inv(result.reserved, 0, sizeof(result.reserved)))
+		return -EINVAL;
 	if (!result.entry_id)
 		return -EINVAL;
 	entry_id = result.entry_id;
@@ -1750,6 +1757,9 @@ static long cw_ec_cycle_get_status(struct cw_ec_file *ctx, void __user *argp)
 				 sizeof(result));
 	if (ret)
 		return ret;
+	if (memchr_inv(result.reserved0, 0, sizeof(result.reserved0)) ||
+	    memchr_inv(result.reserved1, 0, sizeof(result.reserved1)))
+		return -EINVAL;
 
 	memset(&result, 0, sizeof(result));
 	result.struct_size = sizeof(result);
@@ -1813,6 +1823,8 @@ static long cw_ec_cycle_get_dc_status(struct cw_ec_file *ctx,
 				 sizeof(result));
 	if (ret)
 		return ret;
+	if (result.reserved0)
+		return -EINVAL;
 
 	memset(&result, 0, sizeof(result));
 	result.struct_size = sizeof(result);
@@ -1859,6 +1871,8 @@ static long cw_ec_get_io_status(struct cw_ec_file *ctx, void __user *argp)
 				 sizeof(result));
 	if (ret)
 		return ret;
+	if (result.reserved0)
+		return -EINVAL;
 
 	memset(&result, 0, sizeof(result));
 	result.struct_size = sizeof(result);
@@ -2406,6 +2420,8 @@ static long cw_ec_config_validate(struct cw_ec_file *ctx, void __user *argp)
 				 sizeof(result));
 	if (ret)
 		return ret;
+	if (result.reserved)
+		return -EINVAL;
 
 	memset(&result, 0, sizeof(result));
 	result.struct_size = sizeof(result);
@@ -2625,6 +2641,8 @@ static long cw_ec_setup_begin(struct cw_ec_file *ctx, void __user *argp)
 				 sizeof(request));
 	if (ret)
 		return ret;
+	if (request.reserved)
+		return -EINVAL;
 
 	mutex_lock(&ctx->lock);
 	cw_ec_setup_clear(ctx);
@@ -2644,6 +2662,8 @@ static long cw_ec_setup_reset(struct cw_ec_file *ctx, void __user *argp)
 				 sizeof(request));
 	if (ret)
 		return ret;
+	if (request.reserved)
+		return -EINVAL;
 
 	mutex_lock(&ctx->lock);
 	cw_ec_setup_clear(ctx);
@@ -2727,6 +2747,8 @@ static long cw_ec_setup_apply(struct cw_ec_file *ctx, void __user *argp)
 				 sizeof(result));
 	if (ret)
 		return ret;
+	if (memchr_inv(result.reserved0, 0, sizeof(result.reserved0)))
+		return -EINVAL;
 
 	memset(&result, 0, sizeof(result));
 	result.struct_size = sizeof(result);
@@ -2791,6 +2813,8 @@ static long cw_ec_sdo_upload(struct cw_ec_file *ctx, void __user *argp)
 				 sizeof(result));
 	if (ret)
 		return ret;
+	if (result.reserved0 || result.reserved1)
+		return -EINVAL;
 	if (!result.index || !result.requested_len ||
 	    result.requested_len > CW_EC_SETUP_SDO_DATA_MAX)
 		return -EINVAL;

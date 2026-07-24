@@ -779,6 +779,15 @@ The non-activating hostile ABI suite also rejected an explicit domain without
 an assignment and an assignment referencing an unknown domain. It retained
 the existing legacy-domain offset and padding checks.
 
+The 2026-07-24 reserved-field audit tightened handlers that previously ignored
+declared reserved input. Setup begin/reset/apply, SDO upload, configuration
+validate/apply, domain creation, entry-offset lookup, and cycle/DC/I/O status
+now reject nonzero reserved fields with `EINVAL`. Direct tests also cover the
+already-enforced reserved/flag fields for configuration begin, slave, Sync
+Manager, PDO, DC, DC policy, output publication, cycle deactivation,
+configured-slave status, and domain status. The expanded non-activating suite
+passed and returned master 0 idle with all 34 slaves visible.
+
 An active, disarmed `cycle-abi` run against the same explicit fixture rejected
 stale-generation, unknown-domain, and nonzero-reserved-field domain-status
 queries. A valid query reported both domains active and valid. Existing active

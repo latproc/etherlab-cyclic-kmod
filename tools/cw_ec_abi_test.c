@@ -269,6 +269,12 @@ int main(int argc, char **argv)
 				       &setup_sdo),
 				 EINVAL);
 
+	begin.reserved = 1;
+	errno = 0;
+	failures += expect_errno("setup begin reserved field",
+				 ioctl(fd, CW_EC_IOC_SETUP_BEGIN, &begin),
+				 EINVAL);
+	begin.reserved = 0;
 	if (ioctl(fd, CW_EC_IOC_SETUP_BEGIN, &begin) < 0) {
 		fprintf(stderr, "FAIL: setup begin: %s\n", strerror(errno));
 		failures++;
@@ -293,16 +299,34 @@ int main(int argc, char **argv)
 				       &setup_sdo),
 				 EEXIST);
 
+	begin.reserved = 1;
+	errno = 0;
+	failures += expect_errno("setup reset reserved field",
+				 ioctl(fd, CW_EC_IOC_SETUP_RESET, &begin),
+				 EINVAL);
+	begin.reserved = 0;
 	if (ioctl(fd, CW_EC_IOC_SETUP_RESET, &begin) < 0) {
 		fprintf(stderr, "FAIL: setup reset: %s\n", strerror(errno));
 		failures++;
 	}
 
+	apply.reserved0[0] = 1;
+	errno = 0;
+	failures += expect_errno("setup apply reserved field",
+				 ioctl(fd, CW_EC_IOC_SETUP_APPLY, &apply),
+				 EINVAL);
+	apply.reserved0[0] = 0;
 	errno = 0;
 	failures += expect_errno("apply empty setup batch",
 				 ioctl(fd, CW_EC_IOC_SETUP_APPLY, &apply),
 				 EINVAL);
 
+	upload.reserved0 = 1;
+	errno = 0;
+	failures += expect_errno("SDO upload reserved field",
+				 ioctl(fd, CW_EC_IOC_SDO_UPLOAD, &upload),
+				 EINVAL);
+	upload.reserved0 = 0;
 	errno = 0;
 	failures += expect_errno("zero-length SDO upload",
 				 ioctl(fd, CW_EC_IOC_SDO_UPLOAD, &upload),
@@ -336,6 +360,13 @@ int main(int argc, char **argv)
 				       &domain_assignment),
 				 EINVAL);
 
+	config_begin.reserved = 1;
+	errno = 0;
+	failures += expect_errno("config begin reserved field",
+				 ioctl(fd, CW_EC_IOC_CONFIG_BEGIN,
+				       &config_begin),
+				 EINVAL);
+	config_begin.reserved = 0;
 	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0) {
 		fprintf(stderr, "FAIL: config begin: %s\n", strerror(errno));
 		failures++;
@@ -410,6 +441,13 @@ int main(int argc, char **argv)
 				       &config_slave),
 				 EINVAL);
 	config_slave.revision_number = 0;
+	config_slave.flags = 1;
+	errno = 0;
+	failures += expect_errno("config slave unsupported flags",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE,
+				       &config_slave),
+				 EINVAL);
+	config_slave.flags = 0;
 	if (ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0) {
 		fprintf(stderr, "FAIL: valid config slave: %s\n",
 			strerror(errno));
@@ -441,6 +479,48 @@ int main(int argc, char **argv)
 				       &dc_policy),
 				 EINVAL);
 	dc_policy.reference_slave_config_id = 1;
+	config_sync.reserved = 1;
+	errno = 0;
+	failures += expect_errno("config sync reserved field",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_SYNC,
+				       &config_sync),
+				 EINVAL);
+	config_sync.reserved = 0;
+	config_pdo.reserved = 1;
+	errno = 0;
+	failures += expect_errno("config PDO reserved field",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_PDO,
+				       &config_pdo),
+				 EINVAL);
+	config_pdo.reserved = 0;
+	config_dc.reserved0 = 1;
+	errno = 0;
+	failures += expect_errno("config DC reserved field",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC,
+				       &config_dc),
+				 EINVAL);
+	config_dc.reserved0 = 0;
+	config_dc.flags = 1;
+	errno = 0;
+	failures += expect_errno("config DC unsupported flags",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC,
+				       &config_dc),
+				 EINVAL);
+	config_dc.flags = 0;
+	dc_policy.reserved0[0] = 1;
+	errno = 0;
+	failures += expect_errno("DC policy reserved field",
+				 ioctl(fd, CW_EC_IOC_CONFIG_SET_DC_POLICY,
+				       &dc_policy),
+				 EINVAL);
+	dc_policy.reserved0[0] = 0;
+	dc_policy.flags = 1;
+	errno = 0;
+	failures += expect_errno("DC policy unsupported flags",
+				 ioctl(fd, CW_EC_IOC_CONFIG_SET_DC_POLICY,
+				       &dc_policy),
+				 EINVAL);
+	dc_policy.flags = 0;
 
 	config_sync.slave_config_id = 99;
 	if (ioctl(fd, CW_EC_IOC_CONFIG_ADD_SYNC, &config_sync) < 0) {
@@ -615,6 +695,13 @@ int main(int argc, char **argv)
 	memset(&config_validate, 0, sizeof(config_validate));
 	config_validate.struct_size = sizeof(config_validate);
 	config_validate.api_major = CW_EC_API_VERSION_MAJOR;
+	config_validate.reserved = 1;
+	errno = 0;
+	failures += expect_errno("config validate reserved field",
+				 ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE,
+				       &config_validate),
+				 EINVAL);
+	config_validate.reserved = 0;
 	if (ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE, &config_validate) < 0) {
 		fprintf(stderr, "FAIL: validate config hierarchy: %s\n",
 			strerror(errno));
@@ -634,6 +721,13 @@ int main(int argc, char **argv)
 				       &config_entry),
 				 EINVAL);
 
+	config_apply.reserved0[0] = 1;
+	errno = 0;
+	failures += expect_errno("config apply reserved field",
+				 ioctl(fd, CW_EC_IOC_CONFIG_APPLY,
+				       &config_apply),
+				 EINVAL);
+	config_apply.reserved0[0] = 0;
 	if (ioctl(fd, CW_EC_IOC_CONFIG_APPLY, &config_apply) < 0) {
 		fprintf(stderr,
 			"FAIL: apply config hierarchy: %s; kind=%u id=%" PRIu32
@@ -655,6 +749,13 @@ int main(int argc, char **argv)
 				       &config_begin),
 				 EBUSY);
 
+	domain_create.reserved = 1;
+	errno = 0;
+	failures += expect_errno("domain create reserved field",
+				 ioctl(fd, CW_EC_IOC_DOMAIN_CREATE,
+				       &domain_create),
+				 EINVAL);
+	domain_create.reserved = 0;
 	if (ioctl(fd, CW_EC_IOC_DOMAIN_CREATE, &domain_create) < 0) {
 		fprintf(stderr,
 			"FAIL: create domain: %s; config id=%" PRIu32 "\n",
@@ -666,6 +767,13 @@ int main(int argc, char **argv)
 	} else {
 		printf("PASS: domain created with one registered entry\n");
 	}
+	entry_offset.reserved[0] = 1;
+	errno = 0;
+	failures += expect_errno("entry offset reserved field",
+				 ioctl(fd, CW_EC_IOC_GET_ENTRY_OFFSET,
+				       &entry_offset),
+				 EINVAL);
+	entry_offset.reserved[0] = 0;
 	if (ioctl(fd, CW_EC_IOC_GET_ENTRY_OFFSET, &entry_offset) < 0) {
 		fprintf(stderr, "FAIL: get entry offset: %s\n", strerror(errno));
 		failures++;
@@ -693,6 +801,13 @@ int main(int argc, char **argv)
 				       &domain_create),
 				 EINVAL);
 
+	cycle_status.reserved0[0] = 1;
+	errno = 0;
+	failures += expect_errno("cycle status reserved field",
+				 ioctl(fd, CW_EC_IOC_CYCLE_GET_STATUS,
+				       &cycle_status),
+				 EINVAL);
+	cycle_status.reserved0[0] = 0;
 	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_STATUS, &cycle_status) < 0) {
 		fprintf(stderr, "FAIL: get inactive cycle status: %s\n",
 			strerror(errno));
@@ -703,11 +818,25 @@ int main(int argc, char **argv)
 	} else {
 		printf("PASS: initial cycle status is inactive\n");
 	}
+	cycle_deactivate.reserved = 1;
+	errno = 0;
+	failures += expect_errno("cycle deactivate reserved field",
+				 ioctl(fd, CW_EC_IOC_CYCLE_DEACTIVATE,
+				       &cycle_deactivate),
+				 EINVAL);
+	cycle_deactivate.reserved = 0;
 	errno = 0;
 	failures += expect_errno("deactivate inactive cycle",
 				 ioctl(fd, CW_EC_IOC_CYCLE_DEACTIVATE,
 				       &cycle_deactivate),
 				 EINVAL);
+	dc_status.reserved0 = 1;
+	errno = 0;
+	failures += expect_errno("DC status reserved field",
+				 ioctl(fd, CW_EC_IOC_CYCLE_GET_DC_STATUS,
+				       &dc_status),
+				 EINVAL);
+	dc_status.reserved0 = 0;
 	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_DC_STATUS, &dc_status) < 0) {
 		fprintf(stderr, "FAIL: get inactive DC status: %s\n",
 			strerror(errno));
@@ -721,6 +850,13 @@ int main(int argc, char **argv)
 	} else {
 		printf("PASS: configured inactive DC status is clean\n");
 	}
+	io_status.reserved0 = 1;
+	errno = 0;
+	failures += expect_errno("IO status reserved field",
+				 ioctl(fd, CW_EC_IOC_GET_IO_STATUS,
+				       &io_status),
+				 EINVAL);
+	io_status.reserved0 = 0;
 	if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0) {
 		fprintf(stderr, "FAIL: get inactive IO status: %s\n",
 			strerror(errno));
@@ -734,6 +870,14 @@ int main(int argc, char **argv)
 	} else {
 		printf("PASS: generation-bound inactive IO status is clean\n");
 	}
+	slave_status.reserved0[0] = 1;
+	errno = 0;
+	failures += expect_errno("configured-slave status reserved field",
+				 ioctl(fd,
+				       CW_EC_IOC_GET_CONFIG_SLAVE_STATUS,
+				       &slave_status),
+				 EINVAL);
+	slave_status.reserved0[0] = 0;
 	slave_status.config_generation = io_status.config_generation + 1;
 	errno = 0;
 	failures += expect_errno("stale configured-slave status generation",
@@ -749,6 +893,13 @@ int main(int argc, char **argv)
 				       CW_EC_IOC_GET_CONFIG_SLAVE_STATUS,
 				       &slave_status),
 				 ENOENT);
+	domain_status.reserved0[0] = 1;
+	errno = 0;
+	failures += expect_errno("domain status reserved field",
+				 ioctl(fd, CW_EC_IOC_GET_DOMAIN_STATUS,
+				       &domain_status),
+				 EINVAL);
+	domain_status.reserved0[0] = 0;
 	domain_status.config_generation = io_status.config_generation + 1;
 	errno = 0;
 	failures += expect_errno("stale domain status generation",
@@ -808,6 +959,12 @@ int main(int argc, char **argv)
 				 ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output),
 				 EINVAL);
 	output.flags = 0;
+	output.reserved = 1;
+	errno = 0;
+	failures += expect_errno("output publish reserved field",
+				 ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output),
+				 EINVAL);
+	output.reserved = 0;
 	errno = 0;
 	failures += expect_errno("output publish while inactive",
 				 ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output),

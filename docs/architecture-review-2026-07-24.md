@@ -113,7 +113,10 @@ The kernel-safety gate is not closed.
 9. **Active hostile-input coverage includes process-image, lifecycle, and
    domain controls.** Hardware checks cover invalid capacity, flags,
    generation, size, sequence, domain ID/reserved fields, and duplicate
-   activation. Broader fuzz and debug-kernel instrumentation remain.
+   activation. A non-activating audit now verifies reserved-field rejection
+   across setup, SDO, configuration, domain, offset, status, publication, and
+   deactivation ioctls. Broader randomized fuzz and debug-kernel
+   instrumentation remain.
 10. **Multiple domains are implemented and powered-operation proven.** The
     full topology reached 34/34 OP/valid with separate Beckhoff and drive
     domains complete. The drive-power-off independence capture is deferred

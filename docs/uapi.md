@@ -2,11 +2,12 @@
 
 ## Status
 
-The current experimental API is version 0.10. It supports discovery, a
+The current experimental API is version 0.12. It supports discovery, a
 provisional bounded commissioning SDO batch, transactional
 slave/Sync/PDO/entry/DC configuration, domain registration, configurable
 cyclic pumping, copied process images, distributed clocks, health/fault
-status, explicit output arm/disarm, and per-configured-slave validity.
+status, explicit output arm/disarm, per-configured-slave validity, mandatory
+PDO padding, and explicit multiple validity domains.
 
 ## Ownership and lifecycle
 
@@ -39,12 +40,17 @@ Minor versions add:
 - 0.6: generation-bound health, fault, and re-arm status;
 - 0.7: coherent copied input snapshots;
 - 0.8: masked copied output publication while hard-disarmed;
-- 0.9: generation/sequence-bound arm and synchronous disarm; and
-- 0.10: stable-ID per-configured-slave state and conservative data validity.
+- 0.9: generation/sequence-bound arm and synchronous disarm;
+- 0.10: stable-ID per-configured-slave state and conservative data validity;
+- 0.11: explicit mandatory PDO padding with `entry_id=0`; and
+- 0.12: explicit ordered domains, slave-domain assignments, and per-domain
+  status.
 
 Input/output structures that accept caller fields include `struct_size` and
 `api_major`. The kernel rejects an unexpected size with `EINVAL` and an
-incompatible major version with `EPROTONOSUPPORT`.
+incompatible major version with `EPROTONOSUPPORT`. Callers must zero every
+declared reserved field. The kernel rejects nonzero reserved input with
+`EINVAL`, including fields in bidirectional request/result structures.
 
 ## Operations
 
@@ -82,9 +88,10 @@ All current ioctl structures contain only fixed-width values and inline
 arrays. No kernel address or user pointer is retained. Each ioctl copies a
 complete bounded structure with `copy_from_user()`/`copy_to_user()`.
 
-Unknown ioctl types or commands return `ENOTTY`. The initial malformed-call
-test covers a second control open, unknown command, short structure,
-incompatible API major, and invalid slave position.
+Unknown ioctl types or commands return `ENOTTY`. The non-activating hostile
+ABI suite covers exclusive open, unknown command, structure size/version,
+reserved fields, flags, identifiers, hierarchy/reference validation, ordering,
+generations, and inactive-state rejection.
 
 ## Known limitations
 

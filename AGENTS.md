@@ -359,6 +359,10 @@ testing, safety, and build documents.
 - Hostile domain-record checks now also cover header/version/reserved fields,
   zero and duplicate identifiers, missing and unknown assignments, and
   duplicate slave assignments.
+- Declared reserved input is now consistently rejected across setup, SDO,
+  configuration, domain creation/lookup, cyclic status, output publication,
+  and per-slave/domain status ioctls. The expanded non-activating ABI suite
+  passes and returns the 34-slave master idle.
 - A reproducible disarmed timing harness compares baseline, same-CPU, and
   all-CPU load. The default three-by-30-second full-topology gate completed
   270,000 cycles with no errors/overruns; worst wake latency was 66,147 ns
