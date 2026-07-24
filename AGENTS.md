@@ -378,3 +378,11 @@ Update this section during work. Use dated entries for facts that may change.
   The exact converted SVN diff was restored afterward and matches its
   pre-test saved patch byte-for-byte; syntax/graph and conversion checks pass.
   Do not SVN-commit until the remaining full validation is explicitly accepted.
+- 2026-07-24: Final post-A/B object-selector startup passed from the restored
+  SVN working files. Runtime parameters prove object mode was active; sampled
+  EL5152, EL3124, EL1809, and ED3L objects retained the exact legacy byte/bit
+  offsets, modules were OP, zero target-velocity defaults were present, and no
+  missing/ambiguous selector errors occurred. The focused C++ resolver suite
+  passed 4/4 tests in an isolated `RUN_TESTS=ON` build. The local production
+  Git branch is merged but not pushed; the two SVN files remain uncommitted
+  pending explicit operator approval.
