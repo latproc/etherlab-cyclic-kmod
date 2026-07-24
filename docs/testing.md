@@ -469,8 +469,28 @@ PASS: 39 injected allocation failures unwound; success boundaries passed;
 
 Every failed operation closed its control file, master 0 returned
 idle/inactive, module unload succeeded, and the final topology matched the
-initial capture. Cyclic process-image allocations still require separate
-failure coverage because reaching them activates the master.
+initial capture.
+
+The six copied process-image allocations were then tested separately using the
+motion-inhibited ED3L position-29 fixture. Allocations 18 through 23 (two input
+images, two output images, the output ownership mask, and the update mask)
+each returned `ENOMEM` before master activation and unwound to an idle master.
+Allocation 24, immediately beyond those paths, completed an eight-second
+zero-output cycle:
+
+```text
+cycles=7997 errors=0 overruns=1 maximum_lateness=2747281 ns
+wc=3 wc_state=2
+healthy=1 armed=0 faults=0x00000000
+configured=1 online=1 operational=1
+New kernel warning/error lines:
+  none
+PASS: all six process-image allocation failures unwound;
+      success boundary passed; topology unchanged
+```
+
+The timing overrun is recorded evidence and is not a timing-acceptance result.
+No nonzero output was requested.
 
 ## Maximum pending configuration stress
 
@@ -500,6 +520,11 @@ PASS: 10 maximum pending configuration iteration(s);
 This exercised more than 220,000 pending record allocations plus synchronous
 list teardown. It is limit and lifetime evidence, not evidence that the
 synthetic hierarchy represents valid EtherCAT hardware.
+
+Lifecycle scripts compare a stable topology projection: physical master/slave
+order plus vendor ID, product code, revision, and serial. They deliberately do
+not compare volatile AL state or DC receive timestamps. Operational recovery is
+checked separately through runtime status where the test requires it.
 
 ## Phase 2 contention
 

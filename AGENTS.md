@@ -14,113 +14,36 @@ decisions, risks, commands, or next steps change.
 
 ## Current Status
 
-- Current phase: standalone Phase 3 hardening after the first formal
-  architecture review. IOD integration remains blocked.
-- The implementation plan has been read in full.
-- A minimal kernel probe, DKMS-aware build, environment documentation, and
-  lifecycle test script exist.
-- With Clockwork stopped and the master idle, the probe builds against the
-  exact target and passed ten live load/acquire/release/unload iterations
-  without retaining the master.
-- Contention while IOD owns master 0 is proven for both the minimal probe and
-  Phase 2 device: ownership attempts return `EBUSY` without disturbing IOD.
-- Versioned UAPI 0.1, `/dev/cw_ethercat0`, `cw_ec_bus`, ABI tests, and a
-  repeatable topology comparison exist.
-- All then-present 29 physical slave identity records matched
-  `ethercat slaves -v`; topology was unchanged after release. An additional
-  120 open/scan/close lifecycle iterations completed, with the final 20 adding
-  no kernel warning.
-- API 0.3 accepts and validates a bounded pending slave/Sync/PDO/PDO-entry
-  hierarchy, constructs persistent EtherLab configuration objects, registers
-  a domain, and resolves stable entry IDs to byte/bit offsets.
-- API 0.4 builds a configurable-period cyclic pump around an applied domain,
-  zeroes the image before its first send, reports basic timing/send counters,
-  and synchronously joins before deactivation. It intentionally has no
-  process-image writer or DC configuration yet. Position 29 has reached OP
-  with complete working counter under motion inhibit.
-- API 0.5 adds transactional DC records, reference policy, the IOD-compatible
-  reference-led controller, cyclic slave synchronization, monitoring, and a
-  bounded status ioctl. Four motion-inhibited position-29 runs reached complete
-  WC with valid reference reads, monitor results, and zero cycle errors.
-- API 0.6 adds generation-bound health/fault/re-arm status while outputs remain
-  hard-disarmed.
-- API 0.7 adds a coherent copied, read-only domain snapshot. It uses
-  preallocated double buffers and never waits for user space in the cyclic
-  path. A motion-inhibited position-29 run returned live TxPDO bytes with all
-  RxPDO/output bytes zero.
-- API 0.8 accepts generation-bound copied output shadows and masks them to
-  configured output entries, but provides no arm operation. Its domain-sized
-  data plus per-bit update mask matches IOD's existing update representation.
-  The cyclic thread clears all configured output bits before every send.
-  Publishing all-ones data/mask on position 29 left all 18 output bytes zero.
-- API 0.9 adds explicit generation/latest-sequence-bound arm and synchronous
-  disarm. Faults disarm in the cyclic thread; re-arm after fault or manual
-  disarm requires a newer publication. A zero-only position-29 test proved
-  arm, acknowledged disarm, stale-sequence rejection, and fresh-sequence
-  recovery without transmitting a nonzero output.
-- API 0.10 adds generation-bound per-configured-slave state keyed by stable
-  `config_id`. It reports online/operational/AL state and a conservative
-  `data_valid` bit requiring that slave OP plus complete domain WC. Position 29
-  reported valid at cycle/input sequence 5,000; an offline transition query is
-  not yet hardware-captured.
-- The current zero-only lifecycle test ran five complete API 0.10
-  configure/activate/arm/disarm/deactivate/close iterations. The EtherLab
-  master returned idle after every iteration, no cyclic task leaked, topology
-  was unchanged, and no new kernel warning/error line appeared.
-- Killing a controller while it held an explicitly armed all-zero shadow
-  triggered synchronous file-release teardown: no cyclic task leaked, master 0
-  returned idle/inactive, topology was unchanged after unload, and no new
-  kernel warning/error line appeared. The corresponding normal two-second hold
-  also synchronously disarmed and returned the master idle/inactive.
-- The target kernel has no fault-injection, kmemleak, KFENCE, or lockdep
-  validation enabled. A read-only, disabled-by-default module test parameter
-  now provides deterministic failure of module-owned allocations. All 39
-  allocations reached by non-applying SDO staging and non-activating
-  declarative preparation failed individually and unwound cleanly; both
-  success boundaries passed, topology was unchanged, and no new kernel
-  warning/error line appeared.
-- Ten maximum pending create/reset iterations passed. Each iteration filled
-  the 256-operation setup batch and every declarative limit (256 slaves, 1024
-  Sync Managers, 4096 PDOs, 16384 entries, and 256 DC records), verified the
-  next record returned `E2BIG`, then synchronously cleared the transaction.
-  Master 0 remained idle, topology was unchanged, and no new kernel
-  warning/error line appeared.
-- A provisional bounded ad-hoc SDO batch exists for commissioning and
-  decision-gate tests. It is not the persistent production setup mechanism.
-- Bounded SDO upload is hardware-proven against ED3L `0x6060:00`; no write has
-  been issued. Post-power-up readback showed all five drives in the default
-  two-entry position PDO layout, not the planned velocity layout. Confirm the
-  legacy restart/recipe baseline before writing.
-- Installed `iod.sh` confirms the recovery gap: it configures only ED3Ls
-  visible during startup. The installed `sdo.sh` matches the velocity recipe;
-  its behavior has been captured and a cleaned strict position-29 batch was
-  verified.
-- Test A legacy mapping is captured on all five drives. The legacy script
-  reaches the right final state but ignores aborts from unnecessary zero-entry
-  writes. A cleaned strict 21-write kernel batch succeeded on position 29 with
-  full final-state verification.
-- Installed `iod` and `iod_sdo` both compile with `USE_DC`. Preserve the
-  documented reference selection, application-time steering, cycle ordering,
-  monitoring, and adjustment algorithm in the eventual kernel cyclic thread.
-- Phase 2 acceptance is complete. Current work is the standalone cyclic/DC
-  portion of Phase 3.
-- Servo-off startup and live power-loss/restoration without restarting IOD are
-  now mandatory requirements. Recovery must gate stale outputs until user
-  space explicitly permits re-arm.
-- Distributed clocks are mandatory when configured. Preserve the installed
-  IOD algorithm first: user space owns DC policy/parameters; the kernel cyclic
-  backend owns reference selection, application time, cyclic sync calls, and
-  low-overhead DC status/statistics.
-- EtherLab 1.6.9 explicitly reserves PDO assignment/mapping for declarative
-  `ecrt_slave_config_pdos()` configuration. Persistent
-  `ecrt_slave_config_sdo()` entries are replayed on reconfiguration, but its
-  API says not to use them for PDO assignment or mapping objects. Use them for
-  ordinary startup parameters such as operating mode. Ad-hoc master SDO
-  downloads remain a commissioning fallback, not normal recovery.
-- EtherCAT station aliases are optional. Baseline matching must support alias
-  zero using configured physical topology and absolute position. Never
-  remap an absent logical axis to another identical device merely because its
-  vendor/product matches.
+- Current phase: standalone Phase 3 hardening after the first architecture
+  review. IOD integration remains blocked.
+- Current UAPI is 0.10. It covers discovery, ordered setup SDOs, declarative
+  PDO/DC configuration, domain registration, cyclic pumping, copied input and
+  masked output images, explicit arm/disarm, health, timing/DC statistics, and
+  per-configured-slave validity.
+- Target is Debian RT kernel `6.1.0-49-rt-amd64` with EtherLab DKMS 1.6.9.
+  Exact build artifacts are documented.
+- Master contention, discovery, lifecycle, declarative PDO mapping, DC,
+  zero-output cycling, live servo power loss/restoration, stale-output
+  re-arming, and controller-death teardown have hardware evidence.
+- No nonzero output has been requested or tested. Motion remains inhibited for
+  hardware tests.
+- PDO assignment/mapping belongs to `ecrt_slave_config_pdos()`. Persistent
+  configuration SDOs are for ordinary startup parameters; ad-hoc master SDOs
+  are commissioning fallback only.
+- Aliases are optional. Baseline device matching uses configured physical
+  topology/absolute position and never substitutes an identical device for an
+  absent logical axis.
+- Deterministic pending and cyclic process-image allocation unwind and
+  maximum-count create/reset stress pass.
+- The target kernel lacks fault-injection, kmemleak, KFENCE, and lockdep
+  validation facilities; debug-kernel evidence remains outstanding.
+- Servo-off startup and live power-loss/restoration are mandatory. Outputs
+  remain stale-gated until explicit user-space re-arm.
+- Distributed clocks are mandatory when configured. User space owns policy;
+  the kernel owns cyclic application time, synchronization calls, steering,
+  and low-overhead status.
+- Detailed milestones and evidence live in `docs/project-history.md` and
+  `docs/testing.md`. Do not duplicate them here.
 - Do not modify Clockwork/IOD behavior in this repository.
 
 ## Non-Negotiable Architecture
@@ -315,48 +238,25 @@ Keep this section concise. Historical milestones and validation evidence are in
 testing, safety, and build documents.
 
 - Current API: 0.10.
-- API 0.4 zero-output cyclic activation is hardware-proven on ED3L position 29
-  with complete working counter and exact 28-byte PDO layout.
-- Deactivation waits for configured slaves to leave SAFEOP/OP and invalidates
-  EtherLab-owned configuration/domain pointers. The public EtherLab lifecycle
-  still permits an ED3L Sync Manager watchdog event when traffic stops before
-  the asynchronous PREOP transition.
-- API 0.5 accepts and applies bounded per-slave DC parameters and
-  disabled/automatic/explicit reference policy. Its reference-led controller
-  and status snapshot are hardware-proven on position 29. Short initial
-  synchrony convergence remains visible and timing acceptance is not claimed.
-- The ED3L DC fixture values are `AssignActivate 0x0300`, SYNC0 equal to the
-  application period, and zero shift. These remain user-space policy.
-- API 0.6 adds generation-bound bus health and stale-output re-arm status.
-  Position 29 reported healthy with all configured counts correct while
-  outputs remained hard-disarmed. A deliberate servo-supply power cycle then
-  recovered position 29 to OP/complete WC without restarting the transport,
-  while `rearm_required` remained set with one latched fault epoch.
-- API 0.7 adds a generation-bound copied domain snapshot with a 64 KiB limit.
-  A five-second position-29 retry reached OP and returned a coherent 28-byte
-  image with live input data and zero outputs. It recorded one 8.1 ms scheduling
-  overrun, so this is functional evidence, not timing acceptance.
-- API 0.8 adds copied, generation-bound output publication without arming.
-  The published image is masked to entries owned by output Sync Managers, and
-  the cyclic path still forces those bits zero. A five-second all-ones shadow
-  test completed 5,000 cycles with complete WC, no errors/overruns, and zero
-  in every configured output byte. Publication and the hard-zero gate are
-  hardware-proven; the retained ownership-masked shadow is not bus-observable
-  until the future arm test.
-- API 0.9 adds the explicit arm/disarm gate. Arm requires an active healthy
-  bus, exact configuration generation, and exact latest nonzero publication
-  sequence. Disarm waits for cyclic acknowledgement and requires a newer
-  publication before re-arm. The complete state sequence is hardware-proven
-  with an all-zero shadow; nonzero output remains untested.
+- Deactivation synchronously gates outputs and joins the cyclic thread, then
+  waits for configured slaves to leave SAFEOP/OP before invalidating
+  EtherLab-owned pointers. The public EtherLab lifecycle can still expose an
+  ED3L watchdog event during its asynchronous PREOP transition.
+- DC policy and parameters remain user-space owned. The installed IOD
+  reference-led algorithm is preserved; timing acceptance is not yet claimed.
+- Process images are bounded copied buffers. Output publication is masked to
+  configured output entries; arm requires the active generation, latest
+  publication sequence, and a healthy bus. Disarm/fault requires a newer
+  publication before re-arm.
+- Live servo power loss/restoration recovers without transport restart and
+  leaves `rearm_required` latched. Nonzero output remains untested.
 - Copied process-image concurrency and recovery rules are documented in
   `docs/process-image-exchange.md`.
 - The 2026-07-24 architecture review is in
-  `docs/architecture-review-2026-07-24.md`. The kernel-safety and documentation
-  gates remain open. API 0.10 now supplies conservative per-configured-slave
-  validity; remaining major blockers include its offline-transition proof,
-  current lifecycle/controller-death stress, allocation-failure/leak testing,
-  debug-kernel testing, and manual EtherLab build compatibility.
-- Next step: extend deterministic allocation-failure coverage through cyclic
-  process-image buffer construction.
+  `docs/architecture-review-2026-07-24.md`. Safety/documentation gates remain
+  open. Major gaps include per-slave offline-transition evidence, debug-kernel
+  validation, and manual EtherLab build compatibility.
+- Next step: cover cyclic-thread construction failure, then reassess remaining
+  standalone safety-gate gaps.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

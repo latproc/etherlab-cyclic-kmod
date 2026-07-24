@@ -93,3 +93,8 @@ commands, outputs, and design details.
   setup/configuration hard limits, required `E2BIG` at each boundary, and
   synchronously reset more than 220,000 records without changing master idle
   state, topology, or the kernel warning/error log.
+- Added stable identity-only topology capture for lifecycle tests and covered
+  all six copied process-image allocation failures. Each failed before master
+  activation and unwound cleanly; the next allocation boundary reached
+  OP/complete WC in an eight-second zero-output cycle with no new kernel
+  warning/error.

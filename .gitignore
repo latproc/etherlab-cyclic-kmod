@@ -39,6 +39,7 @@
 /tools/cw_ec_abi_test
 /tools/cw_ec_sdo
 /tools/cw_ec_config
+/tools/cw_ec_config_stress
 
 # Debug files
 *.dSYM/

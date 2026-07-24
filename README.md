@@ -181,6 +181,14 @@ tested without applying configuration or activating the master:
 sudo tools/cw_ec_test_config_stress.sh
 ```
 
+Copied process-image allocation unwind requires the motion-inhibited hardware
+fixture for its successful activation boundary:
+
+```sh
+sudo env CW_EC_MOTION_INHIBITED=YES \
+  tools/cw_ec_test_process_image_allocations.sh
+```
+
 Examples:
 
 ```sh

@@ -31,13 +31,16 @@ cleanup()
 trap cleanup EXIT HUP INT TERM
 
 ethercat slaves -v >"$tmp_dir/ethercat-before.txt"
+"$project_dir/tools/cw_ec_capture_topology.sh" \
+	>"$tmp_dir/topology-before.txt"
 insmod "$module_path"
 "$project_dir/tools/cw_ec_abi_test"
 "$project_dir/tools/cw_ec_bus" >"$tmp_dir/cw-bus.txt"
 rmmod "$module_name"
-ethercat slaves -v >"$tmp_dir/ethercat-after.txt"
+"$project_dir/tools/cw_ec_capture_topology.sh" \
+	>"$tmp_dir/topology-after.txt"
 
-cmp "$tmp_dir/ethercat-before.txt" "$tmp_dir/ethercat-after.txt"
+cmp "$tmp_dir/topology-before.txt" "$tmp_dir/topology-after.txt"
 
 awk '
 	/^=== Master [0-9]+, Slave [0-9]+ ===$/ {

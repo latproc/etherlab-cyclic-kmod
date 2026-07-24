@@ -66,7 +66,7 @@ cycle_tasks()
 }
 
 before_tasks=$(cycle_tasks)
-ethercat slaves -v >"$tmp_dir/slaves-before.txt"
+"$project_dir/tools/cw_ec_capture_topology.sh" >"$tmp_dir/slaves-before.txt"
 dmesg --level=err,warn >"$tmp_dir/dmesg-before.txt"
 insmod "$module_path"
 
@@ -90,7 +90,7 @@ while [ "$i" -le "$repeat" ]; do
 done
 
 rmmod "$module_name"
-ethercat slaves -v >"$tmp_dir/slaves-after.txt"
+"$project_dir/tools/cw_ec_capture_topology.sh" >"$tmp_dir/slaves-after.txt"
 cmp "$tmp_dir/slaves-before.txt" "$tmp_dir/slaves-after.txt"
 dmesg --level=err,warn >"$tmp_dir/dmesg-after.txt"
 
