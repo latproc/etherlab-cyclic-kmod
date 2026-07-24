@@ -355,6 +355,30 @@ transport, but the re-arm requirement remained sticky. The cycle/DC error
 counters captured the unavailable/reconfiguration interval. The final snapshot
 contained live input data and all configured output bytes remained zero.
 
+## API 0.9 zero-output arm/disarm gate
+
+The inactive ABI suite rejected unsupported arm/disarm flags and both
+operations while inactive. A five-second position-29 run then published an
+all-zero shadow and exercised the live gate:
+
+```text
+cycles=4999 errors=0 overruns=0 maximum_lateness=112015 ns
+wc=3 wc_state=2
+generation=2 healthy=1 armed=0 rearm_required=0
+published zero output sequence=1
+zero sequence 1 armed
+synchronous disarm acknowledged
+stale sequence 1 rejected with EAGAIN
+fresh zero sequence 2 published and armed
+final synchronous disarm acknowledged
+```
+
+The final 28-byte snapshot retained zero in all 18 output bytes and live data
+in the 10 input bytes. This validates exact generation/latest-sequence arm,
+bounded cyclic disarm acknowledgement, and fresh-publication recovery without
+requesting or transmitting a nonzero output. A nonzero commissioning output
+has not been authorized or tested.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

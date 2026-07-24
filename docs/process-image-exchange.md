@@ -81,5 +81,7 @@ after the cyclic thread is synchronously joined.
 2. Add copied read-only domain snapshots and a standalone reader. Completed in
    API 0.7.
 3. Add copied output publication without arming. Completed in API 0.8.
-4. Add explicit re-arm and one motion-inhibited test output.
+4. Add explicit re-arm and prove its state machine with an all-zero
+   motion-inhibited output. Completed in API 0.9. A bounded nonzero
+   commissioning output remains a separate decision.
 5. Measure copy and masking cost before considering mmap.

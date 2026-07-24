@@ -273,6 +273,28 @@ Publication is intentionally not activation. API 0.8 has no arm operation,
 output bit in domain memory before every queue/send. This makes publication and
 masking independently testable without transmitting the requested values.
 
+API 0.9 adds `CW_EC_IOC_ARM_OUTPUTS` and `CW_EC_IOC_DISARM_OUTPUTS`. Arm
+requires:
+
+- an active cycle and healthy bus;
+- the exact active configuration generation;
+- the exact latest nonzero output-publication sequence;
+- after a fault or manual disarm, a sequence newer than the sequence recorded
+  at that epoch.
+
+Generation or sequence mismatch returns `ESTALE`; an unhealthy bus or
+not-new-enough recovery publication returns `EAGAIN`. A successful arm clears
+`rearm_required`. Each cycle applies the retained output shadow only when both
+health and arm are true; otherwise it clears all topology-derived output bits.
+
+Disarm immediately closes the atomic output gate, latches
+`rearm_required`, records the current publication sequence, and waits for a
+bounded acknowledgement made only after the cyclic thread has queued and sent
+the zero-gated image. Deactivation performs the same handshake before stopping
+the cyclic thread. This prevents a successful disarm ioctl or orderly
+deactivation from leaving a previously selected shadow as the last application
+datagram. Timeout returns `ETIMEDOUT` but leaves the gate disarmed.
+
 Activation requires an applied configuration and registered domain. The caller
 supplies a cycle period from 100 microseconds through one second; flags must be
 zero. The kernel activates EtherLab, obtains the internal domain memory,

@@ -158,6 +158,17 @@ int main(int argc, char **argv)
 		.data_size = sizeof(snapshot_byte),
 		.config_generation = 1,
 	};
+	struct cw_ec_output_arm arm = {
+		.struct_size = sizeof(arm),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.config_generation = 1,
+		.output_sequence = 1,
+	};
+	struct cw_ec_output_disarm disarm = {
+		.struct_size = sizeof(disarm),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.config_generation = 1,
+	};
 	unsigned long unknown_ioctl = _IO(CW_EC_IOC_MAGIC, 0x7f);
 	int failures = 0;
 	int second_fd;
@@ -508,6 +519,26 @@ int main(int argc, char **argv)
 	errno = 0;
 	failures += expect_errno("output publish while inactive",
 				 ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output),
+				 EINVAL);
+	arm.flags = 1;
+	errno = 0;
+	failures += expect_errno("unsupported output arm flags",
+				 ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm),
+				 EINVAL);
+	arm.flags = 0;
+	errno = 0;
+	failures += expect_errno("output arm while inactive",
+				 ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm),
+				 EINVAL);
+	disarm.flags = 1;
+	errno = 0;
+	failures += expect_errno("unsupported output disarm flags",
+				 ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm),
+				 EINVAL);
+	disarm.flags = 0;
+	errno = 0;
+	failures += expect_errno("output disarm while inactive",
+				 ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm),
 				 EINVAL);
 	cycle_activate.cycle_period_ns = CW_EC_CYCLE_PERIOD_MIN_NS - 1;
 	errno = 0;

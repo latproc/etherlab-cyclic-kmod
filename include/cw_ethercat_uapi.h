@@ -11,7 +11,7 @@
 #endif
 
 #define CW_EC_API_VERSION_MAJOR 0U
-#define CW_EC_API_VERSION_MINOR 8U
+#define CW_EC_API_VERSION_MINOR 9U
 
 #define CW_EC_CYCLE_PERIOD_MIN_NS 100000U
 #define CW_EC_CYCLE_PERIOD_MAX_NS 1000000000U
@@ -368,6 +368,21 @@ struct cw_ec_output_publish {
 	__u64 output_sequence;
 };
 
+struct cw_ec_output_arm {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 config_generation;
+	__u64 output_sequence;
+};
+
+struct cw_ec_output_disarm {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 config_generation;
+};
+
 #define CW_EC_IOC_MAGIC 0xec
 
 #define CW_EC_IOC_GET_API_VERSION \
@@ -422,5 +437,9 @@ struct cw_ec_output_publish {
 	_IOWR(CW_EC_IOC_MAGIC, 0x41, struct cw_ec_input_snapshot)
 #define CW_EC_IOC_PUBLISH_OUTPUT \
 	_IOWR(CW_EC_IOC_MAGIC, 0x42, struct cw_ec_output_publish)
+#define CW_EC_IOC_ARM_OUTPUTS \
+	_IOW(CW_EC_IOC_MAGIC, 0x43, struct cw_ec_output_arm)
+#define CW_EC_IOC_DISARM_OUTPUTS \
+	_IOW(CW_EC_IOC_MAGIC, 0x44, struct cw_ec_output_disarm)
 
 #endif /* CW_ETHERCAT_UAPI_H */

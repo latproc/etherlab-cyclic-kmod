@@ -54,8 +54,9 @@ static void usage(const char *program)
 		"usage:\n"
 		"  %s check CONFIG\n"
 		"  %s prepare CONFIG [DEVICE]\n"
-		"  %s cycle CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n",
-		program, program, program);
+		"  %s cycle CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
+		"  %s cycle-zero-arm CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n",
+		program, program, program, program);
 }
 
 static int parse_u64(const char *text, uint64_t maximum, uint64_t *value)
@@ -505,7 +506,8 @@ out:
 }
 
 static int cycle(const char *path, uint32_t period_ns,
-		 unsigned int duration_seconds, const char *device)
+		 unsigned int duration_seconds, bool arm_zero,
+		 const char *device)
 {
 	struct cw_ec_config_validate validate;
 	struct cw_ec_cycle_activate activate = {
@@ -531,6 +533,14 @@ static int cycle(const char *path, uint32_t period_ns,
 	};
 	struct cw_ec_output_publish output = {
 		.struct_size = sizeof(output),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_output_arm arm = {
+		.struct_size = sizeof(arm),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_output_disarm disarm = {
+		.struct_size = sizeof(disarm),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
 	uint8_t *snapshot_data = NULL;
@@ -629,7 +639,7 @@ static int cycle(const char *path, uint32_t period_ns,
 			strerror(errno));
 		goto out;
 	}
-	memset(output_data, 0xff, activate.domain_size);
+	memset(output_data, arm_zero ? 0x00 : 0xff, activate.domain_size);
 	memset(output_mask, 0xff, activate.domain_size);
 	output.data_ptr = (uintptr_t)output_data;
 	output.mask_ptr = (uintptr_t)output_mask;
@@ -641,9 +651,75 @@ static int cycle(const char *path, uint32_t period_ns,
 		goto out;
 	}
 	printf("published masked output shadow: generation=%" PRIu64
-	       " sequence=%" PRIu64 " (outputs remain disarmed)\n",
+	       " sequence=%" PRIu64 "%s\n",
 	       (uint64_t)output.config_generation,
-	       (uint64_t)output.output_sequence);
+	       (uint64_t)output.output_sequence,
+	       arm_zero ? " (zero-arm test pending)" :
+			  " (outputs remain disarmed)");
+	if (arm_zero) {
+		arm.config_generation = output.config_generation;
+		arm.output_sequence = output.output_sequence;
+		if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) < 0) {
+			fprintf(stderr, "cw_ec_config: zero-output arm failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		usleep((useconds_t)(period_ns / 1000U) * 10U);
+		io_status.struct_size = sizeof(io_status);
+		io_status.api_major = CW_EC_API_VERSION_MAJOR;
+		if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0 ||
+		    !io_status.outputs_armed) {
+			fprintf(stderr,
+				"cw_ec_config: zero-output arm was not reported active\n");
+			goto out;
+		}
+		printf("zero-output shadow armed at sequence=%" PRIu64 "\n",
+		       (uint64_t)output.output_sequence);
+		disarm.config_generation = output.config_generation;
+		if (ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm) < 0) {
+			fprintf(stderr, "cw_ec_config: synchronous disarm failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		io_status.struct_size = sizeof(io_status);
+		io_status.api_major = CW_EC_API_VERSION_MAJOR;
+		if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0 ||
+		    io_status.outputs_armed || !io_status.rearm_required) {
+			fprintf(stderr,
+				"cw_ec_config: disarm state was not latched\n");
+			goto out;
+		}
+		printf("zero-output shadow synchronously disarmed; fresh publication required\n");
+		errno = 0;
+		if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) == 0 ||
+		    errno != EAGAIN) {
+			fprintf(stderr,
+				"cw_ec_config: stale arm was not rejected with EAGAIN\n");
+			goto out;
+		}
+		printf("stale output sequence correctly rejected after disarm\n");
+		if (ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output) < 0) {
+			fprintf(stderr,
+				"cw_ec_config: fresh zero publication failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		arm.output_sequence = output.output_sequence;
+		if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) < 0) {
+			fprintf(stderr, "cw_ec_config: fresh zero arm failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		printf("fresh zero-output sequence=%" PRIu64
+		       " accepted after disarm\n",
+		       (uint64_t)output.output_sequence);
+		if (ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm) < 0) {
+			fprintf(stderr,
+				"cw_ec_config: final synchronous disarm failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+	}
 	usleep((useconds_t)(period_ns / 1000U) * 10U);
 	snapshot_data = calloc(activate.domain_size, 1);
 	if (!snapshot_data) {
@@ -722,7 +798,9 @@ int main(int argc, char **argv)
 			device = argv[3];
 		return prepare(argv[2], device);
 	}
-	if (!strcmp(argv[1], "cycle") && (argc == 5 || argc == 6)) {
+	if ((!strcmp(argv[1], "cycle") ||
+	     !strcmp(argv[1], "cycle-zero-arm")) &&
+	    (argc == 5 || argc == 6)) {
 		if (parse_u64(argv[3], CW_EC_CYCLE_PERIOD_MAX_NS, &period) ||
 		    period < CW_EC_CYCLE_PERIOD_MIN_NS ||
 		    parse_u64(argv[4], 3600, &duration) || !duration) {
@@ -731,7 +809,8 @@ int main(int argc, char **argv)
 		}
 		if (argc == 6)
 			device = argv[5];
-		return cycle(argv[2], period, duration, device);
+		return cycle(argv[2], period, duration,
+			     !strcmp(argv[1], "cycle-zero-arm"), device);
 	}
 	usage(argv[0]);
 	return 2;

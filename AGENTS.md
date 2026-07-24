@@ -53,6 +53,11 @@ decisions, risks, commands, or next steps change.
   data plus per-bit update mask matches IOD's existing update representation.
   The cyclic thread clears all configured output bits before every send.
   Publishing all-ones data/mask on position 29 left all 18 output bytes zero.
+- API 0.9 adds explicit generation/latest-sequence-bound arm and synchronous
+  disarm. Faults disarm in the cyclic thread; re-arm after fault or manual
+  disarm requires a newer publication. A zero-only position-29 test proved
+  arm, acknowledged disarm, stale-sequence rejection, and fresh-sequence
+  recovery without transmitting a nonzero output.
 - A provisional bounded ad-hoc SDO batch exists for commissioning and
   decision-gate tests. It is not the persistent production setup mechanism.
 - Bounded SDO upload is hardware-proven against ED3L `0x6060:00`; no write has
@@ -282,7 +287,7 @@ Keep this section concise. Historical milestones and validation evidence are in
 `docs/project-history.md`; focused details belong in the relevant design,
 testing, safety, and build documents.
 
-- Current API: 0.8.
+- Current API: 0.9.
 - API 0.4 zero-output cyclic activation is hardware-proven on ED3L position 29
   with complete working counter and exact 28-byte PDO layout.
 - Deactivation waits for configured slaves to leave SAFEOP/OP and invalidates
@@ -311,9 +316,14 @@ testing, safety, and build documents.
   in every configured output byte. Publication and the hard-zero gate are
   hardware-proven; the retained ownership-masked shadow is not bus-observable
   until the future arm test.
+- API 0.9 adds the explicit arm/disarm gate. Arm requires an active healthy
+  bus, exact configuration generation, and exact latest nonzero publication
+  sequence. Disarm waits for cyclic acknowledgement and requires a newer
+  publication before re-arm. The complete state sequence is hardware-proven
+  with an all-zero shadow; nonzero output remains untested.
 - Copied process-image concurrency and recovery rules are documented in
   `docs/process-image-exchange.md`.
-- Next step: design the explicit generation/sequence-bound arm operation and
-  its motion-inhibited commissioning test.
+- Next step: architecture/safety review of the standalone exchange path before
+  deciding whether to authorize one bounded nonzero commissioning output.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

@@ -16,6 +16,7 @@
 #include <linux/timekeeping.h>
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
+#include <linux/wait.h>
 
 #include <ecrt.h>
 
@@ -87,6 +88,7 @@ struct cw_ec_file {
 	atomic64_t dc_monitor_success_count;
 	atomic64_t dc_monitor_timeout_count;
 	atomic_t io_bus_healthy;
+	atomic_t io_outputs_armed;
 	atomic_t io_rearm_required;
 	atomic_t io_link_up;
 	atomic_t io_current_faults;
@@ -95,6 +97,10 @@ struct cw_ec_file {
 	atomic_t io_configured_slaves_online;
 	atomic_t io_configured_slaves_operational;
 	atomic64_t io_fault_count;
+	atomic64_t io_fault_output_sequence;
+	atomic64_t output_gate_request;
+	atomic64_t output_gate_applied;
+	wait_queue_head_t output_gate_wait;
 	bool io_ever_healthy;
 	spinlock_t input_lock;
 	u8 *input_buffers[2];
@@ -106,6 +112,7 @@ struct cw_ec_file {
 	u8 *output_mask;
 	u8 *output_update_mask;
 	u8 output_active;
+	int output_reader;
 	atomic64_t output_sequence;
 	bool active;
 };
@@ -203,6 +210,7 @@ static void cw_ec_free_output_buffers(struct cw_ec_file *ctx)
 	ctx->output_mask = NULL;
 	ctx->output_update_mask = NULL;
 	ctx->output_active = 0;
+	ctx->output_reader = -1;
 	atomic64_set(&ctx->output_sequence, 0);
 }
 
@@ -425,10 +433,15 @@ static void cw_ec_update_io_health(struct cw_ec_file *ctx,
 		atomic_set(&ctx->io_bus_healthy, 1);
 	} else if (ctx->io_ever_healthy &&
 		   atomic_xchg(&ctx->io_bus_healthy, 0)) {
+		atomic_set(&ctx->io_outputs_armed, 0);
+		atomic64_inc(&ctx->output_gate_request);
 		atomic_set(&ctx->io_rearm_required, 1);
 		atomic_set(&ctx->io_last_latched_faults, faults);
+		atomic64_set(&ctx->io_fault_output_sequence,
+			     atomic64_read(&ctx->output_sequence));
 		atomic64_inc(&ctx->io_fault_count);
 	} else {
+		atomic_set(&ctx->io_outputs_armed, 0);
 		atomic_set(&ctx->io_bus_healthy, 0);
 	}
 }
@@ -454,12 +467,33 @@ static void cw_ec_publish_input_snapshot(struct cw_ec_file *ctx)
 	spin_unlock_irqrestore(&ctx->input_lock, irq_flags);
 }
 
-static void cw_ec_force_outputs_zero(struct cw_ec_file *ctx)
+static void cw_ec_apply_outputs(struct cw_ec_file *ctx)
 {
+	unsigned long irq_flags;
+	u8 *source = NULL;
+	u8 reader = 0;
 	u32 i;
 
-	for (i = 0; i < ctx->domain_size; i++)
-		ctx->domain_data[i] &= ~ctx->output_mask[i];
+	if (atomic_read(&ctx->io_outputs_armed) &&
+	    atomic_read(&ctx->io_bus_healthy)) {
+		spin_lock_irqsave(&ctx->output_lock, irq_flags);
+		reader = ctx->output_active;
+		ctx->output_reader = reader;
+		source = ctx->output_buffers[reader];
+		spin_unlock_irqrestore(&ctx->output_lock, irq_flags);
+	}
+	for (i = 0; i < ctx->domain_size; i++) {
+		u8 output = source ? source[i] : 0;
+
+		ctx->domain_data[i] =
+			(ctx->domain_data[i] & ~ctx->output_mask[i]) |
+			(output & ctx->output_mask[i]);
+	}
+	if (source) {
+		spin_lock_irqsave(&ctx->output_lock, irq_flags);
+		ctx->output_reader = -1;
+		spin_unlock_irqrestore(&ctx->output_lock, irq_flags);
+	}
 }
 
 static int cw_ec_cycle_thread(void *data)
@@ -518,7 +552,7 @@ static int cw_ec_cycle_thread(void *data)
 				   domain_state.wc_state);
 		}
 		cw_ec_update_io_health(ctx, &domain_state);
-		cw_ec_force_outputs_zero(ctx);
+		cw_ec_apply_outputs(ctx);
 		if (ctx->config_dc_count) {
 			operation_result = cw_ec_dc_prepare_send(ctx);
 		} else {
@@ -534,6 +568,14 @@ static int cw_ec_cycle_thread(void *data)
 		operation_result = ecrt_master_send(ctx->master);
 		if (operation_result && !cycle_result)
 			cycle_result = operation_result;
+		if (!operation_result &&
+		    atomic64_read(&ctx->output_gate_applied) !=
+		    atomic64_read(&ctx->output_gate_request)) {
+			atomic64_set(&ctx->output_gate_applied,
+				     atomic64_read(
+					     &ctx->output_gate_request));
+			wake_up_interruptible(&ctx->output_gate_wait);
+		}
 		if (cycle_result)
 			atomic64_inc(&ctx->cycle_error_count);
 		atomic_set(&ctx->last_cycle_result, cycle_result);
@@ -576,8 +618,28 @@ static int cw_ec_wait_configured_slaves_settled(struct cw_ec_file *ctx)
 	}
 }
 
+static int cw_ec_wait_output_gate(struct cw_ec_file *ctx, u64 request)
+{
+	unsigned long timeout;
+	long wait_result;
+
+	timeout = msecs_to_jiffies(
+		2U * DIV_ROUND_UP(ctx->cycle_period_ns, 1000000U) + 100U);
+	wait_result = wait_event_interruptible_timeout(
+		ctx->output_gate_wait,
+		atomic64_read(&ctx->output_gate_applied) >= request,
+		timeout);
+	if (wait_result < 0)
+		return wait_result;
+	if (!wait_result)
+		return -ETIMEDOUT;
+	return 0;
+}
+
 static int cw_ec_deactivate_locked(struct cw_ec_file *ctx)
 {
+	u64 gate_request;
+	int gate_ret;
 	int process_ret;
 	int receive_ret;
 	int settle_ret;
@@ -586,6 +648,9 @@ static int cw_ec_deactivate_locked(struct cw_ec_file *ctx)
 	if (!ctx->active)
 		return -EINVAL;
 
+	atomic_set(&ctx->io_outputs_armed, 0);
+	gate_request = atomic64_inc_return(&ctx->output_gate_request);
+	gate_ret = cw_ec_wait_output_gate(ctx, gate_request);
 	kthread_stop(ctx->cycle_thread);
 	ctx->cycle_thread = NULL;
 	/*
@@ -611,6 +676,8 @@ static int cw_ec_deactivate_locked(struct cw_ec_file *ctx)
 		return settle_ret;
 	if (receive_ret)
 		return receive_ret;
+	if (gate_ret)
+		return gate_ret;
 	return process_ret;
 }
 
@@ -639,7 +706,9 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	mutex_init(&ctx->lock);
 	spin_lock_init(&ctx->input_lock);
 	spin_lock_init(&ctx->output_lock);
+	init_waitqueue_head(&ctx->output_gate_wait);
 	ctx->input_reader = -1;
+	ctx->output_reader = -1;
 	INIT_LIST_HEAD(&ctx->setup_sdos);
 	INIT_LIST_HEAD(&ctx->config_slaves);
 	INIT_LIST_HEAD(&ctx->config_syncs);
@@ -665,6 +734,7 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	atomic64_set(&ctx->dc_monitor_success_count, 0);
 	atomic64_set(&ctx->dc_monitor_timeout_count, 0);
 	atomic_set(&ctx->io_bus_healthy, 0);
+	atomic_set(&ctx->io_outputs_armed, 0);
 	atomic_set(&ctx->io_rearm_required, 0);
 	atomic_set(&ctx->io_link_up, 0);
 	atomic_set(&ctx->io_current_faults, 0);
@@ -673,6 +743,9 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	atomic_set(&ctx->io_configured_slaves_online, 0);
 	atomic_set(&ctx->io_configured_slaves_operational, 0);
 	atomic64_set(&ctx->io_fault_count, 0);
+	atomic64_set(&ctx->io_fault_output_sequence, 0);
+	atomic64_set(&ctx->output_gate_request, 0);
+	atomic64_set(&ctx->output_gate_applied, 0);
 	atomic64_set(&ctx->input_sequence, 0);
 	atomic64_set(&ctx->output_sequence, 0);
 	file->private_data = ctx;
@@ -1327,6 +1400,7 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	atomic64_set(&ctx->dc_monitor_success_count, 0);
 	atomic64_set(&ctx->dc_monitor_timeout_count, 0);
 	atomic_set(&ctx->io_bus_healthy, 0);
+	atomic_set(&ctx->io_outputs_armed, 0);
 	atomic_set(&ctx->io_rearm_required, 0);
 	atomic_set(&ctx->io_link_up, 0);
 	atomic_set(&ctx->io_current_faults, 0);
@@ -1335,11 +1409,15 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	atomic_set(&ctx->io_configured_slaves_online, 0);
 	atomic_set(&ctx->io_configured_slaves_operational, 0);
 	atomic64_set(&ctx->io_fault_count, 0);
+	atomic64_set(&ctx->io_fault_output_sequence, 0);
+	atomic64_set(&ctx->output_gate_request, 0);
+	atomic64_set(&ctx->output_gate_applied, 0);
 	ctx->io_ever_healthy = false;
 	ctx->input_active = 0;
 	ctx->input_reader = -1;
 	atomic64_set(&ctx->input_sequence, 0);
 	ctx->output_active = 0;
+	ctx->output_reader = -1;
 	atomic64_set(&ctx->output_sequence, 0);
 	ctx->cycle_thread = kthread_run(cw_ec_cycle_thread, ctx,
 					"cw_ec_cycle");
@@ -1492,7 +1570,7 @@ static long cw_ec_get_io_status(struct cw_ec_file *ctx, void __user *argp)
 	result.api_major = CW_EC_API_VERSION_MAJOR;
 	mutex_lock(&ctx->lock);
 	result.bus_healthy = atomic_read(&ctx->io_bus_healthy);
-	result.outputs_armed = 0;
+	result.outputs_armed = atomic_read(&ctx->io_outputs_armed);
 	result.rearm_required = atomic_read(&ctx->io_rearm_required);
 	result.link_up = atomic_read(&ctx->io_link_up);
 	result.current_faults = atomic_read(&ctx->io_current_faults);
@@ -1634,6 +1712,11 @@ static long cw_ec_publish_output(struct cw_ec_file *ctx, void __user *argp)
 	spin_lock_irqsave(&ctx->output_lock, irq_flags);
 	active = ctx->output_active;
 	target = active ^ 1U;
+	if (ctx->output_reader == target) {
+		spin_unlock_irqrestore(&ctx->output_lock, irq_flags);
+		ret = -EBUSY;
+		goto out;
+	}
 	spin_unlock_irqrestore(&ctx->output_lock, irq_flags);
 	if (copy_from_user(ctx->output_buffers[target], data_ptr, data_size)) {
 		ret = -EFAULT;
@@ -1662,6 +1745,90 @@ static long cw_ec_publish_output(struct cw_ec_file *ctx, void __user *argp)
 out:
 	if (!ret && copy_to_user(argp, &result, sizeof(result)))
 		ret = -EFAULT;
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
+
+static long cw_ec_arm_outputs(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_output_arm request;
+	u64 current_sequence;
+	int ret;
+
+	if (copy_from_user(&request, argp, sizeof(request)))
+		return -EFAULT;
+	ret = cw_ec_check_header(request.struct_size, request.api_major,
+				 sizeof(request));
+	if (ret)
+		return ret;
+	if (request.flags)
+		return -EINVAL;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->active) {
+		ret = -EINVAL;
+		goto out;
+	}
+	if (request.config_generation != ctx->config_generation) {
+		ret = -ESTALE;
+		goto out;
+	}
+	current_sequence = atomic64_read(&ctx->output_sequence);
+	if (!current_sequence || request.output_sequence != current_sequence) {
+		ret = -ESTALE;
+		goto out;
+	}
+	if (!atomic_read(&ctx->io_bus_healthy)) {
+		ret = -EAGAIN;
+		goto out;
+	}
+	if (atomic_read(&ctx->io_rearm_required) &&
+	    current_sequence <=
+		    atomic64_read(&ctx->io_fault_output_sequence)) {
+		ret = -EAGAIN;
+		goto out;
+	}
+	atomic_set(&ctx->io_rearm_required, 0);
+	atomic_set(&ctx->io_outputs_armed, 1);
+	ret = 0;
+out:
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
+
+static long cw_ec_disarm_outputs(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_output_disarm request;
+	u64 gate_request;
+	int ret;
+
+	if (copy_from_user(&request, argp, sizeof(request)))
+		return -EFAULT;
+	ret = cw_ec_check_header(request.struct_size, request.api_major,
+				 sizeof(request));
+	if (ret)
+		return ret;
+	if (request.flags)
+		return -EINVAL;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->active) {
+		ret = -EINVAL;
+		goto out;
+	}
+	if (request.config_generation != ctx->config_generation) {
+		ret = -ESTALE;
+		goto out;
+	}
+	atomic_set(&ctx->io_outputs_armed, 0);
+	atomic_set(&ctx->io_rearm_required, 1);
+	atomic64_set(&ctx->io_fault_output_sequence,
+		     atomic64_read(&ctx->output_sequence));
+	gate_request = atomic64_inc_return(&ctx->output_gate_request);
+	ret = cw_ec_wait_output_gate(ctx, gate_request);
+	if (ret)
+		goto out;
+out:
 	mutex_unlock(&ctx->lock);
 	return ret;
 }
@@ -2267,6 +2434,10 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return cw_ec_get_input_snapshot(ctx, argp);
 	case CW_EC_IOC_PUBLISH_OUTPUT:
 		return cw_ec_publish_output(ctx, argp);
+	case CW_EC_IOC_ARM_OUTPUTS:
+		return cw_ec_arm_outputs(ctx, argp);
+	case CW_EC_IOC_DISARM_OUTPUTS:
+		return cw_ec_disarm_outputs(ctx, argp);
 	default:
 		break;
 	}

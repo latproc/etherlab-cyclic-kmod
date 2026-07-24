@@ -66,3 +66,7 @@ commands, outputs, and design details.
   run. Position 29 recovered to OP/complete WC without restarting the
   transport, while `rearm_required` stayed latched with one fault epoch and
   outputs remained disarmed.
+- Added API 0.9 exact-generation/latest-sequence arm and synchronous disarm.
+  A zero-only position-29 test armed sequence 1, acknowledged disarm, rejected
+  stale sequence 1, accepted fresh sequence 2, and disarmed again with OP,
+  complete WC, and all output bytes zero.
