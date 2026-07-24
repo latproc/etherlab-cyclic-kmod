@@ -2383,6 +2383,594 @@ No Clockwork involved.
 
 ---
 
+
+# 13A. Future motion-control compatibility requirements
+
+## Objective
+
+The primary purpose of this project is to provide a deterministic, generic EtherCAT transport layer.
+
+The initial implementation **is not** a motion controller.
+
+However, the architecture and UAPI **must** support future deterministic motion-control applications, including CiA 402 Cyclic Synchronous Position (CSP), without requiring redesign of the transport layer.
+
+The first implementation should therefore expose the timing and synchronisation information required by future motion-control software while deliberately avoiding motion-specific policy.
+
+---
+
+## Design principle
+
+The kernel module owns **EtherCAT timing**.
+
+Clockwork owns **application behaviour**.
+
+Future motion-control components should consume the kernel's timing information rather than attempting to become the EtherCAT timing source.
+
+Conceptually:
+
+```text
+Clockwork
+        |
+machine logic
+        |
+        v
+generic EtherCAT transport
+        |
+deterministic EtherCAT cycle
+```
+
+Future motion control should become:
+
+```text
+Clockwork
+        |
+high-level commands
+        |
+        v
+Motion planner
+        |
+cycle-addressed setpoints
+        |
+        v
+generic EtherCAT transport
+        |
+EtherCAT network
+        |
+CiA 402 servo
+```
+
+The transport layer should remain reusable for many different EtherCAT devices.
+
+---
+
+## Kernel timing responsibilities
+
+The kernel module shall become the authoritative owner of the EtherCAT cycle.
+
+Every completed EtherCAT cycle should produce timing information including, where applicable:
+
+```text
+cycle number
+configured cycle period
+scheduled cycle time
+actual wake time
+cycle lateness
+input generation
+output generation consumed
+working counter
+working counter state
+missed deadline count
+stale output count
+driver status flags
+distributed clock timing information
+```
+
+The first useful cyclic prototype should implement the core timing fields rather than leaving all timing publication until later.
+
+At minimum, the initial cyclic API should expose:
+
+```text
+cycle number
+configured cycle period
+scheduled cycle time
+actual cycle time
+input generation
+output generation consumed
+cycle lateness
+working counter
+missed deadline count
+stale output count
+```
+
+Additional timing and Distributed Clock fields may be added in later compatible ABI revisions.
+
+---
+
+## Clockwork timing model
+
+Clockwork should not attempt to become the EtherCAT timing source.
+
+Instead, Clockwork should:
+
+```text
+read coherent process data
+determine which EtherCAT cycle produced that data
+run machine logic
+publish desired outputs
+```
+
+Clockwork may execute at the EtherCAT cycle rate if desired, but the correctness of EtherCAT packet transmission must not depend on user-space wake-up latency.
+
+The kernel continues exchanging EtherCAT frames regardless of temporary user-space scheduling delays.
+
+Clockwork should be able to wait for a new input generation when cycle-synchronised application behaviour is required, but failure or delay in that wait must not delay the kernel's EtherCAT transmission cycle.
+
+The initial API should therefore allow a future notification mechanism such as:
+
+```text
+poll/epoll notification
+blocking wait-for-cycle operation
+event notification associated with a new input generation
+```
+
+The first implementation may choose the simplest safe mechanism. It must not require busy-waiting as the only supported user-space synchronisation method.
+
+---
+
+## Initial timing API
+
+The initial implementation should expose sufficient timing information for diagnostics, Clockwork scheduling and future deterministic applications.
+
+Conceptually:
+
+```c
+struct cw_ec_cycle_info {
+    __u32 struct_size;
+    __u32 flags;
+
+    __u64 cycle_index;
+    __u64 cycle_period_ns;
+
+    __u64 scheduled_time_ns;
+    __u64 actual_time_ns;
+
+    __u64 input_generation;
+    __u64 output_generation_consumed;
+
+    __s64 wake_lateness_ns;
+
+    __u32 working_counter;
+    __u32 working_counter_state;
+
+    __u64 missed_deadlines;
+    __u64 stale_output_cycles;
+};
+```
+
+The exact structure may differ after UAPI design and compatibility review, but the concepts should remain.
+
+Use Linux fixed-width UAPI types rather than native C types in exported kernel headers.
+
+The timing structure represents the EtherCAT transport timeline rather than application or wall-clock timing.
+
+The meaning of each timestamp must be documented precisely, including:
+
+```text
+which clock source is used
+where in the cyclic sequence the timestamp is captured
+whether the value is scheduled or observed
+whether values remain monotonic across deactivate/activate
+when cycle_index resets
+```
+
+Do not publish ambiguously named timing fields.
+
+---
+
+## Process-image generation semantics
+
+The initial process-image API shall define generation semantics clearly.
+
+At minimum:
+
+```text
+input_generation
+```
+
+identifies the completed EtherCAT cycle whose coherent input image is visible to user space.
+
+```text
+output_generation
+```
+
+identifies a complete output image published by user space.
+
+```text
+output_generation_consumed
+```
+
+identifies the most recent user-space output generation copied into or otherwise consumed by the kernel cyclic path.
+
+The API documentation must define whether an output generation is considered consumed when it is:
+
+```text
+accepted from user space
+copied into the EtherLab domain
+queued for transmission
+sent by ecrt_master_send()
+```
+
+Choose one meaning and use it consistently.
+
+The preferred initial interpretation is that `output_generation_consumed` identifies the generation selected by the kernel for the current EtherCAT cycle. Separate transmitted/acknowledged concepts can be added later if technically meaningful.
+
+Clockwork must be able to determine:
+
+```text
+which cycle produced the inputs it is processing
+which user-space output generation the kernel used
+whether the same output image has been reused for multiple cycles
+```
+
+---
+
+## Time base and cycle identity
+
+The authoritative deterministic time reference for the generic API should be:
+
+```text
+cycle_index
+configured cycle_period_ns
+```
+
+Wall-clock time must not be required for deterministic application behaviour.
+
+Timestamps should use an explicitly documented monotonic kernel clock suitable for interval measurement.
+
+If Distributed Clocks are enabled later, the API may expose the relationship between:
+
+```text
+kernel application time
+EtherCAT reference clock time
+Distributed Clock phase/error information
+```
+
+Clockwork should receive this as timing and diagnostic data.
+
+Clockwork should not independently perform EtherLab Distributed Clock correction after the kernel owns the cyclic loop.
+
+---
+
+## API extensibility requirements
+
+The initial UAPI shall be versioned.
+
+The initial ABI shall not prevent future addition of features such as:
+
+```text
+cycle-addressed output updates
+scheduled output queues
+buffered output queues
+distributed clock diagnostics
+cycle-triggered notifications
+runtime SDO improvements
+future motion extensions
+```
+
+The initial implementation does **not** need to implement these capabilities.
+
+It must avoid making them impossible or forcing incompatible changes to the existing process-image and configuration interfaces.
+
+In particular:
+
+1. Do not assume that "latest output wins" is the only output-delivery model the module will ever support.
+
+2. Do not embed servo-specific fields into the generic process-image header.
+
+3. Keep process-image transport and any future scheduled-output mechanism as separate concepts.
+
+4. Use feature flags or capability queries so user space can discover later optional facilities.
+
+5. Do not require increasing the major API version merely to add a separate optional scheduled-output interface.
+
+6. Do not expose kernel pointers or internal EtherLab objects as future scheduling handles.
+
+---
+
+## Capability discovery
+
+Include or reserve a capability-discovery mechanism.
+
+Conceptually:
+
+```text
+GET_API_VERSION
+GET_CAPABILITIES
+```
+
+Possible future capability flags include:
+
+```text
+coherent process image
+cycle timing information
+cycle notification
+distributed clock diagnostics
+scheduled output queue
+runtime SDO requests
+```
+
+Do not report a capability until its semantics are implemented and documented.
+
+This allows future Clockwork or motion software to use advanced features without assuming that every deployed module version supports them.
+
+---
+
+## Explicitly deferred functionality
+
+The following are intentionally **outside the scope** of the first implementation:
+
+```text
+CiA 402 Cyclic Synchronous Position (CSP)
+
+trajectory generation
+
+motion interpolation
+
+jerk-limited motion
+
+coordinated multi-axis motion
+
+CNC functionality
+
+servo planner
+
+following-error supervision
+
+motion queue management
+
+servo-specific underrun policy
+
+CiA 402 state-machine policy
+```
+
+These require significantly more design work and should not complicate the initial EtherCAT transport implementation.
+
+No first-version kernel API should present these as partially supported production features.
+
+---
+
+## Expected future CSP architecture
+
+If CSP support is later added, the preferred architecture is expected to resemble:
+
+```text
+Clockwork
+        |
+high-level motion request
+        |
+        v
+Motion planner
+        |
+cycle-addressed target positions
+        |
+        v
+etherlab-cyclic-kmod
+        |
+deterministic EtherCAT cycle
+        |
+CiA 402 CSP servo
+```
+
+The kernel should remain responsible for deterministic EtherCAT transport and exact cycle selection.
+
+The motion planner should remain replaceable.
+
+The transport layer should not become permanently coupled to one motion-control implementation.
+
+A future CSP experiment may initially use a dedicated standalone real-time user-space tool or motion service rather than IOD.
+
+This allows CSP timing, queueing and underrun behaviour to be evaluated independently before choosing a permanent Clockwork integration design.
+
+---
+
+## Future scheduled-output concept
+
+The initial implementation shall not freeze a scheduled-output ABI.
+
+It should nevertheless preserve a clean architectural path for a later queue containing output data associated with a future EtherCAT cycle.
+
+Conceptually only:
+
+```c
+struct cw_ec_scheduled_output {
+    __u32 struct_size;
+    __u32 flags;
+
+    __u64 configuration_generation;
+    __u64 target_cycle;
+
+    __u32 output_group_id;
+    __u32 payload_length;
+
+    /* payload supplied through a future bounded interface */
+};
+```
+
+This is not a required first-version structure and must not be copied directly into the production UAPI without further design.
+
+A later design must determine:
+
+```text
+queue ownership
+queue depth
+memory limits
+how points are submitted
+how late points are rejected
+how configuration generations are checked
+how underrun is reported
+what occurs on deactivate
+whether queues are per-domain, per-output group or per-client
+```
+
+The initial API should simply avoid conflicting assumptions.
+
+---
+
+## Future CSP safety and underrun decisions
+
+Future CSP support will require explicit decisions about what happens when the next scheduled target is unavailable.
+
+Possible policies may include:
+
+```text
+hold last target
+controlled stop
+quick stop
+disable operation
+drop drive enable
+```
+
+The generic transport module must not silently choose a servo-motion safety policy during the first implementation.
+
+Any future scheduled-output interface must:
+
+```text
+reject points for cycles that have already passed
+report queue depth
+report late-point rejection
+report underruns
+associate queued data with a configuration generation
+define behaviour during deactivate and link loss
+```
+
+The appropriate machine response remains a later safety and motion-control design decision.
+
+Software behaviour does not replace hardware safety systems.
+
+---
+
+## Distributed Clock compatibility
+
+The initial timing design shall not make future Distributed Clock use difficult.
+
+If the kernel owns the cyclic loop, it should eventually own the consistently placed EtherLab calls associated with:
+
+```text
+application time
+reference clock synchronisation
+slave clock synchronisation
+reference-clock diagnostics
+```
+
+The initial UAPI should allow compatible addition of:
+
+```text
+reference clock availability
+application/reference time difference
+phase or offset diagnostics
+maximum observed DC deviation
+DC synchronisation status flags
+```
+
+Do not require Clockwork to duplicate or compete with kernel-owned Distributed Clock timing.
+
+---
+
+## Documentation requirements
+
+Document the timing and generation model in:
+
+```text
+docs/uapi.md
+docs/architecture.md
+```
+
+At minimum, document:
+
+```text
+cycle_index lifetime and reset behaviour
+cycle_period_ns
+timestamp clock source
+timestamp capture points
+input_generation publication
+output_generation publication
+output_generation_consumed semantics
+stale-output counting
+missed-deadline counting
+notification semantics
+memory ordering required by user space
+capability discovery
+```
+
+A developer integrating another user-space application should not need to inspect kernel code to understand the transport timeline.
+
+---
+
+## Initial implementation acceptance criteria
+
+Before IOD integration begins, demonstrate that:
+
+1. Every EtherCAT cycle has a unique, monotonically increasing cycle number while the cyclic engine is running.
+
+2. The configured cycle period is available to user space.
+
+3. User space can determine which EtherCAT cycle produced the current coherent input image.
+
+4. User space can determine which output generation the kernel selected for transmission.
+
+5. User space can detect when the same output generation has been reused for multiple cycles.
+
+6. Scheduled and actual cycle timing can be compared.
+
+7. Cycle lateness and missed deadlines are measurable without per-cycle kernel logging.
+
+8. Working-counter state is associated with the published runtime status.
+
+9. The UAPI versioning and capability model support future compatible extension.
+
+10. The current ABI contains no assumptions that prevent future cycle-addressed output scheduling.
+
+11. No servo-specific concepts have been embedded into the generic transport API.
+
+12. The standalone tools can display and record the timing fields for benchmark comparison.
+
+13. Timing and generation semantics are documented sufficiently for an independent user-space client.
+
+---
+
+## Deferred CSP decision gate
+
+Do not finalise a production CSP or scheduled-output API as part of the initial transport implementation.
+
+After the normal process-image path is stable, create a separate design and experiment phase covering:
+
+```text
+ED3L CSP support and PDO mapping
+CiA 402 mode 8 behaviour
+Distributed Clock requirements
+cycle-addressed setpoint buffering
+minimum safe queue depth
+user-space real-time planner behaviour
+queue underrun behaviour
+drive following-error behaviour
+multi-axis synchronisation
+controlled stopping
+Clockwork integration
+```
+
+Only after those tests should the project decide whether motion setpoint generation belongs in:
+
+```text
+Clockwork
+a dedicated real-time user-space motion service
+a separate motion kernel module
+or another architecture
+```
+
+The generic kernel transport should not be redesigned merely because one experimental motion architecture was chosen.
+
+---
+
 # 14. Phase 7 — build a compatibility user-space library
 
 ## Goal
@@ -4113,3 +4701,5 @@ Kernel owns:
 Preserve this line unless a concrete technical constraint forces it to change.
 
 If such a constraint is found, document it before moving policy into the kernel.
+
+**The kernel module shall own deterministic EtherCAT transport and timing. Higher-level control algorithms—including future motion control, trajectory planning and CiA 402 CSP—should remain layered above the transport unless a demonstrated technical requirement justifies moving functionality into the kernel. The initial UAPI shall therefore expose sufficient timing, generation and cycle information to support future deterministic applications without embedding servo-specific behaviour into the generic transport layer.**
