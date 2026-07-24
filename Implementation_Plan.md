@@ -2391,6 +2391,35 @@ A standalone utility can:
 
 No Clockwork involved.
 
+## Bounded batched input history
+
+The latest-snapshot API is intentionally overwriteable: a slow reader obtains
+the newest coherent image, but it cannot reconstruct a pulse that began and
+ended between reads. Add an optional, pre-activation bounded history for
+controllers that need per-cycle observation without one user-space wake per
+EtherCAT cycle.
+
+The first design stores complete coherent input images rather than interpreting
+application semantics in the kernel:
+
+- user space explicitly configures ring depth before activation;
+- all memory is allocated and validated before the cyclic task starts;
+- every retained record includes generation, cycle index, input sequence, and
+  the cycle timing needed to order it;
+- one batch operation drains multiple ordered records into caller-owned
+  buffers;
+- overwrite, reservation conflict, and sequence gaps are explicit counters,
+  never silent loss;
+- the cyclic path never waits for a reader and performs no allocation;
+- deactivation/close frees history only after the cyclic task has joined; and
+- zero history depth preserves the current latest-snapshot cost and behavior.
+
+At the observed 290-byte image and 10 kHz, one additional full-image history
+copy is about 2.9 MB/s, so correctness and generic semantics take precedence
+over an entry-specific change journal. A later opt-in change journal may
+reduce bandwidth, but must select stable entry IDs and must not embed machine
+policy.
+
 ---
 
 

@@ -137,12 +137,30 @@ struct counts {
 	uint32_t domain_assignments;
 };
 
+struct io_entry {
+	struct cw_ec_config_entry cfg;
+	struct cw_ec_entry_offset offset;
+	uint8_t direction;
+};
+
+struct io_metadata {
+	struct cw_ec_config_sync *syncs;
+	struct cw_ec_config_pdo *pdos;
+	struct io_entry *entries;
+	uint32_t sync_count;
+	uint32_t pdo_count;
+	uint32_t entry_count;
+};
+
+static bool suppress_offset_output;
+
 static void usage(const char *program)
 {
 	fprintf(stderr,
 		"usage:\n"
 		"  %s check CONFIG\n"
 		"  %s prepare CONFIG [DEVICE]\n"
+		"  %s io CONFIG PERIOD_NS [DEVICE]\n"
 		"  %s cycle CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-strict CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-rate CONFIG START_PERIOD_NS TARGET_PERIOD_NS DURATION_SECONDS [DEVICE]\n"
@@ -154,7 +172,7 @@ static void usage(const char *program)
 		"  %s cycle-abi CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s pulse-entry CONFIG PERIOD_NS ENTRY_ID PULSE_MS [DEVICE]\n",
 		program, program, program, program, program, program, program,
-		program, program, program, program, program);
+		program, program, program, program, program, program);
 }
 
 static int expect_ioctl_errno(int fd, unsigned long request, void *argument,
@@ -498,6 +516,136 @@ static int scan_config(const char *path, struct counts *counts)
 	return 0;
 }
 
+static void free_io_metadata(struct io_metadata *metadata)
+{
+	free(metadata->syncs);
+	free(metadata->pdos);
+	free(metadata->entries);
+	memset(metadata, 0, sizeof(*metadata));
+}
+
+static int load_io_metadata(const char *path, const struct counts *counts,
+			    struct io_metadata *metadata)
+{
+	char line[LINE_MAX_BYTES];
+	struct record record;
+	FILE *file;
+	uint32_t i;
+
+	memset(metadata, 0, sizeof(*metadata));
+	metadata->syncs = calloc(counts->syncs, sizeof(*metadata->syncs));
+	metadata->pdos = calloc(counts->pdos, sizeof(*metadata->pdos));
+	metadata->entries = calloc(counts->entries,
+				   sizeof(*metadata->entries));
+	if (!metadata->syncs || !metadata->pdos || !metadata->entries)
+		goto fail;
+	file = fopen(path, "r");
+	if (!file)
+		goto fail;
+	while (fgets(line, sizeof(line), file)) {
+		if (parse_record(line, &record) <= 0)
+			continue;
+		switch (record.kind) {
+		case RECORD_SYNC:
+			metadata->syncs[metadata->sync_count++] =
+				record.sync;
+			break;
+		case RECORD_PDO:
+			metadata->pdos[metadata->pdo_count++] = record.pdo;
+			break;
+		case RECORD_ENTRY:
+			if (!record.entry.entry_id)
+				break;
+			metadata->entries[metadata->entry_count++].cfg =
+				record.entry;
+			break;
+		default:
+			break;
+		}
+	}
+	if (ferror(file)) {
+		fclose(file);
+		goto fail;
+	}
+	fclose(file);
+	for (i = 0; i < metadata->entry_count; i++) {
+		struct cw_ec_config_pdo *pdo = NULL;
+		struct cw_ec_config_sync *sync = NULL;
+		uint32_t j;
+
+		for (j = 0; j < metadata->pdo_count; j++) {
+			if (metadata->pdos[j].config_id ==
+			    metadata->entries[i].cfg.pdo_config_id) {
+				pdo = &metadata->pdos[j];
+				break;
+			}
+		}
+		if (!pdo)
+			goto fail;
+		for (j = 0; j < metadata->sync_count; j++) {
+			if (metadata->syncs[j].config_id ==
+			    pdo->sync_config_id) {
+				sync = &metadata->syncs[j];
+				break;
+			}
+		}
+		if (!sync)
+			goto fail;
+		metadata->entries[i].direction = sync->direction;
+	}
+	return 0;
+
+fail:
+	free_io_metadata(metadata);
+	return -1;
+}
+
+static struct io_entry *find_io_entry(struct io_metadata *metadata,
+				      uint32_t entry_id)
+{
+	uint32_t i;
+
+	for (i = 0; i < metadata->entry_count; i++)
+		if (metadata->entries[i].cfg.entry_id == entry_id)
+			return &metadata->entries[i];
+	return NULL;
+}
+
+static uint64_t image_get_value(const uint8_t *image,
+				const struct cw_ec_entry_offset *offset)
+{
+	uint64_t value = 0;
+	uint32_t first_bit = offset->global_offset * 8U +
+			     offset->bit_position;
+	uint32_t bit;
+
+	for (bit = 0; bit < offset->bit_length; bit++)
+		if (image[(first_bit + bit) / 8U] &
+		    (1U << ((first_bit + bit) % 8U)))
+			value |= 1ULL << bit;
+	return value;
+}
+
+static void image_set_value(uint8_t *image, uint8_t *mask,
+			    const struct cw_ec_entry_offset *offset,
+			    uint64_t value)
+{
+	uint32_t first_bit = offset->global_offset * 8U +
+			     offset->bit_position;
+	uint32_t bit;
+
+	for (bit = 0; bit < offset->bit_length; bit++) {
+		uint8_t bit_mask = 1U << ((first_bit + bit) % 8U);
+		uint32_t byte = (first_bit + bit) / 8U;
+
+		mask[byte] |= bit_mask;
+		if (value & (1ULL << bit))
+			image[byte] |= bit_mask;
+		else
+			image[byte] &= ~bit_mask;
+	}
+}
+
 static int submit_record(int fd, const struct record *record)
 {
 	switch (record->kind) {
@@ -627,7 +775,7 @@ static int configure_fd(int fd, const char *path,
 			strerror(errno), domain.failed_config_id);
 		return -1;
 	}
-	if (print_offsets(fd, path))
+	if (!suppress_offset_output && print_offsets(fd, path))
 		return -1;
 	*validated = validate;
 	return 0;
@@ -1990,6 +2138,432 @@ out:
 	return ret;
 }
 
+static void io_print_help(void)
+{
+	printf("commands:\n"
+	       "  list                         list configured process entries\n"
+	       "  read ENTRY_ID                read one value from the latest image\n"
+	       "  watch ENTRY_ID COUNT MS      repeatedly read one value\n"
+	       "  set ENTRY_ID VALUE           stage one output value\n"
+	       "  zero                         stage zero for every output entry\n"
+	       "  publish                      publish staged values, still disarmed\n"
+	       "  arm                          explicitly enable the last publication\n"
+	       "  disarm                       synchronously zero-gate outputs\n"
+	       "  status                       show bus and output state\n"
+	       "  help                         show this command list\n"
+	       "  quit                         disarm, deactivate, and exit\n");
+}
+
+static int io_read_entry(int fd, uint32_t domain_size, uint8_t *snapshot_data,
+			 struct io_entry *entry)
+{
+	struct cw_ec_input_snapshot snapshot = {
+		.struct_size = sizeof(snapshot),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.data_ptr = (uintptr_t)snapshot_data,
+		.data_capacity = domain_size,
+	};
+	uint64_t value;
+
+	if (entry->offset.bit_length > 64U) {
+		fprintf(stderr,
+			"cw_ec_io: entry width %u exceeds scalar display limit\n",
+			entry->offset.bit_length);
+		return -1;
+	}
+	if (ioctl(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT, &snapshot) < 0) {
+		fprintf(stderr, "cw_ec_io: input snapshot failed: %s\n",
+			strerror(errno));
+		return -1;
+	}
+	value = image_get_value(snapshot_data, &entry->offset);
+	printf("entry=%" PRIu32 " object=0x%04" PRIx16 ":%02" PRIx8
+	       " direction=%s value=%" PRIu64 " (0x%" PRIx64
+	       ") cycle=%" PRIu64 " sequence=%" PRIu64 "\n",
+	       entry->cfg.entry_id, entry->cfg.index, entry->cfg.subindex,
+	       entry->direction == CW_EC_DIR_INPUT ? "input" : "output",
+	       value, value, (uint64_t)snapshot.cycle_count,
+	       (uint64_t)snapshot.input_sequence);
+	return 0;
+}
+
+static void io_print_status(int fd)
+{
+	struct cw_ec_io_status status = {
+		.struct_size = sizeof(status),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_cycle_status cycle = {
+		.struct_size = sizeof(cycle),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+
+	if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &status) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CYCLE_GET_STATUS, &cycle) < 0) {
+		fprintf(stderr, "cw_ec_io: status failed: %s\n",
+			strerror(errno));
+		return;
+	}
+	printf("status: active=%u period=%" PRIu32 " ns cycles=%" PRIu64
+	       " healthy=%u armed=%u rearm_required=%u faults=0x%08" PRIx32
+	       " online=%" PRIu32 "/%" PRIu32
+	       " operational=%" PRIu32 "/%" PRIu32 "\n",
+	       cycle.active, cycle.cycle_period_ns,
+	       (uint64_t)cycle.cycle_count, status.bus_healthy,
+	       status.outputs_armed, status.rearm_required,
+	       status.current_faults, status.configured_slaves_online,
+	       status.configured_slave_count,
+	       status.configured_slaves_operational,
+	       status.configured_slave_count);
+}
+
+static int interactive_io(const char *path, uint32_t period_ns,
+			  const char *device)
+{
+	struct cw_ec_config_validate validate;
+	struct cw_ec_cycle_activate activate = {
+		.struct_size = sizeof(activate),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.cycle_period_ns = period_ns,
+	};
+	struct cw_ec_cycle_deactivate deactivate = {
+		.struct_size = sizeof(deactivate),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_output_publish output = {
+		.struct_size = sizeof(output),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_output_arm arm = {
+		.struct_size = sizeof(arm),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_output_disarm disarm = {
+		.struct_size = sizeof(disarm),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_io_status io_status = {
+		.struct_size = sizeof(io_status),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct io_metadata metadata;
+	struct counts counts;
+	uint8_t *snapshot_data = NULL;
+	uint8_t *output_data = NULL;
+	uint8_t *output_mask = NULL;
+	char command[256];
+	bool active = false;
+	bool armed = false;
+	bool staged = false;
+	bool published = false;
+	int fd = -1;
+	int ret = 1;
+	uint32_t i;
+
+	if (scan_config(path, &counts) ||
+	    load_io_metadata(path, &counts, &metadata)) {
+		fprintf(stderr, "cw_ec_io: cannot load configuration metadata\n");
+		return 1;
+	}
+	fd = open(device, O_RDWR | O_CLOEXEC);
+	if (fd < 0) {
+		fprintf(stderr, "cw_ec_io: cannot open %s: %s\n",
+			device, strerror(errno));
+		goto out;
+	}
+	suppress_offset_output = true;
+	if (configure_fd(fd, path, &validate))
+		goto out;
+	for (i = 0; i < metadata.entry_count; i++) {
+		metadata.entries[i].offset.struct_size =
+			sizeof(metadata.entries[i].offset);
+		metadata.entries[i].offset.api_major =
+			CW_EC_API_VERSION_MAJOR;
+		metadata.entries[i].offset.entry_id =
+			metadata.entries[i].cfg.entry_id;
+		if (ioctl(fd, CW_EC_IOC_GET_ENTRY_OFFSET,
+			  &metadata.entries[i].offset) < 0) {
+			fprintf(stderr,
+				"cw_ec_io: offset lookup for entry %" PRIu32
+				" failed: %s\n",
+				metadata.entries[i].cfg.entry_id,
+				strerror(errno));
+			goto out;
+		}
+	}
+	if (ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE, &activate) < 0) {
+		fprintf(stderr, "cw_ec_io: activation failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	active = true;
+	snapshot_data = calloc(activate.domain_size, 1);
+	output_data = calloc(activate.domain_size, 1);
+	output_mask = calloc(activate.domain_size, 1);
+	if (!snapshot_data || !output_data || !output_mask) {
+		fprintf(stderr, "cw_ec_io: allocate process images: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	for (i = 0; i < 100; i++) {
+		io_status.struct_size = sizeof(io_status);
+		io_status.api_major = CW_EC_API_VERSION_MAJOR;
+		if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0)
+			goto out;
+		if (io_status.bus_healthy)
+			break;
+		usleep(50000);
+	}
+	printf("cw_ec_io: active, outputs disarmed, image=%" PRIu32
+	       " bytes, entries=%" PRIu32 "\n",
+	       activate.domain_size, metadata.entry_count);
+	if (!io_status.bus_healthy)
+		printf("cw_ec_io: warning: bus is not fully healthy; reads remain available but arm will fail\n");
+	io_print_help();
+
+	while (printf("cw-ec> "), fflush(stdout),
+	       fgets(command, sizeof(command), stdin)) {
+		char *name;
+		char *arg1;
+		char *arg2;
+		char *arg3;
+		struct io_entry *entry;
+		uint64_t value;
+
+		name = strtok(command, " \t\r\n");
+		arg1 = strtok(NULL, " \t\r\n");
+		arg2 = strtok(NULL, " \t\r\n");
+		arg3 = strtok(NULL, " \t\r\n");
+		if (!name)
+			continue;
+		if (!strcmp(name, "quit") || !strcmp(name, "exit")) {
+			ret = 0;
+			break;
+		}
+		if (!strcmp(name, "help")) {
+			io_print_help();
+			continue;
+		}
+		if (!strcmp(name, "status")) {
+			io_print_status(fd);
+			continue;
+		}
+		if (!strcmp(name, "list")) {
+			for (i = 0; i < metadata.entry_count; i++)
+				printf("%" PRIu32
+				       " 0x%04" PRIx16 ":%02" PRIx8
+				       " %-6s bits=%u offset=%" PRIu32
+				       ".%u\n",
+				       metadata.entries[i].cfg.entry_id,
+				       metadata.entries[i].cfg.index,
+				       metadata.entries[i].cfg.subindex,
+				       metadata.entries[i].direction ==
+						       CW_EC_DIR_INPUT ?
+					       "input" : "output",
+				       metadata.entries[i].offset.bit_length,
+				       metadata.entries[i].offset.global_offset,
+				       metadata.entries[i].offset.bit_position);
+			continue;
+		}
+		if (!strcmp(name, "read") || !strcmp(name, "watch")) {
+			uint64_t entry_id;
+			uint64_t count = 1;
+			uint64_t interval_ms = 100;
+
+			if (!arg1 ||
+			    parse_u64(arg1, UINT32_MAX, &entry_id) ||
+			    !entry_id) {
+				printf("usage: %s ENTRY_ID%s\n", name,
+				       !strcmp(name, "watch") ?
+					       " COUNT INTERVAL_MS" : "");
+				continue;
+			}
+			if (!strcmp(name, "watch") &&
+			    (!arg2 || !arg3 ||
+			     parse_u64(arg2, 1000000, &count) || !count ||
+			     parse_u64(arg3, 60000, &interval_ms))) {
+				printf("usage: watch ENTRY_ID COUNT INTERVAL_MS\n");
+				continue;
+			}
+			entry = find_io_entry(&metadata, entry_id);
+			if (!entry) {
+				printf("unknown entry ID\n");
+				continue;
+			}
+			while (count--) {
+				if (io_read_entry(fd, activate.domain_size,
+						  snapshot_data, entry))
+					break;
+				if (count)
+					usleep((useconds_t)interval_ms * 1000U);
+			}
+			continue;
+		}
+		if (!strcmp(name, "set")) {
+			uint64_t entry_id;
+
+			if (armed) {
+				printf("disarm before staging another value\n");
+				continue;
+			}
+			if (!arg1 || !arg2 ||
+			    parse_u64(arg1, UINT32_MAX, &entry_id) ||
+			    parse_u64(arg2, UINT64_MAX, &value)) {
+				printf("usage: set ENTRY_ID VALUE\n");
+				continue;
+			}
+			entry = find_io_entry(&metadata, entry_id);
+			if (!entry || entry->direction != CW_EC_DIR_OUTPUT) {
+				printf("entry is not a configured output\n");
+				continue;
+			}
+			if (entry->offset.bit_length > 64U ||
+			    (entry->offset.bit_length < 64U &&
+			     value >=
+				     (1ULL << entry->offset.bit_length))) {
+				printf("value does not fit the entry width\n");
+				continue;
+			}
+			image_set_value(output_data, output_mask,
+					&entry->offset, value);
+			staged = true;
+			published = false;
+			printf("staged entry %" PRIu32 " = %" PRIu64
+			       "; outputs remain disarmed\n",
+			       entry->cfg.entry_id, value);
+			continue;
+		}
+		if (!strcmp(name, "zero")) {
+			if (armed) {
+				printf("disarm before staging zero\n");
+				continue;
+			}
+			memset(output_data, 0, activate.domain_size);
+			memset(output_mask, 0, activate.domain_size);
+			for (i = 0; i < metadata.entry_count; i++)
+				if (metadata.entries[i].direction ==
+				    CW_EC_DIR_OUTPUT)
+					image_set_value(
+						output_data, output_mask,
+						&metadata.entries[i].offset, 0);
+			staged = true;
+			published = false;
+			printf("staged zero for all configured outputs\n");
+			continue;
+		}
+		if (!strcmp(name, "publish")) {
+			if (armed) {
+				printf("disarm before publishing another image\n");
+				continue;
+			}
+			if (!staged) {
+				printf("no staged output values\n");
+				continue;
+			}
+			io_status.struct_size = sizeof(io_status);
+			io_status.api_major = CW_EC_API_VERSION_MAJOR;
+			if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS,
+				  &io_status) < 0) {
+				printf("status failed: %s\n", strerror(errno));
+				continue;
+			}
+			output.data_ptr = (uintptr_t)output_data;
+			output.mask_ptr = (uintptr_t)output_mask;
+			output.data_size = activate.domain_size;
+			output.config_generation =
+				io_status.config_generation;
+			if (ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT,
+				  &output) < 0) {
+				printf("publish failed: %s\n", strerror(errno));
+				continue;
+			}
+			published = true;
+			printf("published sequence=%" PRIu64
+			       "; outputs remain disarmed\n",
+			       (uint64_t)output.output_sequence);
+			continue;
+		}
+		if (!strcmp(name, "arm")) {
+			const char *authorized =
+				getenv("CW_EC_NONZERO_OUTPUT_AUTHORIZED");
+
+			if (!published) {
+				printf("publish a staged image before arm\n");
+				continue;
+			}
+			if (!authorized || strcmp(authorized, "YES")) {
+				printf("arm refused: start cw_ec_io with CW_EC_NONZERO_OUTPUT_AUTHORIZED=YES only after physical safety approval\n");
+				continue;
+			}
+			arm.config_generation = output.config_generation;
+			arm.output_sequence = output.output_sequence;
+			if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) < 0) {
+				printf("arm failed: %s\n", strerror(errno));
+				continue;
+			}
+			armed = true;
+			printf("ARMED sequence=%" PRIu64 "\n",
+			       (uint64_t)output.output_sequence);
+			continue;
+		}
+		if (!strcmp(name, "disarm")) {
+			io_status.struct_size = sizeof(io_status);
+			io_status.api_major = CW_EC_API_VERSION_MAJOR;
+			if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS,
+				  &io_status) < 0)
+				continue;
+			if (!io_status.outputs_armed) {
+				armed = false;
+				printf("outputs are already disarmed\n");
+				continue;
+			}
+			disarm.config_generation =
+				io_status.config_generation;
+			if (ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS,
+				  &disarm) < 0) {
+				printf("disarm failed: %s\n", strerror(errno));
+				continue;
+			}
+			armed = false;
+			published = false;
+			printf("outputs synchronously disarmed\n");
+			continue;
+		}
+		printf("unknown command; enter help\n");
+	}
+	if (feof(stdin))
+		ret = 0;
+
+out:
+	if (fd >= 0 && active) {
+		io_status.struct_size = sizeof(io_status);
+		io_status.api_major = CW_EC_API_VERSION_MAJOR;
+		if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) == 0 &&
+		    io_status.outputs_armed) {
+			disarm.config_generation =
+				io_status.config_generation;
+			if (ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS,
+				  &disarm) < 0)
+				fprintf(stderr,
+					"cw_ec_io: cleanup disarm failed: %s\n",
+					strerror(errno));
+		}
+		if (ioctl(fd, CW_EC_IOC_CYCLE_DEACTIVATE,
+			  &deactivate) < 0)
+			fprintf(stderr,
+				"cw_ec_io: cleanup deactivation failed: %s\n",
+				strerror(errno));
+	}
+	if (fd >= 0 && close(fd) < 0)
+		ret = 1;
+	free(snapshot_data);
+	free(output_data);
+	free(output_mask);
+	free_io_metadata(&metadata);
+	suppress_offset_output = false;
+	return ret;
+}
+
 int main(int argc, char **argv)
 {
 	const char *device = "/dev/cw_ethercat0";
@@ -2020,6 +2594,16 @@ int main(int argc, char **argv)
 		if (argc == 4)
 			device = argv[3];
 		return prepare(argv[2], device);
+	}
+	if (!strcmp(argv[1], "io") && (argc == 4 || argc == 5)) {
+		if (parse_u64(argv[3], CW_EC_CYCLE_PERIOD_MAX_NS, &period) ||
+		    period < CW_EC_CYCLE_PERIOD_MIN_NS) {
+			fprintf(stderr, "cw_ec_io: invalid cycle period\n");
+			return 2;
+		}
+		if (argc == 5)
+			device = argv[4];
+		return interactive_io(argv[2], period, device);
 	}
 	if (!strcmp(argv[1], "pulse-entry") &&
 	    (argc == 6 || argc == 7)) {

@@ -260,6 +260,27 @@ This acknowledgement does not authorize other entries. Confirm terminal
 identity, power isolation, and the intended observable output at the machine.
 Never use it for drive enable or motion.
 
+## Interactive I/O commissioning
+
+`cw_ec_io` uses the same validated configuration path as `cw_ec_config`:
+
+```sh
+sudo tools/cw_ec_io tools/configs/all34_captured_topology.conf 1000000
+```
+
+The session activates with outputs disarmed. `list`, `read`, `watch`, and
+`status` are available without nonzero-output authorization. `set` only stages
+a value, and `publish` only copies the masked shadow into the kernel while the
+gate remains disarmed. Actual output requires a later explicit `arm` command.
+
+The CLI refuses `arm` unless it was started with
+`CW_EC_NONZERO_OUTPUT_AUTHORIZED=YES`. Set that variable only under the site's
+commissioning procedure after identifying the exact stable entry ID and
+physically confirming that the output is safe. `disarm` synchronously
+zero-gates the output. `quit` disarms if necessary, deactivates, and releases
+the master; process death invokes the kernel's descriptor-release teardown.
+The CLI also prohibits publishing a replacement image while armed.
+
 ## Unload and local cleanup
 
 In-tree development teardown is:

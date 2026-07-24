@@ -459,6 +459,10 @@ testing, safety, and build documents.
 - A follow-up 100,000-interval 10 kHz exchange measured an exact 10 s
   scheduled span (`grid_error=0`) and 99,999.975 ns mean actual wake interval.
   The kernel deadline grid did not drift in that sample.
+- `tools/cw_ec_io` provides interactive list/read/watch/status and staged
+  masked set/publish/arm/disarm commands over the shared configuration parser.
+  Hardware tests proved 34/34 read-only operation and that a nonzero staged
+  publication remains disarmed and unauthorized `arm` is refused.
 - `cw_ec_entry_offset.global_offset` is now the preferred name for the global
   concatenated-image byte offset. The old `domain_offset` member remains an
   ABI-neutral deprecated union alias.

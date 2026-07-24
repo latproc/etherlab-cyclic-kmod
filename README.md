@@ -88,6 +88,13 @@ API 0.15 currently includes:
 - bounded resource limits, hostile-input validation, and partial-failure
   unwind.
 
+For commissioning and diagnosis, `tools/cw_ec_io` is an interactive frontend
+over the same declarative configuration parser. It can list and read entries,
+watch values, and stage masked output values. Outputs start disarmed; staging
+and publication do not transmit a commanded value. `arm` is a separate
+explicit command and is refused unless the process was started with
+`CW_EC_NONZERO_OUTPUT_AUTHORIZED=YES` after site safety approval.
+
 Hardware evidence includes the current 34-slave target, multiple explicit
 domains, Distributed Clocks, servo supply loss/restoration, controller-death
 teardown, and zero-output lifecycle repetition. Nonzero commissioning has been

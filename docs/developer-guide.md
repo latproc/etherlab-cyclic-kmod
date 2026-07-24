@@ -262,6 +262,14 @@ The lease detects a controller that remains alive but stops renewing. It does
 not interpret why upstream control was lost, and it does not replace a
 hardware watchdog or safety system.
 
+`tools/cw_ec_io` is the interactive reference controller for inspecting this
+lifecycle. It resolves stable entry IDs to global offsets, decodes scalar
+entries up to 64 bits, stages only configured output entries, publishes a
+masked shadow while disarmed, and keeps arm as a distinct authorized action.
+It deliberately shares `cw_ec_config`'s parser and activation implementation
+through the `cw_ec_config io` frontend so commissioning behavior cannot drift
+to a second configuration format.
+
 ## Error and teardown rules
 
 Important errors include:

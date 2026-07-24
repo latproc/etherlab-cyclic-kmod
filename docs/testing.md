@@ -679,6 +679,19 @@ therefore showed no drift in this sample; execution and user observation
 jitter occurred around that grid. The user process skipped 86 intermediate
 notifications during its 99,915 exchanges.
 
+## Interactive commissioning CLI
+
+The first `cw_ec_io` hardware test used the full 34-slave configuration at
+1 ms. It reached 34/34 online and operational with outputs disarmed, read
+stable input entry `503316487` (`0x6041:00`) as `0x608`, exited normally,
+returned master 0 idle, and permitted module unload.
+
+A second session staged value `6` for configured output entry `503316481`,
+published sequence 1, and confirmed `armed=0`. With no
+`CW_EC_NONZERO_OUTPUT_AUTHORIZED=YES` environment gate, the CLI refused the
+`arm` command; a following status still reported `armed=0`. It then exited and
+unloaded cleanly. No nonzero output was transmitted by these tests.
+
 ## Zero-armed controller death
 
 `tools/cw_ec_test_controller_death.sh` starts `cycle-zero-hold`, waits until an
