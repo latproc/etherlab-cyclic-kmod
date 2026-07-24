@@ -139,6 +139,10 @@ int main(int argc, char **argv)
 		.struct_size = sizeof(dc_status),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	struct cw_ec_io_status io_status = {
+		.struct_size = sizeof(io_status),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
 	unsigned long unknown_ioctl = _IO(CW_EC_IOC_MAGIC, 0x7f);
 	int failures = 0;
 	int second_fd;
@@ -454,6 +458,19 @@ int main(int argc, char **argv)
 		failures++;
 	} else {
 		printf("PASS: configured inactive DC status is clean\n");
+	}
+	if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0) {
+		fprintf(stderr, "FAIL: get inactive IO status: %s\n",
+			strerror(errno));
+		failures++;
+	} else if (!io_status.config_generation ||
+		   io_status.bus_healthy || io_status.outputs_armed ||
+		   io_status.rearm_required || io_status.fault_count ||
+		   io_status.configured_slave_count != 1) {
+		fprintf(stderr, "FAIL: initial IO status is inconsistent\n");
+		failures++;
+	} else {
+		printf("PASS: generation-bound inactive IO status is clean\n");
 	}
 	cycle_activate.cycle_period_ns = CW_EC_CYCLE_PERIOD_MIN_NS - 1;
 	errno = 0;

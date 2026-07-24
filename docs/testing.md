@@ -272,6 +272,22 @@ transition observed it; each repetition then logged ED3L AL `0x001b` Sync
 Manager watchdog. This is the already documented public-deactivation
 limitation and remains unresolved.
 
+## API 0.6 health-status smoke test
+
+The non-activating ABI suite passed generation-bound inactive IO status checks.
+A subsequent three-second position-29 DC run reported:
+
+```text
+generation=2 healthy=1 armed=0 rearm_required=0
+faults=0x00000000 latched=0x00000000 fault_count=0
+link=1 responding=34 configured=1 online=1 operational=1
+```
+
+The same run completed 3,000 cycles with WC 3/complete, zero cycle errors, and
+zero overruns. Outputs remained permanently zero/disarmed. A deliberate
+power-loss/restoration test is still required to validate the unhealthy
+transition and sticky re-arm latch.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

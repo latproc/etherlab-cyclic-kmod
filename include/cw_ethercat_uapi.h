@@ -11,7 +11,7 @@
 #endif
 
 #define CW_EC_API_VERSION_MAJOR 0U
-#define CW_EC_API_VERSION_MINOR 5U
+#define CW_EC_API_VERSION_MINOR 6U
 
 #define CW_EC_CYCLE_PERIOD_MIN_NS 100000U
 #define CW_EC_CYCLE_PERIOD_MAX_NS 1000000000U
@@ -61,6 +61,16 @@ enum cw_ec_dc_reference_mode {
 	CW_EC_DC_REFERENCE_DISABLED = 0,
 	CW_EC_DC_REFERENCE_AUTO = 1,
 	CW_EC_DC_REFERENCE_EXPLICIT = 2,
+};
+
+enum cw_ec_io_fault {
+	CW_EC_IO_FAULT_NONE = 0,
+	CW_EC_IO_FAULT_MASTER_STATE = 1U << 0,
+	CW_EC_IO_FAULT_LINK_DOWN = 1U << 1,
+	CW_EC_IO_FAULT_SLAVE_STATE = 1U << 2,
+	CW_EC_IO_FAULT_SLAVE_OFFLINE = 1U << 3,
+	CW_EC_IO_FAULT_SLAVE_NOT_OPERATIONAL = 1U << 4,
+	CW_EC_IO_FAULT_DOMAIN_INCOMPLETE = 1U << 5,
 };
 
 struct cw_ec_api_version {
@@ -312,6 +322,27 @@ struct cw_ec_dc_status {
 	__u64 monitor_timeout_count;
 };
 
+struct cw_ec_io_status {
+	__u16 struct_size;
+	__u16 api_major;
+	__u8 bus_healthy;
+	__u8 outputs_armed;
+	__u8 rearm_required;
+	__u8 link_up;
+	__u32 current_faults;
+	__u32 last_latched_faults;
+	__u32 slaves_responding;
+	__u32 configured_slave_count;
+	__u32 configured_slaves_online;
+	__u32 configured_slaves_operational;
+	__u32 domain_size;
+	__u32 reserved0;
+	__u64 config_generation;
+	__u64 fault_count;
+	__u64 input_sequence;
+	__u64 output_sequence;
+};
+
 #define CW_EC_IOC_MAGIC 0xec
 
 #define CW_EC_IOC_GET_API_VERSION \
@@ -360,5 +391,7 @@ struct cw_ec_dc_status {
 	_IOWR(CW_EC_IOC_MAGIC, 0x32, struct cw_ec_cycle_deactivate)
 #define CW_EC_IOC_CYCLE_GET_DC_STATUS \
 	_IOWR(CW_EC_IOC_MAGIC, 0x33, struct cw_ec_dc_status)
+#define CW_EC_IOC_GET_IO_STATUS \
+	_IOWR(CW_EC_IOC_MAGIC, 0x40, struct cw_ec_io_status)
 
 #endif /* CW_ETHERCAT_UAPI_H */

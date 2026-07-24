@@ -521,6 +521,10 @@ static int cycle(const char *path, uint32_t period_ns,
 		.struct_size = sizeof(dc_status),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	struct cw_ec_io_status io_status = {
+		.struct_size = sizeof(io_status),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
 	struct cw_ec_cycle_deactivate deactivate = {
 		.struct_size = sizeof(deactivate),
 		.api_major = CW_EC_API_VERSION_MAJOR,
@@ -587,6 +591,26 @@ static int cycle(const char *path, uint32_t period_ns,
 		       (uint64_t)dc_status.monitor_success_count,
 		       (uint64_t)dc_status.monitor_timeout_count);
 	}
+	if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0) {
+		fprintf(stderr, "cw_ec_config: IO status failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	printf("IO status: generation=%" PRIu64 " healthy=%u armed=%u"
+	       " rearm_required=%u faults=0x%08" PRIx32
+	       " latched=0x%08" PRIx32 " fault_count=%" PRIu64
+	       " link=%u responding=%" PRIu32
+	       " configured=%" PRIu32 " online=%" PRIu32
+	       " operational=%" PRIu32 "\n",
+	       (uint64_t)io_status.config_generation,
+	       io_status.bus_healthy, io_status.outputs_armed,
+	       io_status.rearm_required, io_status.current_faults,
+	       io_status.last_latched_faults,
+	       (uint64_t)io_status.fault_count, io_status.link_up,
+	       io_status.slaves_responding,
+	       io_status.configured_slave_count,
+	       io_status.configured_slaves_online,
+	       io_status.configured_slaves_operational);
 	if (ioctl(fd, CW_EC_IOC_CYCLE_DEACTIVATE, &deactivate) < 0) {
 		fprintf(stderr, "cw_ec_config: deactivation failed: %s\n",
 			strerror(errno));

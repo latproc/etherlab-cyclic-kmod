@@ -271,7 +271,7 @@ Keep this section concise. Historical milestones and validation evidence are in
 `docs/project-history.md`; focused details belong in the relevant design,
 testing, safety, and build documents.
 
-- Current API: 0.5.
+- Current API: 0.6.
 - API 0.4 zero-output cyclic activation is hardware-proven on ED3L position 29
   with complete working counter and exact 28-byte PDO layout.
 - Deactivation waits for configured slaves to leave SAFEOP/OP and invalidates
@@ -284,7 +284,13 @@ testing, safety, and build documents.
   synchrony convergence remains visible and timing acceptance is not claimed.
 - The ED3L DC fixture values are `AssignActivate 0x0300`, SYNC0 equal to the
   application period, and zero shift. These remain user-space policy.
-- Next step: add no-hardware rollover/controller-boundary tests, then design
-  safe copied process-image exchange before the architecture review gate.
+- API 0.6 adds generation-bound bus health and stale-output re-arm status.
+  Position 29 reported healthy with all configured counts correct while
+  outputs remained hard-disarmed. The fault transition/latch still requires a
+  deliberate power-loss test.
+- Copied process-image concurrency and recovery rules are documented in
+  `docs/process-image-exchange.md`.
+- Next step: validate the health fault latch, then add copied input snapshots
+  without adding an output writer.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

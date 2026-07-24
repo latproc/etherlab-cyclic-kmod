@@ -49,3 +49,6 @@ commands, outputs, and design details.
   controller and bounded DC status snapshot. Four motion-inhibited position-29
   runs reached complete WC with valid reference reads, successful monitoring,
   and zero cycle errors/overruns. The known stop-path watchdog remains.
+- Added API 0.6 generation-bound bus/configured-slave/domain health status.
+  A zero-output position-29 run reported healthy with 34 responding slaves and
+  the configured slave online/operational. Fault-latch validation remains.

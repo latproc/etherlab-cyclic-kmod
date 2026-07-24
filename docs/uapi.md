@@ -230,6 +230,18 @@ monitor state, the last reference result and phase difference, bounded cycle
 adjustment, last/maximum synchrony deviation, reference read errors and
 resumptions, and monitor results/timeouts.
 
+API 0.6 adds `CW_EC_IOC_GET_IO_STATUS`. Each successfully validated
+configuration receives a nonzero monotonically increasing generation for the
+current module lifetime. While cycling, the status reports master link and
+responding-slave count, online/operational configured-slave counts, domain
+health, current and last-latched fault masks, and a fault transition count.
+
+The bus becomes healthy only when the link is up, every configured slave is
+online and operational, and domain working counter is complete. After health
+has first been reached, a transition to unhealthy latches `rearm_required`.
+API 0.6 has no process-image writer or arm operation: `outputs_armed`, input
+sequence, and output sequence remain zero.
+
 Activation requires an applied configuration and registered domain. The caller
 supplies a cycle period from 100 microseconds through one second; flags must be
 zero. The kernel activates EtherLab, obtains the internal domain memory,

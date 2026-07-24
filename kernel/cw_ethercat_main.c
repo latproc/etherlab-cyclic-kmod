@@ -43,6 +43,7 @@ struct cw_ec_file {
 	u32 config_pdo_count;
 	u32 config_entry_count;
 	u32 config_dc_count;
+	u64 config_generation;
 	struct cw_ec_config_dc_policy dc_policy;
 	bool dc_policy_set;
 	bool config_started;
@@ -83,6 +84,16 @@ struct cw_ec_file {
 	atomic64_t dc_reference_resume_count;
 	atomic64_t dc_monitor_success_count;
 	atomic64_t dc_monitor_timeout_count;
+	atomic_t io_bus_healthy;
+	atomic_t io_rearm_required;
+	atomic_t io_link_up;
+	atomic_t io_current_faults;
+	atomic_t io_last_latched_faults;
+	atomic_t io_slaves_responding;
+	atomic_t io_configured_slaves_online;
+	atomic_t io_configured_slaves_operational;
+	atomic64_t io_fault_count;
+	bool io_ever_healthy;
 	bool active;
 };
 
@@ -132,6 +143,7 @@ struct cw_ec_dc_node {
 };
 
 static atomic_t cw_ec_control_open = ATOMIC_INIT(0);
+static atomic64_t cw_ec_next_config_generation = ATOMIC64_INIT(0);
 
 static int cw_ec_check_header(u16 struct_size, u16 api_major,
 			      size_t expected_size);
@@ -195,6 +207,7 @@ static void cw_ec_config_clear(struct cw_ec_file *ctx)
 	ctx->config_pdo_count = 0;
 	ctx->config_entry_count = 0;
 	ctx->config_dc_count = 0;
+	ctx->config_generation = 0;
 	memset(&ctx->dc_policy, 0, sizeof(ctx->dc_policy));
 	ctx->dc_policy_set = false;
 	ctx->config_started = false;
@@ -327,6 +340,61 @@ static int cw_ec_dc_prepare_send(struct cw_ec_file *ctx)
 	return ret;
 }
 
+static void cw_ec_update_io_health(struct cw_ec_file *ctx,
+				   const ec_domain_state_t *domain_state)
+{
+	ec_master_state_t master_state = {};
+	struct cw_ec_slave_node *slave;
+	u32 faults = 0;
+	u32 online = 0;
+	u32 operational = 0;
+	int ret;
+
+	ret = ecrt_master_state(ctx->master, &master_state);
+	if (ret)
+		faults |= CW_EC_IO_FAULT_MASTER_STATE;
+	else if (!master_state.link_up)
+		faults |= CW_EC_IO_FAULT_LINK_DOWN;
+
+	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+		ec_slave_config_state_t state = {};
+
+		ret = ecrt_slave_config_state(slave->ec_config, &state);
+		if (ret) {
+			faults |= CW_EC_IO_FAULT_SLAVE_STATE;
+			continue;
+		}
+		if (state.online)
+			online++;
+		else
+			faults |= CW_EC_IO_FAULT_SLAVE_OFFLINE;
+		if (state.operational)
+			operational++;
+		else
+			faults |= CW_EC_IO_FAULT_SLAVE_NOT_OPERATIONAL;
+	}
+	if (domain_state->wc_state != EC_WC_COMPLETE)
+		faults |= CW_EC_IO_FAULT_DOMAIN_INCOMPLETE;
+
+	atomic_set(&ctx->io_link_up, master_state.link_up);
+	atomic_set(&ctx->io_slaves_responding,
+		   master_state.slaves_responding);
+	atomic_set(&ctx->io_configured_slaves_online, online);
+	atomic_set(&ctx->io_configured_slaves_operational, operational);
+	atomic_set(&ctx->io_current_faults, faults);
+	if (!faults) {
+		ctx->io_ever_healthy = true;
+		atomic_set(&ctx->io_bus_healthy, 1);
+	} else if (ctx->io_ever_healthy &&
+		   atomic_xchg(&ctx->io_bus_healthy, 0)) {
+		atomic_set(&ctx->io_rearm_required, 1);
+		atomic_set(&ctx->io_last_latched_faults, faults);
+		atomic64_inc(&ctx->io_fault_count);
+	} else {
+		atomic_set(&ctx->io_bus_healthy, 0);
+	}
+}
+
 static int cw_ec_cycle_thread(void *data)
 {
 	struct cw_ec_file *ctx = data;
@@ -380,6 +448,7 @@ static int cw_ec_cycle_thread(void *data)
 			atomic_set(&ctx->working_counter_state,
 				   domain_state.wc_state);
 		}
+		cw_ec_update_io_health(ctx, &domain_state);
 		if (ctx->config_dc_count) {
 			operation_result = cw_ec_dc_prepare_send(ctx);
 		} else {
@@ -520,6 +589,15 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	atomic64_set(&ctx->dc_reference_resume_count, 0);
 	atomic64_set(&ctx->dc_monitor_success_count, 0);
 	atomic64_set(&ctx->dc_monitor_timeout_count, 0);
+	atomic_set(&ctx->io_bus_healthy, 0);
+	atomic_set(&ctx->io_rearm_required, 0);
+	atomic_set(&ctx->io_link_up, 0);
+	atomic_set(&ctx->io_current_faults, 0);
+	atomic_set(&ctx->io_last_latched_faults, 0);
+	atomic_set(&ctx->io_slaves_responding, 0);
+	atomic_set(&ctx->io_configured_slaves_online, 0);
+	atomic_set(&ctx->io_configured_slaves_operational, 0);
+	atomic64_set(&ctx->io_fault_count, 0);
 	file->private_data = ctx;
 	nonseekable_open(inode, file);
 
@@ -1114,6 +1192,16 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	atomic64_set(&ctx->dc_reference_resume_count, 0);
 	atomic64_set(&ctx->dc_monitor_success_count, 0);
 	atomic64_set(&ctx->dc_monitor_timeout_count, 0);
+	atomic_set(&ctx->io_bus_healthy, 0);
+	atomic_set(&ctx->io_rearm_required, 0);
+	atomic_set(&ctx->io_link_up, 0);
+	atomic_set(&ctx->io_current_faults, 0);
+	atomic_set(&ctx->io_last_latched_faults, 0);
+	atomic_set(&ctx->io_slaves_responding, 0);
+	atomic_set(&ctx->io_configured_slaves_online, 0);
+	atomic_set(&ctx->io_configured_slaves_operational, 0);
+	atomic64_set(&ctx->io_fault_count, 0);
+	ctx->io_ever_healthy = false;
 	ctx->cycle_thread = kthread_run(cw_ec_cycle_thread, ctx,
 					"cw_ec_cycle");
 	if (IS_ERR(ctx->cycle_thread)) {
@@ -1239,6 +1327,46 @@ static long cw_ec_cycle_get_dc_status(struct cw_ec_file *ctx,
 		atomic64_read(&ctx->dc_monitor_success_count);
 	result.monitor_timeout_count =
 		atomic64_read(&ctx->dc_monitor_timeout_count);
+	mutex_unlock(&ctx->lock);
+
+	if (copy_to_user(argp, &result, sizeof(result)))
+		return -EFAULT;
+	return 0;
+}
+
+static long cw_ec_get_io_status(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_io_status result;
+	int ret;
+
+	if (copy_from_user(&result, argp, sizeof(result)))
+		return -EFAULT;
+	ret = cw_ec_check_header(result.struct_size, result.api_major,
+				 sizeof(result));
+	if (ret)
+		return ret;
+
+	memset(&result, 0, sizeof(result));
+	result.struct_size = sizeof(result);
+	result.api_major = CW_EC_API_VERSION_MAJOR;
+	mutex_lock(&ctx->lock);
+	result.bus_healthy = atomic_read(&ctx->io_bus_healthy);
+	result.outputs_armed = 0;
+	result.rearm_required = atomic_read(&ctx->io_rearm_required);
+	result.link_up = atomic_read(&ctx->io_link_up);
+	result.current_faults = atomic_read(&ctx->io_current_faults);
+	result.last_latched_faults =
+		atomic_read(&ctx->io_last_latched_faults);
+	result.slaves_responding =
+		atomic_read(&ctx->io_slaves_responding);
+	result.configured_slave_count = ctx->config_slave_count;
+	result.configured_slaves_online =
+		atomic_read(&ctx->io_configured_slaves_online);
+	result.configured_slaves_operational =
+		atomic_read(&ctx->io_configured_slaves_operational);
+	result.domain_size = ctx->domain_size;
+	result.config_generation = ctx->config_generation;
+	result.fault_count = atomic64_read(&ctx->io_fault_count);
 	mutex_unlock(&ctx->lock);
 
 	if (copy_to_user(argp, &result, sizeof(result)))
@@ -1483,6 +1611,8 @@ static long cw_ec_config_validate(struct cw_ec_file *ctx, void __user *argp)
 		goto out;
 	}
 	ctx->config_validated = true;
+	ctx->config_generation =
+		atomic64_inc_return(&cw_ec_next_config_generation);
 out:
 	result.slave_count = ctx->config_slave_count;
 	result.sync_count = ctx->config_sync_count;
@@ -1839,6 +1969,8 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return cw_ec_cycle_deactivate(ctx, argp);
 	case CW_EC_IOC_CYCLE_GET_DC_STATUS:
 		return cw_ec_cycle_get_dc_status(ctx, argp);
+	case CW_EC_IOC_GET_IO_STATUS:
+		return cw_ec_get_io_status(ctx, argp);
 	default:
 		break;
 	}
