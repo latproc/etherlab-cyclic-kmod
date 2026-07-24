@@ -389,3 +389,7 @@ controller-death testing. Closing the descriptor is also a kernel-enforced
 cleanup path if status or explicit deactivation fails. All cycle commands
 change EtherCAT slave PDO configuration during activation and are hardware
 commissioning operations; neither requests a nonzero transmitted output.
+
+`cw_ec_sdo stage FILE` parses and submits an ordered SDO batch to the pending
+kernel transaction, then closes without applying it. It is intended for
+validation and allocation/unwind tests and performs no SDO download.

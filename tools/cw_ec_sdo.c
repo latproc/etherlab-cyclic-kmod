@@ -22,11 +22,12 @@ static void usage(const char *program)
 		"  %s write POSITION TYPE INDEX SUBINDEX VALUE [DEVICE]\n"
 		"  %s read POSITION INDEX SUBINDEX MAX_BYTES [DEVICE]\n"
 		"  %s recipe FILE [DEVICE]\n"
+		"  %s stage FILE [DEVICE]\n"
 		"  %s validate POSITION TYPE INDEX SUBINDEX VALUE\n"
 		"\n"
 		"TYPE: u8, s8, u16, s16, u32, s32, bytes\n"
 		"VALUE: integer (base 0), or an even-length hex string for bytes\n",
-		program, program, program, program);
+		program, program, program, program, program);
 }
 
 static int parse_u64(const char *text, uint64_t maximum, uint64_t *value)
@@ -297,7 +298,7 @@ static int execute_read(const char *device, char **argv)
 	return 0;
 }
 
-static int execute_recipe(const char *device, const char *path)
+static int execute_recipe(const char *device, const char *path, int apply_recipe)
 {
 	struct cw_ec_setup_begin begin = {
 		.struct_size = sizeof(begin),
@@ -412,7 +413,7 @@ static int execute_recipe(const char *device, const char *path)
 		return 2;
 	}
 
-	if (ioctl(fd, CW_EC_IOC_SETUP_APPLY, &apply) < 0) {
+	if (apply_recipe && ioctl(fd, CW_EC_IOC_SETUP_APPLY, &apply) < 0) {
 		fprintf(stderr,
 			"cw_ec_sdo: recipe failed: result=%" PRId32
 			" sequence=%" PRIu32 " slave=%" PRIu16
@@ -425,7 +426,9 @@ static int execute_recipe(const char *device, const char *path)
 		return 1;
 	}
 
-	printf("applied %u ordered SDO writes from %s\n", count, path);
+	printf("%s %u ordered SDO writes from %s\n",
+	       apply_recipe ? "applied" : "staged without applying",
+	       count, path);
 	if (close(fd) < 0) {
 		fprintf(stderr, "cw_ec_sdo: close: %s\n", strerror(errno));
 		return 1;
@@ -441,7 +444,8 @@ int main(int argc, char **argv)
 
 	if (argc < 2 ||
 	    (strcmp(argv[1], "write") && strcmp(argv[1], "read") &&
-	     strcmp(argv[1], "recipe") && strcmp(argv[1], "validate"))) {
+	     strcmp(argv[1], "recipe") && strcmp(argv[1], "stage") &&
+	     strcmp(argv[1], "validate"))) {
 		usage(argv[0]);
 		return 2;
 	}
@@ -454,14 +458,15 @@ int main(int argc, char **argv)
 			device = argv[6];
 		return execute_read(device, argv);
 	}
-	if (!strcmp(argv[1], "recipe")) {
+	if (!strcmp(argv[1], "recipe") || !strcmp(argv[1], "stage")) {
 		if (argc != 3 && argc != 4) {
 			usage(argv[0]);
 			return 2;
 		}
 		if (argc == 4)
 			device = argv[3];
-		return execute_recipe(device, argv[2]);
+		return execute_recipe(device, argv[2],
+				      !strcmp(argv[1], "recipe"));
 	}
 	validate_only = !strcmp(argv[1], "validate");
 	if ((!validate_only && argc != 7 && argc != 8) ||

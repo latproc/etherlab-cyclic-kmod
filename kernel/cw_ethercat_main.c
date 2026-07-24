@@ -168,9 +168,38 @@ struct cw_ec_dc_node {
 
 static atomic_t cw_ec_control_open = ATOMIC_INIT(0);
 static atomic64_t cw_ec_next_config_generation = ATOMIC64_INIT(0);
+static atomic_t cw_ec_test_allocation_count = ATOMIC_INIT(0);
+static int cw_ec_test_fail_allocation;
+module_param_named(test_fail_allocation, cw_ec_test_fail_allocation, int, 0444);
+MODULE_PARM_DESC(test_fail_allocation,
+		 "fail the Nth module-owned allocation (test only; 0 disables)");
 
 static int cw_ec_check_header(u16 struct_size, u16 api_major,
 			      size_t expected_size);
+
+static bool cw_ec_should_fail_allocation(void)
+{
+	int allocation;
+
+	if (cw_ec_test_fail_allocation <= 0)
+		return false;
+	allocation = atomic_inc_return(&cw_ec_test_allocation_count);
+	return allocation == cw_ec_test_fail_allocation;
+}
+
+static void *cw_ec_kzalloc(size_t size)
+{
+	if (cw_ec_should_fail_allocation())
+		return NULL;
+	return kzalloc(size, GFP_KERNEL);
+}
+
+static void *cw_ec_kvzalloc(size_t size)
+{
+	if (cw_ec_should_fail_allocation())
+		return NULL;
+	return kvzalloc(size, GFP_KERNEL);
+}
 
 static void cw_ec_invalidate_applied_config(struct cw_ec_file *ctx)
 {
@@ -700,7 +729,7 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	if (atomic_cmpxchg(&cw_ec_control_open, 0, 1) != 0)
 		return -EBUSY;
 
-	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+	ctx = cw_ec_kzalloc(sizeof(*ctx));
 	if (!ctx) {
 		atomic_set(&cw_ec_control_open, 0);
 		return -ENOMEM;
@@ -832,7 +861,7 @@ static long cw_ec_config_add_slave(struct cw_ec_file *ctx, void __user *argp)
 	struct cw_ec_slave_node *node;
 	int ret;
 
-	node = kzalloc(sizeof(*node), GFP_KERNEL);
+	node = cw_ec_kzalloc(sizeof(*node));
 	if (!node)
 		return -ENOMEM;
 	if (copy_from_user(&node->cfg, argp, sizeof(node->cfg))) {
@@ -1307,21 +1336,21 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 		ret = -E2BIG;
 		goto out;
 	}
-	ctx->input_buffers[0] = kvzalloc(domain_size, GFP_KERNEL);
+	ctx->input_buffers[0] = cw_ec_kvzalloc(domain_size);
 	if (!ctx->input_buffers[0]) {
 		ret = -ENOMEM;
 		goto out;
 	}
-	ctx->input_buffers[1] = kvzalloc(domain_size, GFP_KERNEL);
+	ctx->input_buffers[1] = cw_ec_kvzalloc(domain_size);
 	if (!ctx->input_buffers[1]) {
 		ret = -ENOMEM;
 		cw_ec_free_input_buffers(ctx);
 		goto out;
 	}
-	ctx->output_buffers[0] = kvzalloc(domain_size, GFP_KERNEL);
-	ctx->output_buffers[1] = kvzalloc(domain_size, GFP_KERNEL);
-	ctx->output_mask = kvzalloc(domain_size, GFP_KERNEL);
-	ctx->output_update_mask = kvzalloc(domain_size, GFP_KERNEL);
+	ctx->output_buffers[0] = cw_ec_kvzalloc(domain_size);
+	ctx->output_buffers[1] = cw_ec_kvzalloc(domain_size);
+	ctx->output_mask = cw_ec_kvzalloc(domain_size);
+	ctx->output_update_mask = cw_ec_kvzalloc(domain_size);
 	if (!ctx->output_buffers[0] || !ctx->output_buffers[1] ||
 	    !ctx->output_mask || !ctx->output_update_mask) {
 		ret = -ENOMEM;
@@ -1920,7 +1949,7 @@ static long function_name(struct cw_ec_file *ctx, void __user *argp) \
 { \
 	struct node_type *node; \
 	int ret; \
-	node = kzalloc(sizeof(*node), GFP_KERNEL); \
+	node = cw_ec_kzalloc(sizeof(*node)); \
 	if (!node) \
 		return -ENOMEM; \
 	if (copy_from_user(&node->cfg_member, argp, sizeof(node->cfg_member))) { \
@@ -2251,7 +2280,7 @@ static long cw_ec_setup_add_sdo(struct cw_ec_file *ctx, void __user *argp)
 		return ret;
 
 	allocation_size = struct_size(entry, data, request.data_len);
-	entry = kzalloc(allocation_size, GFP_KERNEL);
+	entry = cw_ec_kzalloc(allocation_size);
 	if (!entry)
 		return -ENOMEM;
 

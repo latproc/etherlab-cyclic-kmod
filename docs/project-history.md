@@ -85,3 +85,7 @@ commands, outputs, and design details.
 - Added an armed-zero controller-death harness. Killing the controller forced
   the kernel file-release path; no cyclic task leaked, master 0 returned idle,
   topology was unchanged, and no new warning/error line appeared.
+- Added disabled-by-default deterministic module-allocation injection and a
+  non-applying SDO staging mode. All 39 allocations reached by SDO staging and
+  declarative preparation failed individually and unwound cleanly; both
+  success boundaries passed without topology or kernel-log changes.

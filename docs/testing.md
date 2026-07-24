@@ -442,6 +442,36 @@ unchanged. This proves the basic controller-death path with an armed zero
 shadow; repeated/instrumented death stress remains part of the broader safety
 gate.
 
+## Deterministic allocation failure
+
+The target kernel reports `CONFIG_FAULT_INJECTION`, `CONFIG_DEBUG_KMEMLEAK`,
+`CONFIG_KFENCE`, and `CONFIG_PROVE_LOCKING` disabled. The module therefore has
+a test-only, read-only `test_fail_allocation=N` parameter. Its default is zero,
+which adds no failure. A positive value fails exactly the Nth module-owned
+allocation.
+
+`tools/cw_ec_test_allocation_failures.sh` reloads the module for each failure
+point. It covers the file context and all allocations reached by:
+
+- staging the 21-write ED3L recipe without applying it; and
+- preparing the one-slave/two-Sync/two-PDO/ten-entry/DC declarative fixture
+  without activation.
+
+The target test passed all 39 injected failures plus the first success
+boundary of each path:
+
+```text
+New kernel warning/error lines:
+  none
+PASS: 39 injected allocation failures unwound; success boundaries passed;
+      topology unchanged
+```
+
+Every failed operation closed its control file, master 0 returned
+idle/inactive, module unload succeeded, and the final topology matched the
+initial capture. Cyclic process-image allocations still require separate
+failure coverage because reaching them activates the master.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

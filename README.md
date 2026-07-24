@@ -167,6 +167,13 @@ sudo env CW_EC_MOTION_INHIBITED=YES \
 
 No nonzero output is requested.
 
+Deterministic module-owned allocation unwind can be tested without applying
+SDOs or activating cyclic I/O:
+
+```sh
+sudo tools/cw_ec_test_allocation_failures.sh
+```
+
 Examples:
 
 ```sh
