@@ -369,3 +369,12 @@ Update this section during work. Use dated entries for facts that may change.
   outputs. The SVN working files now specify `default:0` for deterministic
   disable/no-motion startup; syntax/graph and repeat conversion checks pass.
   Restart validation of those defaults remains before the SVN commit.
+- 2026-07-24: LatProc `prod-experimental-mqtt-fix` was fast-forwarded to
+  `51af5222`; both EtherCAT binaries and converter tests build/pass from that
+  exact branch. Live legacy-`pos` A/B testing used the same merged binary and
+  produced the same 290-byte image, OP state, object names, byte/bit offsets,
+  and representative values as object selectors. An offline audit proved all
+  212 legacy positions round-trip uniquely through the converted selectors.
+  The exact converted SVN diff was restored afterward and matches its
+  pre-test saved patch byte-for-byte; syntax/graph and conversion checks pass.
+  Do not SVN-commit until the remaining full validation is explicitly accepted.
