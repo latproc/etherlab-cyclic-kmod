@@ -386,3 +386,9 @@ Update this section during work. Use dated entries for facts that may change.
   passed 4/4 tests in an isolated `RUN_TESTS=ON` build. The local production
   Git branch is merged but not pushed; the two SVN files remain uncommitted
   pending explicit operator approval.
+- 2026-07-24: The validated `core_io.lpc` and `grab_io.lpc` object-selector
+  conversion plus zero servo defaults were committed to the machine's SVN
+  configuration as revision 20001. The working files are clean. Local
+  `prod-experimental-mqtt-fix` contains the five LatProc implementation
+  commits through `51af5222` and is five commits ahead of its remote; it has
+  not yet been pushed.
