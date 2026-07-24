@@ -1,11 +1,11 @@
 # Architecture
 
-## Current Phase 2 boundary
+## Current API 0.9 boundary
 
 ```text
-cw_ec_bus
+standalone controller
     |
-    | fixed-width, versioned ioctl structures
+    | fixed-width versioned ioctls
     v
 /dev/cw_ethercat0
     |
@@ -13,8 +13,8 @@ cw_ec_bus
     v
 cw_ethercat.ko
     |
-    | ecrt_request_master / ecrt_master /
-    | ecrt_master_get_slave / ecrt_release_master
+    | validated configuration, domain, cyclic/DC thread,
+    | copied images, health and output gate
     v
 EtherLab master 0
 ```
@@ -25,13 +25,14 @@ file releases it. This preserves EtherLab CLI and direct-IOD access whenever no
 kernel-transport controller is attached.
 
 One process may control the device. The module's file-operation owner prevents
-normal unload while an fd remains open. No persistent configuration or
-asynchronous object exists in this phase.
+normal unload while an fd remains open. The per-open context owns all pending
+metadata, EtherLab configuration/domain objects, copied image buffers, masks,
+the cyclic thread, and its wait queues.
 
 ## Ownership
 
 The per-open `cw_ec_file` object owns the acquired `ec_master_t` reference.
-Construction is:
+Construction begins:
 
 ```text
 reserve exclusive-open token
@@ -41,8 +42,10 @@ attach context to file
 ```
 
 Every failure frees the context, releases the token, and returns an error.
-Close releases the EtherLab master, clears the pointer, frees the context, and
-releases the token.
+Close first closes the output gate, waits for a zero-gated send, joins the
+cyclic thread, deactivates EtherLab, invalidates EtherLab-owned pointers, frees
+all pending metadata and copied buffers, releases the master, and releases the
+exclusive token.
 
 The module-global misc device is registered during module initialization and
 deregistered during module exit. An open fd holds the module reference through
@@ -51,31 +54,68 @@ deregistered during module exit. An open fd holds the module reference through
 ## Locking
 
 An atomic compare/exchange protects the single-controller admission decision.
-After a successful open, the file context and its master pointer are private to
-that file. Ioctls are currently expected from one controlling process; no
-configuration or cyclic thread exists.
+A mutex serializes process-context configuration, image publication, arm,
+disarm, and teardown. Separate short spinlocks protect input/output buffer
+selection and reader reservation. The cyclic thread never takes the process
+mutex, allocates, performs mailbox operations, or waits for user space.
+
+Input publication skips a buffer swap if a process reader still reserves the
+inactive buffer. Output publication selects only a buffer not reserved by the
+cyclic reader. Disarm uses a monotonically increasing gate request and a
+waitqueue acknowledgement made after a successful EtherLab send.
 
 EtherLab provides its own blocking `master_sem` protection for
 `ecrt_master_get_slave()`. None of these calls occur in real-time context.
 
 ## State model
 
-The implemented state is deliberately small:
+The implemented high-level state is:
 
 ```text
 MODULE_UNLOADED
     |
     v
 DEVICE_AVAILABLE -- open/claim succeeds --> CONTROL_OPEN
-    ^                                      |
-    |-------------- close/release ---------|
+                                             |
+                                             v
+                                  CONFIG_PENDING
+                                             |
+                                      validate/apply
+                                             v
+                                  DOMAIN_REGISTERED
+                                             |
+                                         activate
+                                             v
+                              RUNNING_DISARMED <---- fault/disarm
+                                             |
+                         publish exact generation/sequence
+                                             |
+                                            arm
+                                             v
+                                RUNNING_ARMED
 ```
 
 An open while IOD/direct libethercat owns master 0 returns `EBUSY`. A second
-control open also returns `EBUSY`.
+control open also returns `EBUSY`. Configuration is immutable while active.
+Any health loss closes the output gate and latches a fresh-publication
+requirement. Deactivation returns to close/release because EtherLab destroys
+domains and slave configurations; reconfiguration currently requires a new
+control session.
 
-Future configuration and running states will extend this model only after their
-ownership and teardown rules are documented.
+## Process image and DC
+
+The complete EtherLab domain is the stable byte/bit offset namespace. API 0.9
+copies it into a bounded double-buffered read-only snapshot. Output updates use
+a domain-sized data array plus per-bit update mask; the kernel intersects this
+with a mask derived from entries under output Sync Managers.
+
+When configured, the cyclic order is receive, domain process, input snapshot,
+reference/DC processing, health evaluation, gated output application,
+application-time/slave synchronization, domain queue, and master send.
+Application policy and object interpretation never enter the kernel.
+
+Detailed concurrency and recovery rules are in
+`process-image-exchange.md`; DC behavior is in `distributed-clocks.md`.
 
 ## Clockwork process-entry selectors
 

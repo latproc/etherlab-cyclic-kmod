@@ -70,3 +70,8 @@ commands, outputs, and design details.
   A zero-only position-29 test armed sequence 1, acknowledged disarm, rejected
   stale sequence 1, accepted fresh sequence 2, and disarmed again with OP,
   complete WC, and all output bytes zero.
+- Completed the first formal standalone architecture review. The core
+  configuration/cyclic/DC/copy/gating architecture was retained, but IOD
+  integration remains blocked by per-slave validity, current lifecycle and
+  controller-death stress, allocation/leak/debug-kernel testing, manual-build
+  compatibility, and stale top-level documentation identified during review.

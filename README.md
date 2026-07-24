@@ -11,24 +11,31 @@ hardware safety systems.
 
 ## Current scope
 
-Phase 2 bus discovery, the provisional Phase 3 commissioning SDO interface,
-validation and no-activation construction of a pending declarative PDO
-hierarchy, domain registration, and stable entry-offset lookup are implemented.
-Discovery is proven on the current 34-slave target. The project does not yet
-activate persistent slave/PDO configuration or provide cyclic process data.
+The experimental API 0.9 implements bus discovery, bounded commissioning SDOs,
+transactional declarative slave/Sync/PDO/entry/DC configuration, domain
+registration, a configurable cyclic thread, distributed clocks, copied
+process-image exchange, health/recovery status, and an explicit output arm
+gate.
+
+Discovery is proven on the current 34-slave target. A single ED3L
+configuration has reached OP with complete working counter, recovered from
+servo-supply loss without restarting the controller, and passed zero-only
+output arm/disarm tests. No nonzero output has been authorized or tested. The
+standalone kernel-safety and documentation acceptance gates remain open; see
+[the current architecture review](docs/architecture-review-2026-07-24.md).
 
 ```text
-cw_ec_bus
+standalone user-space tools/controller
     |
 versioned ioctl UAPI
     |
 /dev/cw_ethercat0
     |
     v
-EtherLab master
+transactional configuration + cyclic transport
     |
     v
-EtherCAT network
+EtherLab master and EtherCAT network
 ```
 
 The long-term module remains device-agnostic. User space owns identity
@@ -56,6 +63,7 @@ kernel/cw_ethercat_probe.ko
 tools/cw_ec_bus
 tools/cw_ec_abi_test
 tools/cw_ec_sdo
+tools/cw_ec_config
 ```
 
 ## Test the probe
@@ -113,8 +121,30 @@ Sync Manager, PDO, and PDO-entry records:
 
 `check` validates syntax and resource counts without opening the device.
 `prepare` submits the hierarchy, constructs EtherLab configuration, creates a
-domain, and prints offsets keyed by stable entry IDs. It deliberately does not
-activate the master or send process data.
+domain, and prints offsets keyed by stable entry IDs. It does not activate the
+master or send process data.
+
+With motion safely inhibited, `cycle` activates a configuration while outputs
+remain disarmed. It publishes an all-ones shadow only to prove that publication
+does not bypass the gate:
+
+```sh
+sudo ./tools/cw_ec_config cycle \
+  tools/configs/ed3l_velocity_dc_pos29.conf 1000000 5
+```
+
+`cycle-zero-arm` is a separate zero-only gate test. It arms an all-zero shadow,
+synchronously disarms it, verifies stale-sequence rejection, publishes a fresh
+zero shadow, arms it, and disarms again:
+
+```sh
+sudo ./tools/cw_ec_config cycle-zero-arm \
+  tools/configs/ed3l_velocity_dc_pos29.conf 1000000 5
+```
+
+Neither command requests a nonzero transmitted output. These fixtures are
+commissioning examples for the recorded target, not device policy embedded in
+the module.
 
 Examples:
 

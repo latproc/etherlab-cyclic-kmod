@@ -2,8 +2,13 @@
 
 ## Status
 
-This document records required behavior and unresolved policy. It is not a
-claim that recovery is implemented.
+API 0.9 implements global configured-bus health, sticky fault/re-arm status,
+topology-derived output ownership, copied output shadows, and an explicit
+generation/sequence arm gate. A position-29 servo power-loss/restoration test
+recovered without restarting the controller while outputs remained disarmed.
+
+This is experimental evidence, not production safety certification. Per-slave
+data validity and several acceptance/stress gates remain unimplemented.
 
 ## Servo power observation
 
@@ -35,14 +40,18 @@ startup policy belongs in user space.
 
 ## Required power-loss behavior
 
-When a configured drive disappears:
+When a configured drive disappears, the current implementation:
 
-1. cyclic transport continues for slaves that remain reachable;
-2. the affected configuration reports offline;
-3. its input data is marked invalid/stale, not silently current;
-4. its outputs are not reported as successfully applied;
-5. no automatic module or IOD restart is required;
-6. topology and working-counter changes are exposed as status/events.
+1. keeps the cyclic thread running;
+2. reports aggregate configured online/operational counts and fault bits;
+3. closes the global output arm gate;
+4. latches `rearm_required` and the fault epoch;
+5. continues publishing snapshots and counters;
+6. permits EtherLab to reconfigure the returning slave without process restart.
+
+The missing part is per-configured-slave status/validity. A snapshot consumer
+cannot yet identify exactly which entry bytes are stale from the UAPI alone.
+This blocks IOD integration.
 
 If one powered device also disconnects downstream devices, every affected
 configuration must report offline. The kernel must not silently renumber
@@ -74,10 +83,16 @@ The cyclic loop may retain the most recent output image while a drive is
 offline. Blindly applying that image when the drive returns could replay a
 CiA-402 enable/control word or nonzero target velocity.
 
-A returning slave must not automatically consume stale ordinary outputs. The
-final design needs a generic mechanism such as per-slave output gating plus a
-user-supplied recovery image or an explicit acknowledge/arm transition. The
-kernel must not embed ED3L or CiA-402 meaning.
+A returning slave does not automatically consume stale ordinary outputs. API
+0.9 implements a conservative global gate. Arm requires the exact active
+configuration generation and latest output-publication sequence while the bus
+is healthy. After a fault or manual disarm, the sequence must be newer than the
+fault/disarm epoch. Disarm and orderly deactivation wait until the cyclic
+thread has sent a zero-gated image.
+
+This safely sacrifices availability: one configured-slave fault disarms all
+outputs. Per-slave gating may be considered later, but is not required to
+weaken this baseline. The kernel does not embed ED3L or CiA-402 meaning.
 
 Clockwork owns the decision that machine state is safe to re-arm. Hardware
 safety remains responsible for personnel protection.
@@ -151,9 +166,10 @@ up to five seconds until every configured, present physical position has left
 SAFEOP/OP. Failure poisons the current session and requires close/reopen. This
 does not solve or suppress a watchdog event during the transition itself.
 
-This is not yet the final stale-output design. Before process-image writes are
-added, the transport still needs generations, controller liveness, explicit
-arm/re-arm, and forced-safe behavior for link/slave loss and power restoration.
+Generations, copied process images, explicit arm/re-arm, fault-triggered
+disarm, and zero-gated deactivation now exist. Controller-death teardown still
+requires an explicit live kill test, and per-slave input validity remains a
+design gap.
 
 ## Tests required before production
 

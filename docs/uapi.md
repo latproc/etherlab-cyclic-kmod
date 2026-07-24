@@ -338,9 +338,9 @@ is required. This prevents immediate reuse from racing EtherLab's asynchronous
 idle-state-machine transition, but cannot keep output datagrams flowing during
 that transition.
 
-This increment intentionally has no process-image writer and therefore cannot
-command motion. It also does not yet configure or service Distributed Clocks;
-DC-enabled activation is a separate required increment.
+The API 0.4 increment intentionally had no process-image writer and could not
+command motion. Distributed clocks and copied exchange were added by later
+minor versions as documented above.
 
 The target DKMS `Module.symvers` does not export
 `ecrt_master_set_send_interval()`, although EtherLab declares it. This external
@@ -365,8 +365,11 @@ first parses and bounds the complete file, then submits it in file order.
 `prepare` stops after domain registration and closes the device.
 
 `cycle CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]` performs the same
-preparation, activates the zero-output cyclic pump for a bounded duration,
-prints cycle status, and synchronously deactivates. Closing the descriptor is
-also a kernel-enforced cleanup path if status or explicit deactivation fails.
-This command changes EtherCAT slave PDO configuration during activation and is
-a hardware commissioning operation despite having no process-image writer.
+preparation, activates the cyclic pump for a bounded duration, prints status,
+publishes a shadow while leaving outputs disarmed, and synchronously
+deactivates. `cycle-zero-arm` instead publishes an all-zero shadow and tests
+exact-sequence arm, synchronous disarm, stale-sequence rejection, and fresh
+zero-sequence recovery. Closing the descriptor is also a kernel-enforced
+cleanup path if status or explicit deactivation fails. Both commands change
+EtherCAT slave PDO configuration during activation and are hardware
+commissioning operations; neither requests a nonzero transmitted output.

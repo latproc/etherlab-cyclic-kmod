@@ -14,8 +14,8 @@ decisions, risks, commands, or next steps change.
 
 ## Current Status
 
-- Current phase: standalone Phase 3 transport work; implementing copied
-  process-image exchange before the architecture review gate.
+- Current phase: standalone Phase 3 hardening after the first formal
+  architecture review. IOD integration remains blocked.
 - The implementation plan has been read in full.
 - A minimal kernel probe, DKMS-aware build, environment documentation, and
   lifecycle test script exist.
@@ -323,7 +323,12 @@ testing, safety, and build documents.
   with an all-zero shadow; nonzero output remains untested.
 - Copied process-image concurrency and recovery rules are documented in
   `docs/process-image-exchange.md`.
-- Next step: architecture/safety review of the standalone exchange path before
-  deciding whether to authorize one bounded nonzero commissioning output.
+- The 2026-07-24 architecture review is in
+  `docs/architecture-review-2026-07-24.md`. The kernel-safety and documentation
+  gates remain open. Major blockers include per-configured-slave validity,
+  current lifecycle/controller-death stress, allocation-failure/leak testing,
+  debug-kernel testing, and manual EtherLab build compatibility.
+- Next step: add generation-bound per-configured-slave status so snapshot
+  consumers can determine which configured device data is valid/stale.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.
