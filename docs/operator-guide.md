@@ -136,10 +136,13 @@ same-CPU, and all-online-CPU load trials; requires complete/valid domains and
 all configured slaves operational; and verifies idle teardown, unchanged
 topology, and fatal kernel diagnostics. Override its `CW_EC_TEST_*`
 environment variables only when the changed test conditions are recorded.
-The command remains disarmed and does not provide DC evidence when its
-configuration contains no DC records. It prints new kernel warning/error lines;
-the target EtherLab lifecycle can log Sync Manager watchdog transitions after
-deactivation even when the master subsequently returns idle.
+Each trial first requires every configured slave to reach OP and every domain
+to become valid; it aborts before the timed interval otherwise. Generated load
+starts only after that strict-health gate. The command remains disarmed and
+does not provide DC evidence when its configuration contains no DC records. It
+prints new kernel warning/error lines; the target EtherLab lifecycle can log
+Sync Manager watchdog transitions after deactivation even when the master
+subsequently returns idle.
 
 ## Zero-only arm and teardown checks
 

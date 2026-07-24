@@ -302,7 +302,11 @@ struct cw_ec_entry_offset {
 	__u16 struct_size;
 	__u16 api_major;
 	__u32 entry_id;
-	__u32 domain_offset;
+	union {
+		__u32 global_offset;
+		/* Deprecated name retained as an ABI-neutral source alias. */
+		__u32 domain_offset;
+	};
 	__u8 bit_position;
 	__u8 bit_length;
 	__u8 reserved[2];

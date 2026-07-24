@@ -123,9 +123,11 @@ With no domain records, the kernel creates one implicit compatibility domain.
 There is no two-domain limit.
 
 PDO padding is explicit with object `0x0000:00` and `entry_id=0`. Registered
-application entries require a nonzero stable entry ID. After apply, resolve
-each application entry with `CW_EC_IOC_CONFIG_GET_ENTRY`; retain the returned
-byte offset, bit position, and length only for that configuration generation.
+application entries require a nonzero stable entry ID. After domain creation,
+resolve each application entry with `CW_EC_IOC_GET_ENTRY_OFFSET`; retain the
+returned `global_offset`, bit position, and bit length only for that
+configuration generation. The deprecated `domain_offset` union member denotes
+the same global offset and exists only for source compatibility.
 
 [`cw_ec_config.c`](../tools/cw_ec_config.c) is the complete reference for
 submission order, result checking, domains, padding, and offset resolution.

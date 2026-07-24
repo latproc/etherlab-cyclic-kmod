@@ -63,8 +63,13 @@ fi
 
 tmp_dir=$(mktemp -d)
 load_pids=
+controller_pid=
 cleanup()
 {
+	if [ -n "$controller_pid" ]; then
+		kill "$controller_pid" 2>/dev/null || true
+		wait "$controller_pid" 2>/dev/null || true
+	fi
 	for pid in $load_pids; do
 		kill "$pid" 2>/dev/null || true
 	done
@@ -140,7 +145,27 @@ field()
 					exit
 				}
 			}
-		}'
+	}'
+}
+
+print_failed_slaves()
+{
+	grep '^slave status:' "$1" |
+		awk '
+			{
+				online = operational = valid = -1
+				for (i = 1; i <= NF; i++) {
+					split($i, part, "=")
+					if (part[1] == "online")
+						online = part[2]
+					if (part[1] == "operational")
+						operational = part[2]
+					if (part[1] == "valid")
+						valid = part[2]
+				}
+				if (online != 1 || operational != 1 || valid != 1)
+					print
+			}'
 }
 
 check_run()
@@ -163,6 +188,7 @@ check_run()
 	    [ "$armed" -ne 0 ] || [ "$operational" -ne "$configured" ]; then
 		echo "error: timing acceptance condition failed in $log" >&2
 		grep -E '^(cycle status:|IO status:|domain status:)' "$log" >&2
+		print_failed_slaves "$log" >&2
 		return 1
 	fi
 	if grep '^domain status:' "$log" |
@@ -207,9 +233,36 @@ for mode in baseline same-cpu system; do
 	while [ "$i" -le "$repeat" ]; do
 		log="$tmp_dir/$mode-$i.log"
 		echo "$mode trial $i/$repeat"
+		"$project_dir/tools/cw_ec_config" cycle-strict \
+			"$config" "$period" "$duration" "$device" >"$log" &
+		controller_pid=$!
+		ready_attempts=0
+		while ! grep -q '^READY: strict-health' "$log"; do
+			if ! kill -0 "$controller_pid" 2>/dev/null; then
+				wait "$controller_pid" || true
+				controller_pid=
+				echo "error: strict timing startup failed in $log" >&2
+				print_failed_slaves "$log" >&2
+				exit 1
+			fi
+			if [ "$ready_attempts" -ge 120 ]; then
+				echo "error: strict timing readiness timed out in $log" >&2
+				exit 1
+			fi
+			sleep 0.05
+			ready_attempts=$((ready_attempts + 1))
+		done
 		start_load "$mode"
-		"$project_dir/tools/cw_ec_config" cycle \
-			"$config" "$period" "$duration" "$device" >"$log"
+		if ! wait "$controller_pid"; then
+			controller_pid=
+			stop_load
+			echo "error: strict timing cycle failed in $log" >&2
+			grep -E '^(cycle status:|IO status:|domain status:)' \
+				"$log" >&2 || true
+			print_failed_slaves "$log" >&2
+			exit 1
+		fi
+		controller_pid=
 		stop_load
 		check_run "$log"
 		i=$((i + 1))

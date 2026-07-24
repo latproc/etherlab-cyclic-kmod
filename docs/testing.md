@@ -542,6 +542,12 @@ The cyclic task defaults to CPU 1 / FIFO 70 and a 1 ms period. Each final
 snapshot must report zero cycle errors and overruns, maximum wake latency no
 greater than 250,000 ns, complete aggregate and per-domain working counters,
 every domain valid, every configured slave operational, and outputs disarmed.
+Each trial uses `cycle-strict`: it waits at most five seconds for those health
+conditions, prints only failing slave records, and aborts before the timed
+interval if they are not met. CPU load starts only after strict health is
+confirmed, so cyclic timing under load is not conflated with startup under
+load. The permissive `cycle` command remains available for intentional
+loss/recovery tests.
 The harness also requires unchanged topology, idle master teardown, and no new
 fatal kernel diagnostic. Run it only in the site commissioning state:
 
@@ -573,6 +579,17 @@ master nevertheless returned idle/inactive with all 34 slaves visible. These
 are not module oops/leak results, but they remain lifecycle acceptance debt.
 The harness prints every new warning/error line while failing specifically on
 fatal kernel diagnostics.
+
+On 2026-07-24 a short strict rate screen established an additional lifecycle
+boundary. Three consecutive 1 ms trials reached all 34 slaves OP/valid with
+zero overruns and 42--50 us maximum lateness. At 500 us, the first baseline
+activation reached all 34 OP/valid and completed 6,604 cycles with zero
+overruns and 10,741 ns maximum lateness. The immediate second activation
+aborted before its timed/load interval because configured slave ID 5
+(EL5152 position 4) remained in SAFEOP. The same sequence was reproduced.
+Therefore 2 kHz is promising cyclic-loop evidence, not a passed multi-trial
+full-topology rate gate. A continuous single-activation load-phase test and
+the repeated-activation cause remain outstanding.
 
 ## Zero-armed controller death
 

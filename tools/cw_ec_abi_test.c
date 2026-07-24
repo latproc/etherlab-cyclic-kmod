@@ -858,13 +858,13 @@ int main(int argc, char **argv)
 	if (ioctl(fd, CW_EC_IOC_GET_ENTRY_OFFSET, &entry_offset) < 0) {
 		fprintf(stderr, "FAIL: get entry offset: %s\n", strerror(errno));
 		failures++;
-	} else if (entry_offset.domain_offset != 1 ||
+	} else if (entry_offset.global_offset != 1 ||
 		   entry_offset.bit_position != 0 ||
 		   entry_offset.bit_length != 16) {
 		fprintf(stderr,
 			"FAIL: unexpected entry mapping offset=%" PRIu32
 			" bit=%u length=%u\n",
-			entry_offset.domain_offset, entry_offset.bit_position,
+			entry_offset.global_offset, entry_offset.bit_position,
 			entry_offset.bit_length);
 		failures++;
 	} else {

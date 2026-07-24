@@ -242,9 +242,11 @@ Registration failure poisons the session and requires close/reopen for the
 same rollback reason as configuration apply.
 
 After successful registration, `CW_EC_IOC_GET_ENTRY_OFFSET` resolves a stable
-user-supplied `entry_id` to its domain byte offset, bit position, and bit
-length. Unknown IDs return `ENOENT`. Domain creation does not activate the
-master, obtain the process-data pointer, or send traffic.
+user-supplied `entry_id` to its global process-image byte offset, bit position,
+and bit length. `global_offset` is the preferred member name.
+`domain_offset` remains an ABI-neutral deprecated alias in the same union for
+source compatibility. Unknown IDs return `ENOENT`. Domain creation does not
+activate the master, obtain the process-data pointer, or send traffic.
 
 ## API 0.12 multi-domain configuration
 
@@ -256,8 +258,8 @@ exactly one declared domain; duplicate IDs, duplicate assignments, missing
 assignments, and references to unknown domains or slaves are errors.
 
 Domain declaration order defines the order of contiguous segments in the
-single copied process image. `CW_EC_IOC_GET_ENTRY_OFFSET` continues to return a
-global byte/bit offset, calculated from the assigned domain's segment base plus
+single copied process image. `CW_EC_IOC_GET_ENTRY_OFFSET` returns a global
+byte/bit offset, calculated from the assigned domain's segment base plus
 the EtherLab-local entry offset. The kernel does not infer domains from vendor,
 product, position, PDO layout, or online state.
 

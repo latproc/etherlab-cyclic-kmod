@@ -2079,7 +2079,7 @@ The kernel can then return:
 
 ```text
 entry_id = 1001
-domain_offset = 42
+global_offset = 42
 bit_position = 0
 ```
 

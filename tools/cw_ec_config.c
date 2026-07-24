@@ -61,6 +61,7 @@ static void usage(const char *program)
 		"  %s check CONFIG\n"
 		"  %s prepare CONFIG [DEVICE]\n"
 		"  %s cycle CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
+		"  %s cycle-strict CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-zero-arm CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-zero-lease CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-zero-hold CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
@@ -68,7 +69,7 @@ static void usage(const char *program)
 		"  %s cycle-abi CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s pulse-entry CONFIG PERIOD_NS ENTRY_ID PULSE_MS [DEVICE]\n",
 		program, program, program, program, program, program, program,
-		program, program);
+		program, program, program);
 }
 
 static int expect_ioctl_errno(int fd, unsigned long request, void *argument,
@@ -492,7 +493,7 @@ static int print_offsets(int fd, const char *path)
 		       " offset=%" PRIu32 " bit=%" PRIu8 " length=%" PRIu8
 		       "\n",
 		       record.entry.entry_id, record.entry.index,
-		       record.entry.subindex, offset.domain_offset,
+		       record.entry.subindex, offset.global_offset,
 		       offset.bit_position, offset.bit_length);
 	}
 	fclose(file);
@@ -723,12 +724,12 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 			strerror(errno));
 		goto out;
 	}
-	if (offset.domain_offset >= activate.domain_size) {
+	if (offset.global_offset >= activate.domain_size) {
 		fprintf(stderr, "cw_ec_config: entry offset is outside image\n");
 		goto out;
 	}
-	data[offset.domain_offset] = (uint8_t)(1U << offset.bit_position);
-	mask[offset.domain_offset] = data[offset.domain_offset];
+	data[offset.global_offset] = (uint8_t)(1U << offset.bit_position);
+	mask[offset.global_offset] = data[offset.global_offset];
 	output.data_ptr = (uintptr_t)data;
 	output.mask_ptr = (uintptr_t)mask;
 	output.data_size = activate.domain_size;
@@ -756,7 +757,7 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 	}
 	printf("PULSE: entry=%" PRIu32 " offset=%" PRIu32
 	       " bit=%u duration=%" PRIu32 " ms\n",
-	       entry_id, offset.domain_offset, offset.bit_position, pulse_ms);
+	       entry_id, offset.global_offset, offset.bit_position, pulse_ms);
 	fflush(stdout);
 	usleep((useconds_t)pulse_ms * 1000U);
 	disarm.config_generation = output.config_generation;
@@ -966,7 +967,7 @@ out:
 static int cycle(const char *path, uint32_t period_ns,
 		 unsigned int duration_seconds, bool arm_zero,
 		 bool lease_zero, bool hold_zero, bool monitor, bool active_abi,
-		 const char *device)
+		 bool require_healthy, const char *device)
 {
 	struct cw_ec_config_validate validate;
 	struct cw_ec_cycle_activate activate = {
@@ -1113,7 +1114,8 @@ static int cycle(const char *path, uint32_t period_ns,
 	       (uint64_t)cycle_wait.cycle.output_sequence_consumed,
 	       (uint64_t)cycle_wait.cycle.stale_output_cycles,
 	       (uint64_t)cycle_wait.cycle.missed_deadlines);
-	if (hold_zero || arm_zero || lease_zero || monitor || active_abi) {
+	if (hold_zero || arm_zero || lease_zero || monitor || active_abi ||
+	    require_healthy) {
 		unsigned int attempts;
 
 		for (attempts = 0; attempts < 100; attempts++) {
@@ -1132,8 +1134,16 @@ static int cycle(const char *path, uint32_t period_ns,
 		}
 		if (!io_status.bus_healthy) {
 			fprintf(stderr,
-				"cw_ec_config: bus did not become healthy for zero-output operation\n");
+				"cw_ec_config: bus did not become healthy within five seconds\n");
+			if (print_slave_statuses(fd, path,
+						 io_status.config_generation))
+				fprintf(stderr,
+					"cw_ec_config: failed to report slave status\n");
 			goto out;
+		}
+		if (require_healthy) {
+			printf("READY: strict-health timing interval started\n");
+			fflush(stdout);
 		}
 	}
 	if (hold_zero) {
@@ -1744,6 +1754,7 @@ int main(int argc, char **argv)
 				   device);
 	}
 	if ((!strcmp(argv[1], "cycle") ||
+	     !strcmp(argv[1], "cycle-strict") ||
 	     !strcmp(argv[1], "cycle-zero-arm") ||
 	     !strcmp(argv[1], "cycle-zero-lease") ||
 	     !strcmp(argv[1], "cycle-zero-hold") ||
@@ -1763,7 +1774,8 @@ int main(int argc, char **argv)
 			     !strcmp(argv[1], "cycle-zero-lease"),
 			     !strcmp(argv[1], "cycle-zero-hold"),
 			     !strcmp(argv[1], "cycle-monitor"),
-			     !strcmp(argv[1], "cycle-abi"), device);
+			     !strcmp(argv[1], "cycle-abi"),
+			     !strcmp(argv[1], "cycle-strict"), device);
 	}
 	usage(argv[0]);
 	return 2;

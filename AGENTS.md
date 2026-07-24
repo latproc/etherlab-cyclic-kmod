@@ -439,5 +439,16 @@ testing, safety, and build documents.
   fresh zero publication, and returned master 0 idle. A subsequent
   lease-disabled zero-arm lifecycle also passed after one transient
   post-teardown health-wait failure.
+- `cw_ec_entry_offset.global_offset` is now the preferred name for the global
+  concatenated-image byte offset. The old `domain_offset` member remains an
+  ABI-neutral deprecated union alias.
+- Timing trials now use a strict-health mode: every configured slave/domain
+  must become OP/valid within five seconds before the timed interval, and load
+  begins only after that gate. A short 1 kHz three-mode screen passed. A 2 kHz
+  baseline reached all 34 OP and completed 6,604 cycles with zero overruns and
+  10,741 ns maximum lateness, but the immediate second 2 kHz activation
+  correctly aborted because EL5152 position 4 remained SAFEOP. Do not claim a
+  2 kHz full-topology pass yet; test continuous load phases in one activation
+  and investigate the repeated-activation boundary.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

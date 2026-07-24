@@ -1632,7 +1632,7 @@ static long cw_ec_get_entry_offset(struct cw_ec_file *ctx, void __user *argp)
 			result.struct_size = sizeof(result);
 			result.api_major = CW_EC_API_VERSION_MAJOR;
 			result.entry_id = entry_id;
-			result.domain_offset = entry->domain_offset;
+			result.global_offset = entry->domain_offset;
 			result.bit_position = entry->bit_position;
 			result.bit_length = entry->cfg.bit_length;
 			ret = 0;
