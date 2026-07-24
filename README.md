@@ -11,18 +11,19 @@ hardware safety systems.
 
 ## Current scope
 
-The experimental API 0.11 implements bus discovery, bounded commissioning SDOs,
+The experimental API 0.12 implements bus discovery, bounded commissioning SDOs,
 transactional declarative slave/Sync/PDO/entry/DC configuration, domain
-registration, a configurable cyclic thread, distributed clocks, copied
-process-image exchange, aggregate and per-configured-slave health/validity
-status, and an explicit output arm gate.
+registration with explicit user-defined validity groups, a configurable cyclic
+thread, distributed clocks, copied process-image exchange, aggregate,
+per-domain, and per-configured-slave health/validity status, and an explicit
+global output arm gate.
 
 Discovery is proven on the current 34-slave target. A single ED3L
 configuration has reached OP with complete working counter, recovered from
 servo-supply loss without restarting the controller, and passed zero-only
 output arm/disarm tests. No nonzero output has been authorized or tested. The
-documentation acceptance gate passes for API 0.11; the standalone
-kernel-safety gate remains open. See
+API 0.12 documentation is being re-audited; the standalone kernel-safety gate
+remains open. See
 [the current architecture review](docs/architecture-review-2026-07-24.md).
 
 ```text
@@ -122,8 +123,10 @@ slave state. They are not the future persistent recovery mechanism.
 
 ## Declarative configuration tool
 
-`cw_ec_config` reads a dependency-free line format containing generic slave,
-Sync Manager, PDO, and PDO-entry records:
+`cw_ec_config` reads a dependency-free line format containing generic domain,
+slave assignment, slave, Sync Manager, PDO, and PDO-entry records. Domain
+grouping is optional; a file without domain records uses one implicit
+compatibility domain:
 
 ```sh
 ./tools/cw_ec_config check tools/configs/ed3l_velocity_pos29.conf
@@ -131,9 +134,14 @@ Sync Manager, PDO, and PDO-entry records:
 ```
 
 `check` validates syntax and resource counts without opening the device.
-`prepare` submits the hierarchy, constructs EtherLab configuration, creates a
-domain, and prints offsets keyed by stable entry IDs. It does not activate the
-master or send process data.
+`prepare` submits the hierarchy, constructs EtherLab configuration, creates
+the domain set, and prints global offsets keyed by stable entry IDs. It does
+not activate the master or send process data. The explicit-domain example is:
+
+```sh
+./tools/cw_ec_config check \
+  tools/configs/el5152_pos3_with_absent_ed3l_pos29.conf
+```
 
 With motion safely inhibited, `cycle` activates a configuration while outputs
 remain disarmed. It publishes an all-ones shadow only to prove that publication

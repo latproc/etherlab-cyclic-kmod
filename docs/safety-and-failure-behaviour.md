@@ -2,15 +2,15 @@
 
 ## Status
 
-API 0.10 implements global configured-bus health, sticky fault/re-arm status,
+API 0.12 implements global configured-bus health, sticky fault/re-arm status,
 topology-derived output ownership, copied output shadows, and an explicit
 generation/sequence arm gate. A position-29 servo power-loss/restoration test
 recovered without restarting the controller while outputs remained disarmed.
 
-Per-configured-slave online/operational/AL state and conservative data validity
-are now available by stable configuration ID. This is experimental evidence,
-not production safety certification; acceptance and debug-kernel gates remain
-open.
+Per-domain WC/validity and per-configured-slave online/operational/AL state and
+data validity are available by stable configuration ID. Output gating remains
+global. This is experimental evidence, not production safety certification;
+acceptance and debug-kernel gates remain open.
 
 ## Servo power observation
 
@@ -51,20 +51,21 @@ When a configured drive disappears, the current implementation:
 5. continues publishing snapshots and counters;
 6. permits EtherLab to reconfigure the returning slave without process restart.
 
-API 0.10 reports each configured slave separately. Its `data_valid` requires
-that slave online and OP, at least one input snapshot, and complete global
-domain WC. This is intentionally conservative. A live position-29 power cycle
-proved `data_valid` clears first on domain-incomplete, remains clear while the
+API 0.12 reports each configured slave separately. Its `data_valid` requires
+that slave online and OP, at least one input snapshot, and complete WC for its
+assigned domain. A live position-29 power cycle on the earlier shared-domain
+implementation proved `data_valid` clears first on domain-incomplete, remains
+clear while the
 slave is offline, and returns only after the slave is online and OP again.
 `rearm_required` remained latched after recovery and outputs remained
 disarmed.
 
 A later API 0.11 mixed test with a present EL5152 and absent ED3L proved the
 EL5152 still reaches OP and its bytes update while the combined domain WC is
-incomplete. EtherLab 1.6.9 exposes WC state per domain, not per slave. The
-kernel therefore must use separate domains for independently recoverable
-groups before it can certify unaffected data; OP state alone is not sufficient
-evidence to weaken `data_valid`.
+incomplete. EtherLab 1.6.9 exposes WC state per domain, not per slave.
+API 0.12 now provides those explicit domains and independently evaluates their
+WC. The powered-off ED3L test with separate domains is still outstanding; OP
+state alone remains insufficient evidence to weaken `data_valid`.
 
 `last_latched_faults` accumulates every cause observed while that re-arm
 requirement remains set. It is not merely the first cyclic sample of the

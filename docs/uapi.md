@@ -211,7 +211,8 @@ code, but not revision. API 0.3 therefore rejects a nonzero revision constraint
 instead of silently failing to enforce it. A future explicit revision policy
 must preserve absent-at-startup configuration.
 
-`CW_EC_IOC_DOMAIN_CREATE` creates one EtherLab domain. API 0.11 permits
+`CW_EC_IOC_DOMAIN_CREATE` creates the configured EtherLab domain set (or one
+implicit compatibility domain when none were declared). API 0.11 permits
 mandatory PDO padding only as `entry_id=0, index=0, subindex=0`; padding keeps
 its submitted bit length and position in the EtherLab mapping but is not
 registered as user process data. Real entries require nonzero object indexes

@@ -5,9 +5,10 @@
 The first user-space exchange API will copy shadows. It will not mmap or expose
 EtherLab domain memory.
 
-The complete domain layout remains the stable offset namespace. Kernel-owned
+The ordered concatenation of all configured domain segments is the stable
+global offset namespace. Kernel-owned
 metadata derives an output bit mask from entries under output Sync Managers.
-The processed complete domain is copied into a coherent, read-only user-space
+Each processed domain segment is copied into a coherent, read-only user-space
 snapshot. The API name uses "input" for the user-space transfer direction; the
 bytes retain the full EtherLab domain layout, including zero/disarmed output
 regions.
@@ -24,7 +25,7 @@ The cyclic thread evaluates:
 
 - master link state;
 - online and operational state of every configured slave;
-- complete domain working-counter state.
+- complete working-counter state for every configured domain.
 
 Startup is unhealthy until all conditions first become true. After that first
 healthy state, any loss latches outputs disarmed and records a fault epoch.
@@ -41,11 +42,11 @@ returned the configured drive to OP and complete WC without restarting the
 transport. `rearm_required` remained set and the fault epoch count remained
 one after recovery.
 
-API 0.10 exposes each configured slave's online, operational, and AL state by
+API 0.12 exposes each configured slave's online, operational, and AL state by
 stable `config_id`. Its `data_valid` flag additionally requires a published
-snapshot and complete domain WC. This is intentionally conservative: when the
-domain is incomplete, snapshots remain inspectable but no configured slave is
-certified fresh solely from aggregate EtherLab WC information.
+snapshot and complete WC for that slave's assigned domain. Snapshots remain
+inspectable when another domain is incomplete. Aggregate health and the output
+gate remain conservative across all configured domains.
 
 ## Copy concurrency
 
@@ -54,18 +55,18 @@ the active buffer briefly under a spinlock; the cyclic thread skips publishing
 a new snapshot rather than overwriting a reserved buffer.
 
 Outputs use two preallocated buffers and a short pointer/state spinlock. A
-writer selects the inactive buffer, copies domain-sized data and per-bit update
+writer selects the inactive buffer, copies global-image-sized data and per-bit update
 mask arrays from user space without holding the spinlock, intersects that mask
 with the topology-derived output mask, and merges the selected bits over the
-previous shadow. API 0.8 does not yet let the cyclic thread consume this
-shadow; it continues forcing configured outputs zero. The eventual arm stage
-will read only the published active buffer at a cycle boundary, so it will
-never wait for or copy from a buffer being modified.
+previous shadow. The cyclic thread reads only the published active buffer at a
+cycle boundary, so it never waits for or copies from a buffer being modified.
+API 0.12 retains one global publication and arm gate across all domains.
 
 ## IOD format compatibility
 
 The current IOD path represents process data as a full zero-based EtherLab
-domain byte array. Output updates carry a second equally sized byte array whose
+domain byte array. The future adapter will use the API 0.12 concatenated global
+image in the same way. Output updates carry a second equally sized byte array whose
 set bits select individual bits to change. `IOComponent` builds this mask from
 `io_offset`, `io_bitpos`, and `bitlen`, including values crossing byte
 boundaries; `ECInterface::updateDomain()` applies those masked bits to domain

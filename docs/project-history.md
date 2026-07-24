@@ -179,3 +179,9 @@ commands, outputs, and design details.
   idle with no cyclic task leak. A live zero-armed control file blocked module
   unload; killing it released every resource and then allowed unload. Both
   tests preserved topology and added no kernel warning/error.
+- Re-ran the documentation acceptance audit for API 0.12. README,
+  architecture, UAPI, process-image, safety/failure, and operator documentation
+  now describe explicit domain declarations and assignment syntax, ordered
+  global image offsets, per-domain validity, implicit compatibility behavior,
+  and the still-global output gate. The standalone documentation gate passes;
+  the kernel-safety gate remains open.

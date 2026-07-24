@@ -62,9 +62,9 @@ tools/cw_ec_config check \
   tools/configs/ed3l_velocity_dc_pos29.conf
 ```
 
-`prepare` claims master 0, constructs the declarative configuration/domain,
-prints stable entry IDs and offsets, but does not activate or send cyclic
-process data:
+`prepare` claims master 0, constructs the declarative configuration and
+domain set, prints stable entry IDs and global offsets, but does not activate
+or send cyclic process data:
 
 ```sh
 sudo insmod kernel/cw_ethercat.ko
@@ -76,6 +76,21 @@ ethercat master
 
 The ED3L fixture is target-specific commissioning input; it is not kernel
 policy.
+
+API 0.12 also accepts explicit availability/validity domains. Each slave must
+be assigned exactly once when any domain is declared:
+
+```text
+domain 1
+domain 2
+domain_slave 1 1 1
+domain_slave 2 2 2
+```
+
+The fields are `domain DOMAIN_ID` and
+`domain_slave ASSIGNMENT_ID SLAVE_ID DOMAIN_ID`. Declaration order defines
+the contiguous domain-segment order in the copied global process image. Files
+without these records retain the implicit single-domain compatibility mode.
 
 ## Zero-output cyclic check
 

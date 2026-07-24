@@ -1,6 +1,6 @@
 # Architecture
 
-## Current API 0.11 boundary
+## Current API 0.12 boundary
 
 ```text
 standalone controller
@@ -13,7 +13,7 @@ standalone controller
     v
 cw_ethercat.ko
     |
-    | validated configuration, domain, cyclic/DC thread,
+    | validated configuration, domains, cyclic/DC thread,
     | copied images, health and output gate
     v
 EtherLab master 0

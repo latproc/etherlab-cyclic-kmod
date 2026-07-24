@@ -53,8 +53,9 @@ decisions, risks, commands, or next steps change.
   `docs/testing.md`. Do not duplicate them here.
 - `docs/operator-guide.md` is the end-to-end build, test, zero-output
   operation, teardown, and cleanup sequence.
-- The API 0.12 documentation acceptance gate has not yet been re-audited. The kernel-safety gate
-  remains open, so IOD integration is still blocked.
+- The API 0.12 documentation acceptance gate passes after the multi-domain
+  audit. The kernel-safety gate remains open, so IOD integration is still
+  blocked.
 - Do not modify Clockwork/IOD behavior in this repository.
 
 ## Non-Negotiable Architecture
@@ -318,6 +319,10 @@ testing, safety, and build documents.
   zero-armed controller-death test pass. Each returned master 0 idle, leaked no
   cyclic task, preserved topology, and added no kernel warning/error. Active
   resources correctly blocked module unload before controller death.
+- The API 0.12 documentation audit updated README, architecture, UAPI,
+  process-image, safety, and operator guidance for explicit domains, global
+  offsets, per-domain validity, and the still-global output gate. The
+  documentation acceptance gate passes.
 - Next step: capture the powered-off ED3L case showing EL5152 valid and the
   ED3L domain invalid, then re-audit API 0.12 documentation and safety status.
 - Do not begin IOD integration before the standalone architecture and
