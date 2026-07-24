@@ -93,6 +93,15 @@ without expanding updates into entry records.
 All buffers, masks, and metadata are allocated before activation and freed only
 after the cyclic thread is synchronously joined.
 
+## Optional input history
+
+API 0.16 optionally preallocates a bounded ring of complete coherent global
+input images. The cyclic task writes a slot only when it is free; a batch
+reader reserves selected slots briefly and the cyclic task drops capture
+rather than waiting. Ordered cycle metadata, `dropped_records`, and the
+cumulative capture-contention count make loss explicit. A zero configured
+depth leaves the latest-snapshot path and cost unchanged.
+
 ## Initial staged implementation
 
 1. Add generation-bound health/fault/re-arm status while output data remains

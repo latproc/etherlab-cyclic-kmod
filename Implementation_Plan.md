@@ -2420,6 +2420,11 @@ over an entry-specific change journal. A later opt-in change journal may
 reduce bandwidth, but must select stable entry IDs and must not embed machine
 policy.
 
+API 0.16 implements this first full-image design. The initial hardware screen
+used a 64-record ring at 1 kHz and drained every 10 ms without a record gap or
+capture-contention drop. Higher-rate/load characterization and deterministic
+activation-allocation failure injection remain required.
+
 ---
 
 

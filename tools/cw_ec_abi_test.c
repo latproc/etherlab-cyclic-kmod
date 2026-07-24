@@ -33,6 +33,20 @@ int main(int argc, char **argv)
 		.struct_size = sizeof(capabilities),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	struct cw_ec_input_history_config history_config = {
+		.struct_size = sizeof(history_config),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_input_history_record history_record;
+	uint8_t history_data[8];
+	struct cw_ec_input_history_batch history_batch = {
+		.struct_size = sizeof(history_batch),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.records_ptr = (uintptr_t)&history_record,
+		.data_ptr = (uintptr_t)history_data,
+		.max_records = 1,
+		.data_capacity = sizeof(history_data),
+	};
 	struct cw_ec_setup_begin begin = {
 		.struct_size = sizeof(begin),
 		.api_major = CW_EC_API_VERSION_MAJOR,
@@ -283,16 +297,18 @@ int main(int argc, char **argv)
 		     CW_EC_CAP_CYCLE_TIMING | CW_EC_CAP_CYCLE_WAIT |
 		     CW_EC_CAP_DC_DIAGNOSTICS |
 		     CW_EC_CAP_OUTPUT_LEASE |
-		     CW_EC_CAP_CYCLE_PERIOD_UPDATE)) !=
+		     CW_EC_CAP_CYCLE_PERIOD_UPDATE |
+		     CW_EC_CAP_INPUT_HISTORY)) !=
 		   (CW_EC_CAP_COHERENT_PROCESS_IMAGE |
 		    CW_EC_CAP_CYCLE_TIMING | CW_EC_CAP_CYCLE_WAIT |
 		    CW_EC_CAP_DC_DIAGNOSTICS |
 		    CW_EC_CAP_OUTPUT_LEASE |
-		    CW_EC_CAP_CYCLE_PERIOD_UPDATE)) {
+		    CW_EC_CAP_CYCLE_PERIOD_UPDATE |
+		    CW_EC_CAP_INPUT_HISTORY)) {
 		fprintf(stderr, "FAIL: required capability bits missing\n");
 		failures++;
 	} else {
-		printf("PASS: API 0.15 capabilities reported\n");
+		printf("PASS: API 0.16 capabilities reported\n");
 	}
 
 	cycle_info.flags = 1;
@@ -984,6 +1000,71 @@ int main(int argc, char **argv)
 	} else {
 		printf("PASS: generation-bound inactive IO status is clean\n");
 	}
+	history_config.config_generation = io_status.config_generation;
+	history_config.flags = 1;
+	errno = 0;
+	failures += expect_errno("input history config flags",
+				 ioctl(fd,
+				       CW_EC_IOC_CONFIGURE_INPUT_HISTORY,
+				       &history_config),
+				 EINVAL);
+	history_config.flags = 0;
+	history_config.depth = CW_EC_INPUT_HISTORY_DEPTH_MAX + 1U;
+	errno = 0;
+	failures += expect_errno("input history depth limit",
+				 ioctl(fd,
+				       CW_EC_IOC_CONFIGURE_INPUT_HISTORY,
+				       &history_config),
+				 EINVAL);
+	history_config.depth = 1;
+	history_config.configured_depth = 1;
+	errno = 0;
+	failures += expect_errno("input history output field",
+				 ioctl(fd,
+				       CW_EC_IOC_CONFIGURE_INPUT_HISTORY,
+				       &history_config),
+				 EINVAL);
+	history_config.configured_depth = 0;
+	history_config.config_generation++;
+	errno = 0;
+	failures += expect_errno("stale input history configuration",
+				 ioctl(fd,
+				       CW_EC_IOC_CONFIGURE_INPUT_HISTORY,
+				       &history_config),
+				 ESTALE);
+	history_config.config_generation = io_status.config_generation;
+	if (ioctl(fd, CW_EC_IOC_CONFIGURE_INPUT_HISTORY,
+		  &history_config) < 0 ||
+	    history_config.configured_depth != 1) {
+		fprintf(stderr, "FAIL: configure inactive input history: %s\n",
+			strerror(errno));
+		failures++;
+	} else {
+		printf("PASS: configured one-record input history\n");
+	}
+	history_batch.config_generation = io_status.config_generation;
+	history_batch.flags = 1;
+	errno = 0;
+	failures += expect_errno("input history batch flags",
+				 ioctl(fd,
+				       CW_EC_IOC_GET_INPUT_HISTORY_BATCH,
+				       &history_batch),
+				 EINVAL);
+	history_batch.flags = 0;
+	history_batch.max_records = 0;
+	errno = 0;
+	failures += expect_errno("input history zero batch",
+				 ioctl(fd,
+				       CW_EC_IOC_GET_INPUT_HISTORY_BATCH,
+				       &history_batch),
+				 EINVAL);
+	history_batch.max_records = 1;
+	errno = 0;
+	failures += expect_errno("input history batch while inactive",
+				 ioctl(fd,
+				       CW_EC_IOC_GET_INPUT_HISTORY_BATCH,
+				       &history_batch),
+				 EINVAL);
 	lease_config.config_generation = io_status.config_generation;
 	lease_config.flags = 1;
 	errno = 0;

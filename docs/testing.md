@@ -1142,3 +1142,16 @@ within the standalone tool's five-second wait after the preceding EtherLab
 teardown; it closed and unwound normally. After the idle bus settled, the
 lease-disabled zero-arm lifecycle passed with no task leak and unchanged
 topology. Its teardown recorded the known position-29 Sync Manager watchdog.
+
+## API 0.16 bounded input history
+
+The non-activating hostile ABI suite passed with capability, flags, depth
+limit, output-field, stale-generation, valid preactivation configuration, and
+inactive-read checks.
+
+A disarmed full 34-slave run used the captured two-domain topology, a 1 ms
+cycle, 64-record history, and 10 ms batch polling for five seconds. After
+discarding the startup backlog it returned 5,003 ordered 290-byte images with
+zero `dropped_records` and zero capture-contention drops. The run ended with
+zero cycle errors/overruns, all 34 slaves OP/valid, and both domains complete.
+No output was published or armed.

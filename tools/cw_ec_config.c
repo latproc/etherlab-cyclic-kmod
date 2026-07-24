@@ -165,6 +165,7 @@ static void usage(const char *program)
 		"  %s cycle-strict CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-rate CONFIG START_PERIOD_NS TARGET_PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-exchange-rate CONFIG START_PERIOD_NS TARGET_PERIOD_NS DURATION_SECONDS [DEVICE]\n"
+		"  %s cycle-history CONFIG PERIOD_NS DEPTH DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-zero-arm CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-zero-lease CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-zero-hold CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
@@ -172,7 +173,7 @@ static void usage(const char *program)
 		"  %s cycle-abi CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s pulse-entry CONFIG PERIOD_NS ENTRY_ID PULSE_MS [DEVICE]\n",
 		program, program, program, program, program, program, program,
-		program, program, program, program, program, program);
+		program, program, program, program, program, program, program);
 }
 
 static int expect_ioctl_errno(int fd, unsigned long request, void *argument,
@@ -1201,7 +1202,8 @@ static int cycle(const char *path, uint32_t period_ns,
 		 unsigned int duration_seconds, bool arm_zero,
 		 bool lease_zero, bool hold_zero, bool monitor, bool active_abi,
 		 bool require_healthy, uint32_t target_period_ns,
-		 bool exchange_each_wake, const char *device)
+		 bool exchange_each_wake, uint32_t history_depth,
+		 const char *device)
 {
 	struct cw_ec_config_validate validate;
 	struct cw_ec_cycle_activate activate = {
@@ -1259,6 +1261,10 @@ static int cycle(const char *path, uint32_t period_ns,
 		.struct_size = sizeof(lease_status),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	struct cw_ec_input_history_config history_config = {
+		.struct_size = sizeof(history_config),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
 	uint8_t *snapshot_data = NULL;
 	uint8_t *output_data = NULL;
 	uint8_t *output_mask = NULL;
@@ -1278,6 +1284,26 @@ static int cycle(const char *path, uint32_t period_ns,
 	}
 	if (configure_fd(fd, path, &validate))
 		goto out;
+	if (history_depth) {
+		io_status.struct_size = sizeof(io_status);
+		io_status.api_major = CW_EC_API_VERSION_MAJOR;
+		if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0) {
+			fprintf(stderr,
+				"cw_ec_config: pre-activation history status failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		history_config.config_generation =
+			io_status.config_generation;
+		history_config.depth = history_depth;
+		if (ioctl(fd, CW_EC_IOC_CONFIGURE_INPUT_HISTORY,
+			  &history_config) < 0) {
+			fprintf(stderr,
+				"cw_ec_config: input history configuration failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+	}
 	if (lease_zero) {
 		io_status.struct_size = sizeof(io_status);
 		io_status.api_major = CW_EC_API_VERSION_MAJOR;
@@ -1349,7 +1375,7 @@ static int cycle(const char *path, uint32_t period_ns,
 	       (uint64_t)cycle_wait.cycle.stale_output_cycles,
 	       (uint64_t)cycle_wait.cycle.missed_deadlines);
 	if (hold_zero || arm_zero || lease_zero || monitor || active_abi ||
-	    require_healthy || target_period_ns) {
+	    require_healthy || target_period_ns || history_depth) {
 		unsigned int attempts;
 
 		for (attempts = 0; attempts < 100; attempts++) {
@@ -1585,7 +1611,131 @@ static int cycle(const char *path, uint32_t period_ns,
 		}
 		printf("PASS: active hostile-ABI checks left outputs disarmed\n");
 	}
-	if (exchange_each_wake) {
+	if (history_depth) {
+		struct cw_ec_input_history_record *records;
+		struct cw_ec_input_history_batch batch;
+		struct timespec now;
+		uint8_t *history_data;
+		uint64_t cursor = 0;
+		uint64_t total_records = 0;
+		uint64_t total_dropped = 0;
+		uint64_t end_ns;
+		uint32_t max_records =
+			history_depth < CW_EC_INPUT_HISTORY_BATCH_MAX ?
+				history_depth :
+				CW_EC_INPUT_HISTORY_BATCH_MAX;
+
+		records = calloc(max_records, sizeof(*records));
+		history_data = calloc((size_t)max_records,
+				      activate.domain_size);
+		if (!records || !history_data) {
+			fprintf(stderr,
+				"cw_ec_config: allocate history batch: %s\n",
+				strerror(errno));
+			free(records);
+			free(history_data);
+			goto out;
+		}
+		memset(&batch, 0, sizeof(batch));
+		batch.struct_size = sizeof(batch);
+		batch.api_major = CW_EC_API_VERSION_MAJOR;
+		batch.config_generation = io_status.config_generation;
+		batch.records_ptr = (uintptr_t)records;
+		batch.data_ptr = (uintptr_t)history_data;
+		batch.max_records = max_records;
+		batch.data_capacity =
+			max_records * activate.domain_size;
+		if (ioctl(fd, CW_EC_IOC_GET_INPUT_HISTORY_BATCH,
+			  &batch) < 0) {
+			fprintf(stderr,
+				"cw_ec_config: initial history cursor failed: %s\n",
+				strerror(errno));
+			free(records);
+			free(history_data);
+			goto out;
+		}
+		cursor = batch.latest_cycle_index;
+		if (clock_gettime(CLOCK_MONOTONIC, &now) < 0) {
+			free(records);
+			free(history_data);
+			goto out;
+		}
+		end_ns = (uint64_t)now.tv_sec * 1000000000ULL +
+			 (uint64_t)now.tv_nsec +
+			 (uint64_t)duration_seconds * 1000000000ULL;
+		for (;;) {
+			uint64_t now_ns;
+
+			usleep(10000);
+			do {
+				uint32_t i;
+
+				memset(&batch, 0, sizeof(batch));
+				batch.struct_size = sizeof(batch);
+				batch.api_major =
+					CW_EC_API_VERSION_MAJOR;
+				batch.config_generation =
+					io_status.config_generation;
+				batch.after_cycle_index = cursor;
+				batch.records_ptr =
+					(uintptr_t)records;
+				batch.data_ptr =
+					(uintptr_t)history_data;
+				batch.max_records = max_records;
+				batch.data_capacity =
+					max_records * activate.domain_size;
+				if (ioctl(
+					    fd,
+					    CW_EC_IOC_GET_INPUT_HISTORY_BATCH,
+					    &batch) < 0) {
+					fprintf(stderr,
+						"cw_ec_config: history batch failed: %s\n",
+						strerror(errno));
+					free(records);
+					free(history_data);
+					goto out;
+				}
+				for (i = 0; i < batch.record_count; i++) {
+					if (records[i].cycle_index <= cursor ||
+					    (i &&
+					     records[i].cycle_index <=
+						     records[i - 1U]
+							     .cycle_index)) {
+						fprintf(stderr,
+							"cw_ec_config: unordered history record\n");
+						free(records);
+						free(history_data);
+						goto out;
+					}
+				}
+				total_records += batch.record_count;
+				total_dropped += batch.dropped_records;
+				if (batch.record_count)
+					cursor =
+						batch.last_cycle_index;
+			} while (batch.record_count == max_records);
+			if (clock_gettime(CLOCK_MONOTONIC, &now) < 0) {
+				free(records);
+				free(history_data);
+				goto out;
+			}
+			now_ns = (uint64_t)now.tv_sec * 1000000000ULL +
+				 (uint64_t)now.tv_nsec;
+			if (now_ns >= end_ns)
+				break;
+		}
+		printf("input history: depth=%" PRIu32
+		       " records=%" PRIu64 " cursor=%" PRIu64
+		       " dropped_records=%" PRIu64
+		       " capture_drops=%" PRIu64
+		       " image_size=%" PRIu32 "\n",
+		       history_depth, total_records, cursor,
+		       total_dropped,
+		       (uint64_t)batch.capture_drop_count,
+		       batch.image_size);
+		free(records);
+		free(history_data);
+	} else if (exchange_each_wake) {
 		struct timespec now;
 		uint64_t end_ns;
 		uint64_t previous_cycle;
@@ -2572,6 +2722,7 @@ int main(int argc, char **argv)
 	uint64_t entry_id;
 	uint64_t period;
 	uint64_t target_period;
+	uint64_t history_depth;
 
 	if (argc < 3 || argc > 7) {
 		usage(argv[0]);
@@ -2637,7 +2788,26 @@ int main(int argc, char **argv)
 			device = argv[6];
 		return cycle(argv[2], period, duration, false, false, false,
 			     false, false, true, target_period,
-			     !strcmp(argv[1], "cycle-exchange-rate"), device);
+			     !strcmp(argv[1], "cycle-exchange-rate"), 0,
+			     device);
+	}
+	if (!strcmp(argv[1], "cycle-history") &&
+	    (argc == 6 || argc == 7)) {
+		if (parse_u64(argv[3], CW_EC_CYCLE_PERIOD_MAX_NS, &period) ||
+		    period < CW_EC_CYCLE_PERIOD_MIN_NS ||
+		    parse_u64(argv[4], CW_EC_INPUT_HISTORY_DEPTH_MAX,
+			      &history_depth) ||
+		    !history_depth ||
+		    parse_u64(argv[5], 3600, &duration) || !duration) {
+			fprintf(stderr,
+				"cw_ec_config: invalid period, history depth, or duration\n");
+			return 2;
+		}
+		if (argc == 7)
+			device = argv[6];
+		return cycle(argv[2], period, duration, false, false, false,
+			     false, false, true, 0, false, history_depth,
+			     device);
 	}
 	if ((!strcmp(argv[1], "cycle") ||
 	     !strcmp(argv[1], "cycle-strict") ||
@@ -2662,7 +2832,7 @@ int main(int argc, char **argv)
 			     !strcmp(argv[1], "cycle-monitor"),
 			     !strcmp(argv[1], "cycle-abi"),
 			     !strcmp(argv[1], "cycle-strict"), 0, false,
-			     device);
+			     0, device);
 	}
 	usage(argv[0]);
 	return 2;

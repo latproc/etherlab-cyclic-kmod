@@ -227,3 +227,8 @@ commands, outputs, and design details.
   a separately compiled EtherLab revision, which is unavailable on this host.
   Added `make test-build-contract` to reproduce the arbitrary-path rebuild,
   vermagic/license checks, and missing/wrong/ambiguous rejection cases.
+- Added API 0.16 optional bounded per-cycle input history. It preallocates a
+  full-image ring, exposes ordered batched copied reads with explicit gaps and
+  capture drops, and never blocks or allocates in the cyclic path. Hostile ABI
+  checks pass. A disarmed 34-slave 1 kHz run drained 5,003 290-byte records in
+  10 ms batches with no loss, contention drop, cycle error, or overrun.

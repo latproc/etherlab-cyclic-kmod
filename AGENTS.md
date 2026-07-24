@@ -16,7 +16,7 @@ decisions, risks, commands, or next steps change.
 
 - Current phase: standalone Phase 3 hardening after the first architecture
   review. IOD integration remains blocked.
-- Current UAPI is 0.15. It covers discovery, ordered setup SDOs, declarative
+- Current UAPI is 0.16. It covers discovery, ordered setup SDOs, declarative
   PDO/DC configuration, domain registration, cyclic pumping, copied input and
   masked output images, explicit arm/disarm, health, timing/DC statistics, and
   per-configured-slave validity, coherent cycle timing, capability discovery,
@@ -275,7 +275,7 @@ Keep this section concise. Historical milestones and validation evidence are in
 `docs/project-history.md`; focused details belong in the relevant design,
 testing, safety, and build documents.
 
-- Current API: 0.15.
+- Current API: 0.16.
 - Deactivation synchronously gates outputs and joins the cyclic thread, then
   waits for configured slaves to leave SAFEOP/OP before invalidating
   EtherLab-owned pointers. The public EtherLab lifecycle can still expose
@@ -463,6 +463,11 @@ testing, safety, and build documents.
   masked set/publish/arm/disarm commands over the shared configuration parser.
   Hardware tests proved 34/34 read-only operation and that a nonzero staged
   publication remains disarmed and unauthorized `arm` is refused.
+- API 0.16 adds an optional preactivation full-input-image history ring with
+  ordered batched reads and explicit overwrite/contention loss. A disarmed
+  34-slave 1 kHz run drained 5,003 290-byte images in 10 ms batches with zero
+  gaps, capture drops, cycle errors, or overruns; all slaves and domains
+  remained valid.
 - `cw_ec_entry_offset.global_offset` is now the preferred name for the global
   concatenated-image byte offset. The old `domain_offset` member remains an
   ABI-neutral deprecated union alias.

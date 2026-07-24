@@ -11,7 +11,7 @@
 #endif
 
 #define CW_EC_API_VERSION_MAJOR 0U
-#define CW_EC_API_VERSION_MINOR 15U
+#define CW_EC_API_VERSION_MINOR 16U
 
 #define CW_EC_CYCLE_PERIOD_MIN_NS 100000U
 #define CW_EC_CYCLE_PERIOD_MAX_NS 1000000000U
@@ -29,6 +29,9 @@
 #define CW_EC_PROCESS_IMAGE_MAX (64U * 1024U)
 #define CW_EC_CYCLE_WAIT_TIMEOUT_MAX_MS 60000U
 #define CW_EC_OUTPUT_LEASE_CYCLES_MAX 1000000U
+#define CW_EC_INPUT_HISTORY_DEPTH_MAX 4096U
+#define CW_EC_INPUT_HISTORY_BATCH_MAX 256U
+#define CW_EC_INPUT_HISTORY_BYTES_MAX (16U * 1024U * 1024U)
 
 #define CW_EC_CAP_COHERENT_PROCESS_IMAGE (1ULL << 0)
 #define CW_EC_CAP_CYCLE_TIMING (1ULL << 1)
@@ -36,6 +39,7 @@
 #define CW_EC_CAP_DC_DIAGNOSTICS (1ULL << 3)
 #define CW_EC_CAP_OUTPUT_LEASE (1ULL << 4)
 #define CW_EC_CAP_CYCLE_PERIOD_UPDATE (1ULL << 5)
+#define CW_EC_CAP_INPUT_HISTORY (1ULL << 6)
 
 enum cw_ec_sdo_type {
 	CW_EC_SDO_U8 = 1,
@@ -447,6 +451,45 @@ struct cw_ec_input_snapshot {
 	__u64 cycle_count;
 };
 
+struct cw_ec_input_history_config {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 config_generation;
+	__u32 depth;
+	__u32 configured_depth;
+};
+
+struct cw_ec_input_history_record {
+	__u64 config_generation;
+	__u64 cycle_index;
+	__u64 input_sequence;
+	__u64 scheduled_time_ns;
+	__u64 actual_wake_time_ns;
+	__s64 wake_lateness_ns;
+	__s32 cycle_result;
+	__u32 reserved;
+};
+
+struct cw_ec_input_history_batch {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 config_generation;
+	__u64 after_cycle_index;
+	__u64 records_ptr;
+	__u64 data_ptr;
+	__u32 max_records;
+	__u32 data_capacity;
+	__u32 record_count;
+	__u32 image_size;
+	__u64 first_cycle_index;
+	__u64 last_cycle_index;
+	__u64 latest_cycle_index;
+	__u64 dropped_records;
+	__u64 capture_drop_count;
+};
+
 struct cw_ec_output_publish {
 	__u16 struct_size;
 	__u16 api_major;
@@ -624,5 +667,9 @@ struct cw_ec_domain_status {
 	_IOWR(CW_EC_IOC_MAGIC, 0x48, struct cw_ec_output_lease_renew)
 #define CW_EC_IOC_GET_OUTPUT_LEASE_STATUS \
 	_IOWR(CW_EC_IOC_MAGIC, 0x49, struct cw_ec_output_lease_status)
+#define CW_EC_IOC_CONFIGURE_INPUT_HISTORY \
+	_IOWR(CW_EC_IOC_MAGIC, 0x4a, struct cw_ec_input_history_config)
+#define CW_EC_IOC_GET_INPUT_HISTORY_BATCH \
+	_IOWR(CW_EC_IOC_MAGIC, 0x4b, struct cw_ec_input_history_batch)
 
 #endif /* CW_ETHERCAT_UAPI_H */
