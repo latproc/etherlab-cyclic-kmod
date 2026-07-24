@@ -272,8 +272,10 @@ testing, safety, and build documents.
 - Current API: 0.12.
 - Deactivation synchronously gates outputs and joins the cyclic thread, then
   waits for configured slaves to leave SAFEOP/OP before invalidating
-  EtherLab-owned pointers. The public EtherLab lifecycle can still expose an
-  ED3L watchdog event during its asynchronous PREOP transition.
+  EtherLab-owned pointers. The public EtherLab lifecycle can still expose
+  Sync Manager watchdog events during its asynchronous PREOP transition;
+  repeated full-topology timing stops logged these for ED3L positions 29--33
+  and, on the final stop, EL5152 positions 3/4 before idle recovery.
 - DC policy and parameters remain user-space owned. The installed IOD
   reference-led algorithm is preserved; timing acceptance is not yet claimed.
 - Process images are bounded copied buffers. Output publication is masked to
@@ -354,6 +356,15 @@ testing, safety, and build documents.
   8,000 disarmed cycles with both domains complete and valid.
 - Active domain-status hostile checks reject stale generation, unknown domain,
   and nonzero reserved fields while leaving outputs disarmed.
+- Hostile domain-record checks now also cover header/version/reserved fields,
+  zero and duplicate identifiers, missing and unknown assignments, and
+  duplicate slave assignments.
+- A reproducible disarmed timing harness compares baseline, same-CPU, and
+  all-CPU load. The default three-by-30-second full-topology gate completed
+  270,000 cycles with no errors/overruns; worst wake latency was 66,147 ns
+  against the declared 250,000 ns Phase 3 gate, both domains were complete and
+  valid, and all 34 slaves were operational. This is not DC or production
+  timing acceptance.
 - The build contract is proven with explicit EtherLab header and matching
   symbol paths staged outside the DKMS layout. Missing headers, a kernel-only
   symbol file, and ambiguous DKMS auto-detection fail clearly. No independently
@@ -364,5 +375,7 @@ testing, safety, and build documents.
   and the ED3L domain invalid. The bounded console LED/buzzer software commands
   have passed; record physical observation when an operator is present. Keep
   every actuator and drive output masked off.
+- Before that power test is available, extend broader configuration
+  fuzzing/SDO interruption coverage and plan longer timing/DC soak evidence.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

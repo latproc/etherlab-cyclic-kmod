@@ -85,8 +85,10 @@ The kernel-safety gate is not closed.
    with no task leak after every iteration and no final topology/log change.
    Memory/debug-kernel instrumentation remains unavailable.
 4. **EtherLab public deactivation remains imperfect.** ED3L can report AL
-   `0x001b` before EtherLab's asynchronous PREOP transition. The application
-   now sends zero before stopping, but the watchdog/idle-FSM boundary remains.
+   `0x001b` before EtherLab's asynchronous PREOP transition. Repeated
+   full-topology timing trials also produced `0x001b` at EL5152 positions 3/4
+   on the final stop before the master recovered idle. The application now
+   sends zero before stopping, but the watchdog/idle-FSM boundary remains.
 5. **Fault detail uses accumulated causes per re-arm epoch.** This preserves
    the domain-incomplete onset plus later offline/not-operational causes while
    keeping `fault_count` as the healthy-to-unhealthy transition count. A
@@ -97,10 +99,15 @@ The kernel-safety gate is not closed.
    actuator/servo power unavailable. Controller death during the LED pulse
    gated output and released the master. Physical observation remains
    unrecorded; actuator, drive-enable, and motion output remain untested.
-7. **The RT scheduler foundation is proven, but comparable timing acceptance
-   remains.** CPU 1 / FIFO 70 is applied before the first task wake and is
-   live-verified. Establish latency/WC/DC criteria and compare baseline with
-   declared CPU and system load.
+7. **A bounded RT baseline/load comparison passes, but production timing
+   acceptance remains.** CPU 1 / FIFO 70 is applied before the first task
+   wake and is live-verified. Nine disarmed full-topology trials (three
+   30-second runs each at baseline, same-CPU load, and all-CPU load) completed
+   270,000 cycles with no error or overrun; the worst wake latency was
+   66,147 ns against a declared 250,000 ns gate. Both domains remained
+   complete/valid and all 34 slaves operational at final snapshots. The
+   fixture has no DC records, and longer soak/DC/application-load evidence is
+   still required before production acceptance.
 8. **Manual EtherLab build compatibility is untested.** Only the exact DKMS
    target has evidence.
 9. **Active hostile-input coverage includes process-image, lifecycle, and

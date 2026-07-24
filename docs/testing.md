@@ -528,7 +528,51 @@ wc=3 wc_state=2 healthy=1 armed=0
 
 An invalid CPU 99 was rejected with `EINVAL` before cyclic activation. Close
 and unload returned master 0 idle/inactive with 34 slaves. This establishes
-the scheduler foundation but is not baseline-versus-load timing acceptance.
+the scheduler foundation.
+
+`tools/cw_ec_test_timing.sh` provides a bounded, disarmed comparison using the
+full captured topology. Its default gate runs three 30-second trials in each
+of these declared load states:
+
+- no generated load;
+- one normal-priority `sha256sum /dev/zero` worker pinned to the cyclic CPU;
+- one such worker pinned to every online CPU.
+
+The cyclic task defaults to CPU 1 / FIFO 70 and a 1 ms period. Each final
+snapshot must report zero cycle errors and overruns, maximum wake latency no
+greater than 250,000 ns, complete aggregate and per-domain working counters,
+every domain valid, every configured slave operational, and outputs disarmed.
+The harness also requires unchanged topology, idle master teardown, and no new
+fatal kernel diagnostic. Run it only in the site commissioning state:
+
+```sh
+sudo env CW_EC_MOTION_INHIBITED=YES tools/cw_ec_test_timing.sh
+```
+
+On 2026-07-24 the default gate ran three 30-second trials per mode against
+`all34_captured_topology.conf`, for 270,000 cycles total. All nine runs had
+zero errors and overruns, aggregate WC 64/complete, domain WC values
+49/complete and 15/complete, both domains valid, and all 34 slaves operational.
+Maximum observed wake latency by mode was:
+
+- baseline: 66,147 ns;
+- same-CPU load: 13,528 ns;
+- all-CPU load: 25,178 ns.
+
+The lower loaded maxima are consistent with keeping CPUs out of deeper idle
+states but are not treated as an improvement claim. This is a reproducible
+Phase 3 timing characterization. It does not include DC because the captured
+full-topology fixture has no DC records, it is not a long soak, and it does
+not by itself establish production timing acceptance.
+
+The nine repeated deactivations also reproduced EtherLab's asynchronous
+PREOP-transition boundary. ED3L positions 29--33 reported Sync Manager
+watchdog `0x001b` on multiple stops; the final stop also logged `0x001b` for
+EL5152 positions 3/4 and a later position-4 SAFEOP+ERROR observation. The
+master nevertheless returned idle/inactive with all 34 slaves visible. These
+are not module oops/leak results, but they remain lifecycle acceptance debt.
+The harness prints every new warning/error line while failing specifically on
+fatal kernel diagnostics.
 
 ## Zero-armed controller death
 

@@ -178,6 +178,18 @@ sudo env CW_EC_MOTION_INHIBITED=YES CW_EC_TEST_REPEAT=5 \
 The script checks cyclic task cleanup, idle master release, unchanged topology,
 and newly added kernel warning/error lines.
 
+Run the bounded disarmed full-topology scheduler comparison only after the same
+commissioning check:
+
+```sh
+sudo env CW_EC_MOTION_INHIBITED=YES tools/cw_ec_test_timing.sh
+```
+
+It compares baseline, same-CPU, and all-online-CPU load against declared
+latency/WC/validity criteria and verifies clean teardown. This is Phase 3
+characterization; it is not a production soak or DC evidence when the selected
+configuration has no DC records.
+
 The controller-death test explicitly arms an all-zero shadow, kills the
 standalone controller, and verifies synchronous release:
 

@@ -125,6 +125,23 @@ Expected functional evidence for the current position-29 fixture includes:
 Do not interpret a short functional run as timing acceptance. Record errors,
 overruns, maximum lateness, DC convergence, and the declared system load.
 
+For a bounded disarmed baseline/load comparison of the captured full topology:
+
+```sh
+sudo env CW_EC_MOTION_INHIBITED=YES tools/cw_ec_test_timing.sh
+```
+
+The harness declares its period, duration, repetition count, cyclic CPU/FIFO
+priority, load modes, and maximum-lateness criterion. It runs baseline,
+same-CPU, and all-online-CPU load trials; requires complete/valid domains and
+all configured slaves operational; and verifies idle teardown, unchanged
+topology, and fatal kernel diagnostics. Override its `CW_EC_TEST_*`
+environment variables only when the changed test conditions are recorded.
+The command remains disarmed and does not provide DC evidence when its
+configuration contains no DC records. It prints new kernel warning/error lines;
+the target EtherLab lifecycle can log Sync Manager watchdog transitions after
+deactivation even when the master subsequently returns idle.
+
 ## Zero-only arm and teardown checks
 
 These tests never request nonzero output but still require motion inhibition:

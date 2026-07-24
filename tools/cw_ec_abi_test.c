@@ -67,6 +67,14 @@ int main(int argc, char **argv)
 		.vendor_id = 1,
 		.product_code = 1,
 	};
+	struct cw_ec_config_slave second_config_slave = {
+		.struct_size = sizeof(second_config_slave),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.config_id = 2,
+		.position = 124,
+		.vendor_id = 1,
+		.product_code = 1,
+	};
 	struct cw_ec_config_sync config_sync = {
 		.struct_size = sizeof(config_sync),
 		.api_major = CW_EC_API_VERSION_MAJOR,
@@ -317,11 +325,70 @@ int main(int argc, char **argv)
 				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC,
 				       &config_dc),
 				 EINVAL);
+	errno = 0;
+	failures += expect_errno("domain add before begin",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
+				       &config_domain),
+				 EINVAL);
+	errno = 0;
+	failures += expect_errno("domain assignment before begin",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+				       &domain_assignment),
+				 EINVAL);
 
 	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0) {
 		fprintf(stderr, "FAIL: config begin: %s\n", strerror(errno));
 		failures++;
 	}
+	config_domain.struct_size--;
+	errno = 0;
+	failures += expect_errno("short domain structure",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
+				       &config_domain),
+				 EINVAL);
+	config_domain.struct_size = sizeof(config_domain);
+	config_domain.api_major++;
+	errno = 0;
+	failures += expect_errno("wrong domain API major",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
+				       &config_domain),
+				 EPROTONOSUPPORT);
+	config_domain.api_major = CW_EC_API_VERSION_MAJOR;
+	config_domain.config_id = 0;
+	errno = 0;
+	failures += expect_errno("domain with zero config ID",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
+				       &config_domain),
+				 EINVAL);
+	config_domain.config_id = 10;
+	config_domain.reserved = 1;
+	errno = 0;
+	failures += expect_errno("domain with nonzero reserved field",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
+				       &config_domain),
+				 EINVAL);
+	config_domain.reserved = 0;
+	domain_assignment.config_id = 0;
+	errno = 0;
+	failures += expect_errno("assignment with zero config ID",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+				       &domain_assignment),
+				 EINVAL);
+	domain_assignment.config_id = 11;
+	domain_assignment.slave_config_id = 0;
+	errno = 0;
+	failures += expect_errno("assignment with zero slave ID",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+				       &domain_assignment),
+				 EINVAL);
+	domain_assignment.slave_config_id = 1;
+	domain_assignment.domain_config_id = 0;
+	errno = 0;
+	failures += expect_errno("assignment with zero domain ID",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+				       &domain_assignment),
+				 EINVAL);
+	domain_assignment.domain_config_id = 10;
 	config_padding.index = 1;
 	errno = 0;
 	failures += expect_errno("padding with nonzero object index",
@@ -422,6 +489,18 @@ int main(int argc, char **argv)
 	domain_assignment.flags = 0;
 
 	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0) {
+		fprintf(stderr, "FAIL: start duplicate domain config: %s\n",
+			strerror(errno));
+		failures++;
+	}
+	errno = 0;
+	failures += expect_errno("duplicate domain config ID",
+				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
+				       &config_domain),
+				 EEXIST);
+
+	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
 	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
 	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0) {
 		fprintf(stderr, "FAIL: start unassigned domain config: %s\n",
@@ -454,6 +533,44 @@ int main(int argc, char **argv)
 				       &config_validate),
 				 ENOENT);
 	domain_assignment.domain_config_id = config_domain.config_id;
+
+	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0) {
+		fprintf(stderr, "FAIL: start unknown slave assignment: %s\n",
+			strerror(errno));
+		failures++;
+	}
+	domain_assignment.slave_config_id = 99;
+	if (ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+		  &domain_assignment) < 0) {
+		fprintf(stderr, "FAIL: add unknown slave assignment: %s\n",
+			strerror(errno));
+		failures++;
+	}
+	errno = 0;
+	failures += expect_errno("assignment for unknown slave",
+				 ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE,
+				       &config_validate),
+				 ENOENT);
+	domain_assignment.slave_config_id = config_slave.config_id;
+
+	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE,
+		  &second_config_slave) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0 ||
+	    ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+		  &domain_assignment) < 0) {
+		fprintf(stderr, "FAIL: start missing slave assignment: %s\n",
+			strerror(errno));
+		failures++;
+	}
+	errno = 0;
+	failures += expect_errno("configured slave without assignment",
+				 ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE,
+				       &config_validate),
+				 ENOENT);
 
 	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
 	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
