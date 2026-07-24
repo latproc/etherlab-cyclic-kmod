@@ -383,7 +383,9 @@ preparation, activates the cyclic pump for a bounded duration, prints status,
 publishes a shadow while leaving outputs disarmed, and synchronously
 deactivates. `cycle-zero-arm` instead publishes an all-zero shadow and tests
 exact-sequence arm, synchronous disarm, stale-sequence rejection, and fresh
-zero-sequence recovery. Closing the descriptor is also a kernel-enforced
-cleanup path if status or explicit deactivation fails. Both commands change
-EtherCAT slave PDO configuration during activation and are hardware
+zero-sequence recovery. `cycle-zero-hold` waits for a healthy bus, arms an
+all-zero shadow, emits a flushed readiness marker, and holds it for
+controller-death testing. Closing the descriptor is also a kernel-enforced
+cleanup path if status or explicit deactivation fails. All cycle commands
+change EtherCAT slave PDO configuration during activation and are hardware
 commissioning operations; neither requests a nonzero transmitted output.

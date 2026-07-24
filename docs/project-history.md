@@ -82,3 +82,6 @@ commands, outputs, and design details.
 - Added a current-API zero-only lifecycle harness. Five API 0.10 iterations
   returned the master idle after every close, leaked no cyclic task, preserved
   topology, and added no kernel warning/error line.
+- Added an armed-zero controller-death harness. Killing the controller forced
+  the kernel file-release path; no cyclic task leaked, master 0 returned idle,
+  topology was unchanged, and no new warning/error line appeared.

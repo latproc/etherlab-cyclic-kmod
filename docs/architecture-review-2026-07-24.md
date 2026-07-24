@@ -73,10 +73,10 @@ The kernel-safety gate is not closed.
    data only with individual OP plus complete domain WC. Online/valid hardware
    evidence exists; capture the offline transition and recovery through the
    new ioctl.
-2. **Controller-death behavior needs explicit proof.** Kill a standalone
-   controller while active/zero-armed, verify close synchronously sends zero,
-   joins the thread, releases master 0, and leaves no task or warning beyond
-   the known EtherLab/ED3L stop boundary.
+2. **Controller-death stress needs expansion.** One standalone controller was
+   killed while explicitly zero-armed; file release left no cyclic task,
+   returned master 0 idle, preserved topology, and added no warning/error.
+   Repeat this under leak/debug-kernel instrumentation.
 3. **Current cyclic lifecycle stress is incomplete.** Five API 0.10
    configure/activate/zero-arm/disarm/deactivate/close iterations passed with
    task, CLI, topology, and kernel-log checks. Increase repetition and add
@@ -112,7 +112,8 @@ commands that were actually run from procedures that remain untested.
 ## Next work order
 
 1. Capture API 0.10 per-slave invalid/recovery transitions.
-2. Add current API 0.10 lifecycle/controller-death stress tooling.
+2. Expand current API 0.10 lifecycle/controller-death stress under
+   instrumentation.
 3. Add deterministic allocation-failure tests and configuration stress.
 4. Run available kmemleak/KFENCE/lockdep procedures, recording unsupported
    facilities explicitly.

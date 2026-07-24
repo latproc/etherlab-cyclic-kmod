@@ -67,6 +67,11 @@ decisions, risks, commands, or next steps change.
   configure/activate/arm/disarm/deactivate/close iterations. The EtherLab
   master returned idle after every iteration, no cyclic task leaked, topology
   was unchanged, and no new kernel warning/error line appeared.
+- Killing a controller while it held an explicitly armed all-zero shadow
+  triggered synchronous file-release teardown: no cyclic task leaked, master 0
+  returned idle/inactive, topology was unchanged after unload, and no new
+  kernel warning/error line appeared. The corresponding normal two-second hold
+  also synchronously disarmed and returned the master idle/inactive.
 - A provisional bounded ad-hoc SDO batch exists for commissioning and
   decision-gate tests. It is not the persistent production setup mechanism.
 - Bounded SDO upload is hardware-proven against ED3L `0x6060:00`; no write has
@@ -338,6 +343,7 @@ testing, safety, and build documents.
   validity; remaining major blockers include its offline-transition proof,
   current lifecycle/controller-death stress, allocation-failure/leak testing,
   debug-kernel testing, and manual EtherLab build compatibility.
-- Next step: add and run the zero-armed controller-death teardown test.
+- Next step: add deterministic allocation-failure and high-count
+  configuration create/destroy stress.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

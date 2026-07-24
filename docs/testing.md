@@ -416,6 +416,32 @@ PASS: 5 API lifecycle iteration(s); no cyclic task leak; topology unchanged
 New kernel warning/error lines: none
 ```
 
+## Zero-armed controller death
+
+`tools/cw_ec_test_controller_death.sh` starts `cycle-zero-hold`, waits until an
+all-zero output shadow is explicitly armed, then sends `SIGKILL` to the
+controller. It verifies kernel file-release teardown rather than allowing the
+tool to issue its normal disarm/deactivate calls.
+
+The target test passed:
+
+```text
+PASS: killed zero-armed controller; no cyclic task leak;
+      master released; topology unchanged
+New kernel warning/error lines: none
+```
+
+The same fixture also completed its normal two-second hold path: the bus was
+healthy with the configured slave online and operational, the zero shadow
+remained armed through 3251 cycles, synchronous disarm succeeded, the input
+snapshot advanced, and close/deactivation returned master 0 to idle/inactive.
+
+After process death, master 0 reported idle/inactive, the cyclic task count
+matched its baseline, module unload succeeded, and the EtherLab topology was
+unchanged. This proves the basic controller-death path with an armed zero
+shadow; repeated/instrumented death stress remains part of the broader safety
+gate.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

@@ -157,6 +157,16 @@ sudo env CW_EC_MOTION_INHIBITED=YES CW_EC_TEST_REPEAT=5 \
 The script checks cyclic task cleanup, idle master release, unchanged topology,
 and newly added kernel warning/error lines.
 
+The controller-death test explicitly arms an all-zero shadow, kills the
+standalone controller, and verifies synchronous release:
+
+```sh
+sudo env CW_EC_MOTION_INHIBITED=YES \
+  tools/cw_ec_test_controller_death.sh
+```
+
+No nonzero output is requested.
+
 Examples:
 
 ```sh
