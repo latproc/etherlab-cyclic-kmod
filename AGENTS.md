@@ -330,6 +330,8 @@ Update this section during work. Use dated entries for facts that may change.
   `/tmp/ecat.log` converted 212 declarations in `core_io.lpc` and
   `grab_io.lpc`; timestamped backups were created, the converted files passed
   the mandatory syntax/graph checker, and a repeat dry run reported zero
-  changes. Machine configuration under `code/*` is intentionally ignored by
-  the LatProc repository, so only the generic implementation/tooling is
-  mergeable. IOD is stopped and live machine I/O is not yet tested.
+  changes. Machine configuration under `code/*` is ignored by the LatProc Git
+  repository and tracked separately by the SVN working copy rooted at
+  `/opt/latproc/code/config` (revision 19989); the two converted files are
+  modified there but not yet committed. IOD is stopped and live machine I/O
+  is not yet tested.
