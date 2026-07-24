@@ -395,9 +395,11 @@ testing, safety, and build documents.
 - Before that power test is available, extend broader configuration
   fuzzing/SDO interruption coverage and plan longer timing/DC soak evidence.
 - Section 13B now distinguishes process death from a hung controller retaining
-  its fd. Plan a generic cycle-counted output-authority lease: expiry
-  zero-gates outputs but keeps cyclic input exchange alive, latches a distinct
+  its fd. The initial lease design is resolved: explicit compatibility opt-in,
+  1--1,000,000 armed-cycle budget, paused while disarmed, invalid on each
+  activation, and renewed explicitly. Expiry zero-gates before output
+  selection but keeps cyclic input exchange alive, latches a distinct
   controller-stale fault, and requires renewal, fresh output and explicit
-  re-arm. Implement and test this soon after the Section 13A timing foundation.
+  re-arm.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

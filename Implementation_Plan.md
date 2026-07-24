@@ -3026,25 +3026,39 @@ On lease expiry while outputs are armed, the kernel shall:
 Renewing a lease must never arm outputs. Expiry must not silently stop the
 EtherCAT transport, release the master, or substitute for hardware safety.
 
-## Decisions required before implementation
+## Initial design decisions
 
-Resolve and document:
+The first compatible implementation shall use these decisions:
 
-- whether a lease is mandatory for every arm or is an explicit compatibility
-  option during migration;
-- whether timeout is expressed in cycles, monotonic nanoseconds, or both with
-  one authoritative representation;
-- minimum/maximum timeout and overflow-safe conversion;
-- whether the lease runs only while armed or whenever cycling is active;
-- how orderly deactivation and close report lease state;
-- how user space declares loss of its own upstream command authority while its
-  EtherCAT thread remains healthy; and
-- how lease expiry remains distinct from future scheduled-output underrun.
+- Lease enforcement is explicit opt-in during migration. A disabled lease
+  preserves API 0.13 arm behaviour; an enabled lease is mandatory for every
+  arm.
+- The authoritative timeout is an unsigned count of armed output cycles.
+  Accepted limits are 1 through 1,000,000 cycles. No time conversion occurs in
+  the kernel; user space chooses the count using its configured cycle period.
+- The budget decreases once immediately before output selection in each armed
+  cycle. A budget of `N` therefore permits exactly `N` cyclic selections of
+  the retained output shadow.
+- The budget pauses while outputs are disarmed. Monitoring and input exchange
+  can consequently continue indefinitely without a heartbeat.
+- Enabling the lease is pre-activation configuration. Each activation begins
+  with an invalid lease and zero remaining cycles. The exclusive controller
+  must explicitly renew before arm.
+- Renewal restores the configured cycle budget but never publishes output,
+  clears `rearm_required`, or arms outputs.
+- Expiry is checked by the cyclic task before output selection. That cycle
+  selects zeros, latches the controller-stale fault and records the current
+  output sequence. Recovery therefore requires renewal, a newer output
+  publication and explicit arm.
+- User space can deliberately stop renewal when it loses upstream command
+  authority. The kernel does not interpret the upstream cause.
+- Orderly disarm, deactivation and close do not count as expiry. Deactivation
+  and close invalidate the lease as part of normal teardown.
+- Controller-lease expiry and a future scheduled-output queue underrun use
+  different fault bits and counters.
 
-The preferred initial model is a cycle-counted output-authority lease:
-disarmed transport can continue indefinitely without keepalives, while arm
-requires an enabled and currently valid lease. This makes expiry deterministic
-relative to the EtherCAT cycle and keeps policy out of the kernel.
+This cycle-counted output-authority model makes expiry deterministic relative
+to the EtherCAT cycle and keeps application policy out of the kernel.
 
 ## Required tests
 
