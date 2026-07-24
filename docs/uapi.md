@@ -231,6 +231,14 @@ pointers and entry offsets while retaining validated user metadata; the caller
 must apply and create the domain again before another activation. Close
 performs the same synchronous stop before releasing master 0.
 
+After EtherLab deactivation, the call polls the configured physical slave
+positions for up to five seconds and returns only after none remains in
+SAFEOP/OP. An absent configured slave is already settled for this purpose.
+Timeout or discovery error poisons the session against re-apply; close/reopen
+is required. This prevents immediate reuse from racing EtherLab's asynchronous
+idle-state-machine transition, but cannot keep output datagrams flowing during
+that transition.
+
 This increment intentionally has no process-image writer and therefore cannot
 command motion. It also does not yet configure or service Distributed Clocks;
 DC-enabled activation is a separate required increment.

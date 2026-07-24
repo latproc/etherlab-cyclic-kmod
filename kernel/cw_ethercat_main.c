@@ -20,6 +20,8 @@
 #include "cw_ethercat_uapi.h"
 
 #define CW_EC_NAME "cw_ethercat"
+#define CW_EC_DEACTIVATE_SETTLE_MS 5000U
+#define CW_EC_DEACTIVATE_POLL_MS 10U
 
 struct cw_ec_file {
 	ec_master_t *master;
@@ -249,10 +251,44 @@ static int cw_ec_cycle_thread(void *data)
 	return 0;
 }
 
+static int cw_ec_wait_configured_slaves_settled(struct cw_ec_file *ctx)
+{
+	unsigned long timeout =
+		jiffies + msecs_to_jiffies(CW_EC_DEACTIVATE_SETTLE_MS);
+
+	for (;;) {
+		struct cw_ec_slave_node *slave;
+		bool settled = true;
+
+		list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+			ec_slave_info_t info = {};
+			int ret;
+
+			ret = ecrt_master_get_slave(ctx->master,
+						    slave->cfg.position, &info);
+			if (ret == -ENOENT)
+				continue;
+			if (ret)
+				return ret;
+			if (info.al_state & (EC_AL_STATE_SAFEOP |
+					     EC_AL_STATE_OP)) {
+				settled = false;
+				break;
+			}
+		}
+		if (settled)
+			return 0;
+		if (time_after_eq(jiffies, timeout))
+			return -ETIMEDOUT;
+		msleep(CW_EC_DEACTIVATE_POLL_MS);
+	}
+}
+
 static int cw_ec_deactivate_locked(struct cw_ec_file *ctx)
 {
 	int process_ret;
 	int receive_ret;
+	int settle_ret;
 	int ret;
 
 	if (!ctx->active)
@@ -271,9 +307,14 @@ static int cw_ec_deactivate_locked(struct cw_ec_file *ctx)
 	process_ret = ecrt_domain_process(ctx->domain);
 	ret = ecrt_master_deactivate(ctx->master);
 	ctx->active = false;
+	settle_ret = ret ? 0 : cw_ec_wait_configured_slaves_settled(ctx);
 	cw_ec_invalidate_applied_config(ctx);
+	if (settle_ret)
+		ctx->config_poisoned = true;
 	if (ret)
 		return ret;
+	if (settle_ret)
+		return settle_ret;
 	if (receive_ret)
 		return receive_ret;
 	return process_ret;

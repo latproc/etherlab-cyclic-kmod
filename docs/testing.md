@@ -211,6 +211,19 @@ Repetition testing must wait for idle/PREOP settlement, and the production
 lifecycle must define how that settlement is reported rather than relying on
 arbitrary sleeps.
 
+The kernel-side five-second settled-state poll was then tested with five
+immediate two-second sessions and no user-space delay. Every run completed
+2,000 cycles with WC 3/complete, zero cycle API errors, and zero overruns. No
+new unmatched datagram or failed/skipped AL-state datagram was logged, proving
+that immediate reacquisition no longer races the unfinished transition.
+
+Four of those five intentional stops still produced ED3L AL status `0x001b`
+(`Sync manager watchdog`). The watchdog is enabled in the realistic output
+fixture, application datagrams necessarily stop before the public
+`ecrt_master_deactivate()` implementation asynchronously requests PREOP, and
+the public API exposes no earlier state request. Settled reuse is therefore
+proven, but warning-free watchdog-enabled deactivation is not.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

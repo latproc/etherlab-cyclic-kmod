@@ -146,6 +146,11 @@ completes. Rapid reacquisition can also collide with pending idle-state-machine
 datagrams. This unresolved lifecycle boundary must not be hidden by disabling
 the production watchdog.
 
+The transport now bounds the reuse side of that boundary: deactivation waits
+up to five seconds until every configured, present physical position has left
+SAFEOP/OP. Failure poisons the current session and requires close/reopen. This
+does not solve or suppress a watchdog event during the transition itself.
+
 This is not yet the final stale-output design. Before process-image writes are
 added, the transport still needs generations, controller liveness, explicit
 arm/re-arm, and forced-safe behavior for link/slave loss and power restoration.

@@ -413,4 +413,8 @@ Update this section during work. Use dated entries for facts that may change.
   Rapid deactivate/reacquire is not accepted: EtherLab's asynchronous
   post-deactivation PREOP transition can race reacquisition and the enabled
   drive output watchdog can expire after cyclic traffic stops. Do not hide
-  this by disabling the watchdog; add an observable settled lifecycle.
+  this by disabling the watchdog. Deactivation now has a provisional bounded
+  five-second poll requiring configured slaves to leave SAFEOP/OP before
+  reuse. Five immediate hardware repetitions added no unmatched or
+  failed/skipped AL-state datagrams, but four stops still reported ED3L Sync
+  Manager watchdog `0x001b`.
