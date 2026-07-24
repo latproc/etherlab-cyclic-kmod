@@ -100,6 +100,15 @@ int main(int argc, char **argv)
 		.struct_size = sizeof(config_apply),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	struct cw_ec_domain_create domain_create = {
+		.struct_size = sizeof(domain_create),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	struct cw_ec_entry_offset entry_offset = {
+		.struct_size = sizeof(entry_offset),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.entry_id = 1001,
+	};
 	unsigned long unknown_ioctl = _IO(CW_EC_IOC_MAGIC, 0x7f);
 	int failures = 0;
 	int second_fd;
@@ -302,6 +311,44 @@ int main(int argc, char **argv)
 				 ioctl(fd, CW_EC_IOC_CONFIG_BEGIN,
 				       &config_begin),
 				 EBUSY);
+
+	if (ioctl(fd, CW_EC_IOC_DOMAIN_CREATE, &domain_create) < 0) {
+		fprintf(stderr,
+			"FAIL: create domain: %s; config id=%" PRIu32 "\n",
+			strerror(errno), domain_create.failed_config_id);
+		failures++;
+	} else if (domain_create.entry_count != 1) {
+		fprintf(stderr, "FAIL: domain registered incorrect entry count\n");
+		failures++;
+	} else {
+		printf("PASS: domain created with one registered entry\n");
+	}
+	if (ioctl(fd, CW_EC_IOC_GET_ENTRY_OFFSET, &entry_offset) < 0) {
+		fprintf(stderr, "FAIL: get entry offset: %s\n", strerror(errno));
+		failures++;
+	} else if (entry_offset.domain_offset != 0 ||
+		   entry_offset.bit_position != 0 ||
+		   entry_offset.bit_length != 16) {
+		fprintf(stderr,
+			"FAIL: unexpected entry mapping offset=%" PRIu32
+			" bit=%u length=%u\n",
+			entry_offset.domain_offset, entry_offset.bit_position,
+			entry_offset.bit_length);
+		failures++;
+	} else {
+		printf("PASS: stable entry ID resolved to domain offset\n");
+	}
+	entry_offset.entry_id = 9999;
+	errno = 0;
+	failures += expect_errno("unknown entry ID",
+				 ioctl(fd, CW_EC_IOC_GET_ENTRY_OFFSET,
+				       &entry_offset),
+				 ENOENT);
+	errno = 0;
+	failures += expect_errno("duplicate domain create",
+				 ioctl(fd, CW_EC_IOC_DOMAIN_CREATE,
+				       &domain_create),
+				 EINVAL);
 
 	if (close(fd) < 0) {
 		fprintf(stderr, "FAIL: close: %s\n", strerror(errno));

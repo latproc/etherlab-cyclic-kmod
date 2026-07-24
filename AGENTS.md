@@ -33,8 +33,9 @@ decisions, risks, commands, or next steps change.
   exists.
 - API 0.3 now accepts and validates a bounded pending
   slave/Sync/PDO/PDO-entry hierarchy and can construct the corresponding
-  persistent EtherLab configuration objects without activation. It does not
-  yet create/register a domain, activate, or cycle.
+  persistent EtherLab configuration objects and register a domain without
+  activation. Stable user entry IDs resolve to byte/bit offsets. It does not
+  yet activate or cycle.
 - A provisional bounded ad-hoc SDO batch exists for commissioning and
   decision-gate tests. It is not the persistent production setup mechanism.
 - Bounded SDO upload is hardware-proven against ED3L `0x6060:00`; no write has
@@ -284,5 +285,10 @@ Update this section during work. Use dated entries for facts that may change.
   Sync Manager, PDO-assignment, and mapping objects. A fictitious absent-slave
   apply/release test passed without activation, bus traffic, or kernel
   warning/error. Nonzero revision constraints are rejected because the target
-  EtherLab configuration matcher does not accept revision. Next: domain
-  creation and stable entry registration, still without activation.
+  EtherLab configuration matcher does not accept revision.
+- 2026-07-24: Offline domain creation and position-based PDO-entry
+  registration passed using a fictitious absent slave. Stable entry ID lookup,
+  unknown-ID rejection, repeated-call rejection, release, and unload passed
+  without activation, bus traffic, or kernel warning/error. Next: add the
+  standalone declarative configuration tool and ED3L fixture before any
+  activation.

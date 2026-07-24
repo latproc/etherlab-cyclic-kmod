@@ -118,6 +118,21 @@ configuration objects were constructed and released on close, but the master
 was not activated and no mailbox or process-data traffic was sent. Module
 unload again left the recent kernel warning/error window empty.
 
+The offline domain-registration extension then passed:
+
+```text
+PASS: domain created with one registered entry
+PASS: stable entry ID resolved to domain offset
+PASS: unknown entry ID returned No such file or directory
+PASS: duplicate domain create returned Invalid argument
+```
+
+The first run exposed and then fixed an error-path bug where an unknown entry
+ID retained the successful structure-header result. The full suite passed
+after the fix. The deliberately absent slave allowed domain layout and cleanup
+to be tested without activation or bus traffic; recent kernel warnings/errors
+remained empty after unload.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

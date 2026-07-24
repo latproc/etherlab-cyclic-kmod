@@ -180,5 +180,13 @@ code, but not revision. API 0.3 therefore rejects a nonzero revision constraint
 instead of silently failing to enforce it. A future explicit revision policy
 must preserve absent-at-startup configuration.
 
-Creating/registering a domain and returning stable entry offsets are deferred
-to the next checkpoint.
+`CW_EC_IOC_DOMAIN_CREATE` creates one EtherLab domain and registers every
+submitted entry with `ecrt_slave_config_reg_pdo_entry_pos()`. Position-based
+registration preserves the exact Sync Manager/PDO/entry hierarchy even when
+object indices are repeated. Registration failure poisons the session and
+requires close/reopen for the same rollback reason as configuration apply.
+
+After successful registration, `CW_EC_IOC_GET_ENTRY_OFFSET` resolves a stable
+user-supplied `entry_id` to its domain byte offset, bit position, and bit
+length. Unknown IDs return `ENOENT`. Domain creation does not activate the
+master, obtain the process-data pointer, or send traffic.

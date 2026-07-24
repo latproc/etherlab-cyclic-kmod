@@ -19,6 +19,7 @@
 
 struct cw_ec_file {
 	ec_master_t *master;
+	ec_domain_t *domain;
 	struct mutex lock;
 	struct list_head setup_sdos;
 	u32 setup_count;
@@ -38,6 +39,7 @@ struct cw_ec_file {
 	bool config_validated;
 	bool config_applied;
 	bool config_poisoned;
+	bool domain_registered;
 };
 
 struct cw_ec_setup_entry {
@@ -75,6 +77,9 @@ struct cw_ec_pdo_node {
 struct cw_ec_entry_node {
 	struct cw_ec_config_node common;
 	struct cw_ec_config_entry cfg;
+	u32 domain_offset;
+	u8 bit_position;
+	bool registered;
 };
 
 static atomic_t cw_ec_control_open = ATOMIC_INIT(0);
@@ -123,6 +128,8 @@ static void cw_ec_config_clear(struct cw_ec_file *ctx)
 	ctx->config_validated = false;
 	ctx->config_applied = false;
 	ctx->config_poisoned = false;
+	ctx->domain = NULL;
+	ctx->domain_registered = false;
 }
 
 static int cw_ec_open(struct inode *inode, struct file *file)
@@ -208,7 +215,8 @@ static long cw_ec_config_begin(struct cw_ec_file *ctx, void __user *argp)
 		return -EINVAL;
 
 	mutex_lock(&ctx->lock);
-	if (ctx->config_applied || ctx->config_poisoned) {
+	if (ctx->config_applied || ctx->config_poisoned ||
+	    ctx->domain_registered) {
 		mutex_unlock(&ctx->lock);
 		return -EBUSY;
 	}
@@ -432,6 +440,154 @@ static long cw_ec_config_apply(struct cw_ec_file *ctx, void __user *argp)
 out:
 	result.result = ret;
 	if (copy_to_user(argp, &result, sizeof(result)))
+		ret = -EFAULT;
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
+
+static unsigned int cw_ec_pdo_position(struct cw_ec_file *ctx,
+				       const struct cw_ec_pdo_node *target)
+{
+	struct cw_ec_pdo_node *pdo;
+	unsigned int position = 0;
+
+	list_for_each_entry(pdo, &ctx->config_pdos, common.node) {
+		if (pdo == target)
+			break;
+		if (pdo->cfg.sync_config_id == target->cfg.sync_config_id)
+			position++;
+	}
+	return position;
+}
+
+static unsigned int cw_ec_entry_position(struct cw_ec_file *ctx,
+					 const struct cw_ec_entry_node *target)
+{
+	struct cw_ec_entry_node *entry;
+	unsigned int position = 0;
+
+	list_for_each_entry(entry, &ctx->config_entries, common.node) {
+		if (entry == target)
+			break;
+		if (entry->cfg.pdo_config_id == target->cfg.pdo_config_id)
+			position++;
+	}
+	return position;
+}
+
+static long cw_ec_domain_create(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_domain_create result;
+	struct cw_ec_entry_node *entry;
+	struct cw_ec_slave_node *slave;
+	struct cw_ec_sync_node *sync;
+	struct cw_ec_pdo_node *pdo;
+	unsigned int bit_position;
+	int offset;
+	int ret;
+
+	if (copy_from_user(&result, argp, sizeof(result)))
+		return -EFAULT;
+	ret = cw_ec_check_header(result.struct_size, result.api_major,
+				 sizeof(result));
+	if (ret)
+		return ret;
+
+	memset(&result, 0, sizeof(result));
+	result.struct_size = sizeof(result);
+	result.api_major = CW_EC_API_VERSION_MAJOR;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->config_applied || ctx->config_poisoned ||
+	    ctx->domain_registered || !ctx->config_entry_count) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	ctx->config_poisoned = true;
+	ctx->domain = ecrt_master_create_domain(ctx->master);
+	if (!ctx->domain) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	list_for_each_entry(entry, &ctx->config_entries, common.node) {
+		pdo = cw_ec_find_pdo(ctx, entry->cfg.pdo_config_id);
+		sync = pdo ? cw_ec_find_sync(ctx, pdo->cfg.sync_config_id) : NULL;
+		slave = sync ?
+			cw_ec_find_slave(ctx, sync->cfg.slave_config_id) : NULL;
+		if (!pdo || !sync || !slave) {
+			ret = -ENOENT;
+			result.failed_config_id = entry->cfg.config_id;
+			goto out;
+		}
+
+		bit_position = 0;
+		offset = ecrt_slave_config_reg_pdo_entry_pos(
+			slave->ec_config, sync->cfg.sync_index,
+			cw_ec_pdo_position(ctx, pdo),
+			cw_ec_entry_position(ctx, entry),
+			ctx->domain, &bit_position);
+		if (offset < 0) {
+			ret = offset;
+			result.failed_config_id = entry->cfg.config_id;
+			goto out;
+		}
+		entry->domain_offset = offset;
+		entry->bit_position = bit_position;
+		entry->registered = true;
+		result.entry_count++;
+	}
+
+	ctx->domain_registered = true;
+	ctx->config_poisoned = false;
+	ret = 0;
+out:
+	result.result = ret;
+	if (copy_to_user(argp, &result, sizeof(result)))
+		ret = -EFAULT;
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
+
+static long cw_ec_get_entry_offset(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_entry_offset result;
+	struct cw_ec_entry_node *entry;
+	u32 entry_id;
+	int ret = -ENOENT;
+
+	if (copy_from_user(&result, argp, sizeof(result)))
+		return -EFAULT;
+	ret = cw_ec_check_header(result.struct_size, result.api_major,
+				 sizeof(result));
+	if (ret)
+		return ret;
+	if (!result.entry_id)
+		return -EINVAL;
+	entry_id = result.entry_id;
+
+	mutex_lock(&ctx->lock);
+	ret = -ENOENT;
+	if (!ctx->domain_registered) {
+		ret = -EINVAL;
+		goto out;
+	}
+	list_for_each_entry(entry, &ctx->config_entries, common.node) {
+		if (entry->cfg.entry_id == entry_id && entry->registered) {
+			memset(&result, 0, sizeof(result));
+			result.struct_size = sizeof(result);
+			result.api_major = CW_EC_API_VERSION_MAJOR;
+			result.entry_id = entry_id;
+			result.domain_offset = entry->domain_offset;
+			result.bit_position = entry->bit_position;
+			result.bit_length = entry->cfg.bit_length;
+			ret = 0;
+			break;
+		}
+	}
+out:
+	if (!ret && copy_to_user(argp, &result, sizeof(result)))
 		ret = -EFAULT;
 	mutex_unlock(&ctx->lock);
 	return ret;
@@ -977,6 +1133,10 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return cw_ec_config_validate(ctx, argp);
 	case CW_EC_IOC_CONFIG_APPLY:
 		return cw_ec_config_apply(ctx, argp);
+	case CW_EC_IOC_DOMAIN_CREATE:
+		return cw_ec_domain_create(ctx, argp);
+	case CW_EC_IOC_GET_ENTRY_OFFSET:
+		return cw_ec_get_entry_offset(ctx, argp);
 	default:
 		return -ENOTTY;
 	}

@@ -206,6 +206,25 @@ struct cw_ec_config_apply {
 	__u32 reserved1;
 };
 
+struct cw_ec_domain_create {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 failed_config_id;
+	__s32 result;
+	__u32 entry_count;
+	__u32 reserved;
+};
+
+struct cw_ec_entry_offset {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 entry_id;
+	__u32 domain_offset;
+	__u8 bit_position;
+	__u8 bit_length;
+	__u8 reserved[2];
+};
+
 #define CW_EC_IOC_MAGIC 0xec
 
 #define CW_EC_IOC_GET_API_VERSION \
@@ -238,5 +257,9 @@ struct cw_ec_config_apply {
 	_IOWR(CW_EC_IOC_MAGIC, 0x25, struct cw_ec_config_validate)
 #define CW_EC_IOC_CONFIG_APPLY \
 	_IOWR(CW_EC_IOC_MAGIC, 0x26, struct cw_ec_config_apply)
+#define CW_EC_IOC_DOMAIN_CREATE \
+	_IOWR(CW_EC_IOC_MAGIC, 0x27, struct cw_ec_domain_create)
+#define CW_EC_IOC_GET_ENTRY_OFFSET \
+	_IOWR(CW_EC_IOC_MAGIC, 0x28, struct cw_ec_entry_offset)
 
 #endif /* CW_ETHERCAT_UAPI_H */
