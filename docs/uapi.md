@@ -2,9 +2,11 @@
 
 ## Status
 
-The current experimental API is version 0.2. It supports read-only discovery
-and a provisional bounded ad-hoc SDO batch used for commissioning tests. It is
-not stable and provides no persistent slave/PDO configuration or cyclic I/O.
+The current experimental API is version 0.3. It supports read-only discovery,
+a provisional bounded ad-hoc SDO batch used for commissioning tests, and
+non-mutating validation of a pending slave/Sync Manager/PDO/PDO-entry
+hierarchy. It is not stable and does not yet apply persistent configuration or
+provide cyclic I/O.
 
 ## Ownership and lifecycle
 
@@ -28,7 +30,8 @@ Linux UAPI types, contain no pointers, and have fixed layouts suitable for the
 compat ioctl path.
 
 The tool first calls `CW_EC_IOC_GET_API_VERSION`. Major versions must match.
-Minor version 0.2 adds the provisional ad-hoc setup-SDO batch.
+Minor version 0.2 added the provisional ad-hoc setup-SDO batch. Minor version
+0.3 adds the pending declarative configuration hierarchy and validation calls.
 
 Input/output structures that accept caller fields include `struct_size` and
 `api_major`. The kernel rejects an unexpected size with `EINVAL` and an
@@ -128,5 +131,34 @@ bytes. The result includes actual length, data, errno, and CoE abort code. It
 does not retain an asynchronous request.
 
 The production configuration path will instead store ordered
-`ecrt_slave_config_sdo()` data with each persistent slave configuration so
-EtherLab can replay it during PREOP reconfiguration.
+`ecrt_slave_config_sdo()` data for non-PDO startup parameters with each
+persistent slave configuration so EtherLab can replay it during PREOP
+reconfiguration. PDO mapping and assignment must use
+`ecrt_slave_config_pdos()`, as required by the target EtherLab API.
+
+## Pending declarative configuration validation
+
+The following operations build and validate kernel-owned pending metadata but
+do not yet call EtherLab configuration or activation APIs:
+
+```text
+CW_EC_IOC_CONFIG_BEGIN
+CW_EC_IOC_CONFIG_ADD_SLAVE
+CW_EC_IOC_CONFIG_ADD_SYNC
+CW_EC_IOC_CONFIG_ADD_PDO
+CW_EC_IOC_CONFIG_ADD_ENTRY
+CW_EC_IOC_CONFIG_VALIDATE
+```
+
+Each object has a nonzero configuration ID. Child objects reference their
+parent by ID, and process-data entries also carry a nonzero stable
+user-supplied `entry_id`. Validation rejects missing parents, duplicate IDs,
+duplicate slave addresses, duplicate Sync Manager indices within a slave,
+duplicate PDO indices within a Sync Manager, and duplicate entry IDs or object
+references within a PDO.
+
+The current conservative limits are 256 slaves, 1024 Sync Managers, 4096 PDOs,
+and 16384 entries. A successful validation freezes the pending transaction
+against further additions. `CONFIG_BEGIN` or close clears it. Applying it to
+EtherLab, registering a domain, and returning entry offsets are deliberately
+deferred to the next checkpoint.

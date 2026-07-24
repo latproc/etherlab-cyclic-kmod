@@ -26,6 +26,16 @@ struct cw_ec_file {
 	u32 last_sequence;
 	bool setup_started;
 	bool setup_applied;
+	struct list_head config_slaves;
+	struct list_head config_syncs;
+	struct list_head config_pdos;
+	struct list_head config_entries;
+	u32 config_slave_count;
+	u32 config_sync_count;
+	u32 config_pdo_count;
+	u32 config_entry_count;
+	bool config_started;
+	bool config_validated;
 };
 
 struct cw_ec_setup_entry {
@@ -39,7 +49,35 @@ struct cw_ec_setup_entry {
 	u8 data[];
 };
 
+struct cw_ec_config_node {
+	struct list_head node;
+	u32 config_id;
+};
+
+struct cw_ec_slave_node {
+	struct cw_ec_config_node common;
+	struct cw_ec_config_slave cfg;
+};
+
+struct cw_ec_sync_node {
+	struct cw_ec_config_node common;
+	struct cw_ec_config_sync cfg;
+};
+
+struct cw_ec_pdo_node {
+	struct cw_ec_config_node common;
+	struct cw_ec_config_pdo cfg;
+};
+
+struct cw_ec_entry_node {
+	struct cw_ec_config_node common;
+	struct cw_ec_config_entry cfg;
+};
+
 static atomic_t cw_ec_control_open = ATOMIC_INIT(0);
+
+static int cw_ec_check_header(u16 struct_size, u16 api_major,
+			      size_t expected_size);
 
 static void cw_ec_setup_clear(struct cw_ec_file *ctx)
 {
@@ -55,6 +93,31 @@ static void cw_ec_setup_clear(struct cw_ec_file *ctx)
 	ctx->last_sequence = 0;
 	ctx->setup_started = false;
 	ctx->setup_applied = false;
+}
+
+static void cw_ec_config_clear(struct cw_ec_file *ctx)
+{
+	struct cw_ec_config_node *entry;
+	struct cw_ec_config_node *next;
+
+#define CW_EC_CLEAR_CONFIG_LIST(name) \
+	list_for_each_entry_safe(entry, next, &ctx->name, node) { \
+		list_del(&entry->node); \
+		kfree(entry); \
+	}
+
+	CW_EC_CLEAR_CONFIG_LIST(config_entries);
+	CW_EC_CLEAR_CONFIG_LIST(config_pdos);
+	CW_EC_CLEAR_CONFIG_LIST(config_syncs);
+	CW_EC_CLEAR_CONFIG_LIST(config_slaves);
+#undef CW_EC_CLEAR_CONFIG_LIST
+
+	ctx->config_slave_count = 0;
+	ctx->config_sync_count = 0;
+	ctx->config_pdo_count = 0;
+	ctx->config_entry_count = 0;
+	ctx->config_started = false;
+	ctx->config_validated = false;
 }
 
 static int cw_ec_open(struct inode *inode, struct file *file)
@@ -81,6 +144,10 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	ctx->master = master;
 	mutex_init(&ctx->lock);
 	INIT_LIST_HEAD(&ctx->setup_sdos);
+	INIT_LIST_HEAD(&ctx->config_slaves);
+	INIT_LIST_HEAD(&ctx->config_syncs);
+	INIT_LIST_HEAD(&ctx->config_pdos);
+	INIT_LIST_HEAD(&ctx->config_entries);
 	file->private_data = ctx;
 	nonseekable_open(inode, file);
 
@@ -95,6 +162,7 @@ static int cw_ec_release(struct inode *inode, struct file *file)
 	if (ctx) {
 		mutex_lock(&ctx->lock);
 		cw_ec_setup_clear(ctx);
+		cw_ec_config_clear(ctx);
 		if (ctx->master) {
 			ecrt_release_master(ctx->master);
 			ctx->master = NULL;
@@ -107,6 +175,253 @@ static int cw_ec_release(struct inode *inode, struct file *file)
 	atomic_set(&cw_ec_control_open, 0);
 	pr_info(CW_EC_NAME ": control owner released master 0\n");
 	return 0;
+}
+
+static bool cw_ec_config_id_exists(struct list_head *head, u32 config_id)
+{
+	struct cw_ec_config_node *entry;
+
+	list_for_each_entry(entry, head, node) {
+		if (entry->config_id == config_id)
+			return true;
+	}
+	return false;
+}
+
+static long cw_ec_config_begin(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_config_begin request;
+	int ret;
+
+	if (copy_from_user(&request, argp, sizeof(request)))
+		return -EFAULT;
+	ret = cw_ec_check_header(request.struct_size, request.api_major,
+				 sizeof(request));
+	if (ret)
+		return ret;
+	if (request.reserved)
+		return -EINVAL;
+
+	mutex_lock(&ctx->lock);
+	cw_ec_config_clear(ctx);
+	ctx->config_started = true;
+	mutex_unlock(&ctx->lock);
+	return 0;
+}
+
+static long cw_ec_config_add_slave(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_slave_node *node;
+	int ret;
+
+	node = kzalloc(sizeof(*node), GFP_KERNEL);
+	if (!node)
+		return -ENOMEM;
+	if (copy_from_user(&node->cfg, argp, sizeof(node->cfg))) {
+		ret = -EFAULT;
+		goto out;
+	}
+	ret = cw_ec_check_header(node->cfg.struct_size, node->cfg.api_major,
+				 sizeof(node->cfg));
+	if (ret)
+		goto out;
+	if (!node->cfg.config_id || !node->cfg.vendor_id ||
+	    !node->cfg.product_code || node->cfg.flags) {
+		ret = -EINVAL;
+		goto out;
+	}
+	node->common.config_id = node->cfg.config_id;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->config_started || ctx->config_validated) {
+		ret = -EINVAL;
+	} else if (ctx->config_slave_count >= CW_EC_CONFIG_SLAVE_MAX) {
+		ret = -E2BIG;
+	} else if (cw_ec_config_id_exists(&ctx->config_slaves,
+					  node->cfg.config_id)) {
+		ret = -EEXIST;
+	} else {
+		list_add_tail(&node->common.node, &ctx->config_slaves);
+		ctx->config_slave_count++;
+		node = NULL;
+		ret = 0;
+	}
+	mutex_unlock(&ctx->lock);
+out:
+	kfree(node);
+	return ret;
+}
+
+#define CW_EC_CONFIG_ADD_CHILD(function_name, node_type, cfg_member, list_name, \
+			       count_name, max_count, validate_expr) \
+static long function_name(struct cw_ec_file *ctx, void __user *argp) \
+{ \
+	struct node_type *node; \
+	int ret; \
+	node = kzalloc(sizeof(*node), GFP_KERNEL); \
+	if (!node) \
+		return -ENOMEM; \
+	if (copy_from_user(&node->cfg_member, argp, sizeof(node->cfg_member))) { \
+		ret = -EFAULT; \
+		goto out; \
+	} \
+	ret = cw_ec_check_header(node->cfg_member.struct_size, \
+				 node->cfg_member.api_major, \
+				 sizeof(node->cfg_member)); \
+	if (ret) \
+		goto out; \
+	if (!node->cfg_member.config_id || (validate_expr)) { \
+		ret = -EINVAL; \
+		goto out; \
+	} \
+	node->common.config_id = node->cfg_member.config_id; \
+	mutex_lock(&ctx->lock); \
+	if (!ctx->config_started || ctx->config_validated) \
+		ret = -EINVAL; \
+	else if (ctx->count_name >= (max_count)) \
+		ret = -E2BIG; \
+	else if (cw_ec_config_id_exists(&ctx->list_name, \
+					 node->cfg_member.config_id)) \
+		ret = -EEXIST; \
+	else { \
+		list_add_tail(&node->common.node, &ctx->list_name); \
+		ctx->count_name++; \
+		node = NULL; \
+		ret = 0; \
+	} \
+	mutex_unlock(&ctx->lock); \
+out: \
+	kfree(node); \
+	return ret; \
+}
+
+CW_EC_CONFIG_ADD_CHILD(cw_ec_config_add_sync, cw_ec_sync_node, cfg,
+		       config_syncs, config_sync_count, CW_EC_CONFIG_SYNC_MAX,
+		       !node->cfg.slave_config_id ||
+		       node->cfg.sync_index >= EC_MAX_SYNC_MANAGERS ||
+		       (node->cfg.direction != CW_EC_DIR_OUTPUT &&
+			node->cfg.direction != CW_EC_DIR_INPUT) ||
+		       node->cfg.watchdog_mode > CW_EC_WD_DISABLE ||
+		       node->cfg.reserved)
+
+CW_EC_CONFIG_ADD_CHILD(cw_ec_config_add_pdo, cw_ec_pdo_node, cfg,
+		       config_pdos, config_pdo_count, CW_EC_CONFIG_PDO_MAX,
+		       !node->cfg.sync_config_id || !node->cfg.pdo_index ||
+		       node->cfg.reserved)
+
+CW_EC_CONFIG_ADD_CHILD(cw_ec_config_add_entry, cw_ec_entry_node, cfg,
+		       config_entries, config_entry_count,
+		       CW_EC_CONFIG_ENTRY_MAX,
+		       !node->cfg.pdo_config_id || !node->cfg.entry_id ||
+		       !node->cfg.index || !node->cfg.bit_length)
+
+#undef CW_EC_CONFIG_ADD_CHILD
+
+static long cw_ec_config_validate(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_config_validate result;
+	struct cw_ec_entry_node *entry;
+	struct cw_ec_sync_node *sync;
+	struct cw_ec_pdo_node *pdo;
+	struct cw_ec_slave_node *slave;
+	int ret = 0;
+
+	if (copy_from_user(&result, argp, sizeof(result)))
+		return -EFAULT;
+	ret = cw_ec_check_header(result.struct_size, result.api_major,
+				 sizeof(result));
+	if (ret)
+		return ret;
+
+	memset(&result, 0, sizeof(result));
+	result.struct_size = sizeof(result);
+	result.api_major = CW_EC_API_VERSION_MAJOR;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->config_started || !ctx->config_slave_count) {
+		ret = -EINVAL;
+		goto out;
+	}
+	list_for_each_entry(sync, &ctx->config_syncs, common.node) {
+		struct cw_ec_sync_node *other;
+
+		if (!cw_ec_config_id_exists(&ctx->config_slaves,
+					    sync->cfg.slave_config_id)) {
+			ret = -ENOENT;
+			goto out;
+		}
+		list_for_each_entry(other, &ctx->config_syncs, common.node) {
+			if (other != sync &&
+			    other->cfg.slave_config_id ==
+				    sync->cfg.slave_config_id &&
+			    other->cfg.sync_index == sync->cfg.sync_index) {
+				ret = -EEXIST;
+				goto out;
+			}
+		}
+	}
+	list_for_each_entry(pdo, &ctx->config_pdos, common.node) {
+		struct cw_ec_pdo_node *other;
+
+		if (!cw_ec_config_id_exists(&ctx->config_syncs,
+					    pdo->cfg.sync_config_id)) {
+			ret = -ENOENT;
+			goto out;
+		}
+		list_for_each_entry(other, &ctx->config_pdos, common.node) {
+			if (other != pdo &&
+			    other->cfg.sync_config_id == pdo->cfg.sync_config_id &&
+			    other->cfg.pdo_index == pdo->cfg.pdo_index) {
+				ret = -EEXIST;
+				goto out;
+			}
+		}
+	}
+	list_for_each_entry(entry, &ctx->config_entries, common.node) {
+		struct cw_ec_entry_node *other;
+
+		if (!cw_ec_config_id_exists(&ctx->config_pdos,
+					    entry->cfg.pdo_config_id)) {
+			ret = -ENOENT;
+			goto out;
+		}
+		list_for_each_entry(other, &ctx->config_entries, common.node) {
+			if (other != entry &&
+			    other->cfg.entry_id == entry->cfg.entry_id) {
+				ret = -EEXIST;
+				goto out;
+			}
+			if (other != entry &&
+			    other->cfg.pdo_config_id == entry->cfg.pdo_config_id &&
+			    other->cfg.index == entry->cfg.index &&
+			    other->cfg.subindex == entry->cfg.subindex) {
+				ret = -EEXIST;
+				goto out;
+			}
+		}
+	}
+	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+		struct cw_ec_slave_node *other;
+
+		list_for_each_entry(other, &ctx->config_slaves, common.node) {
+			if (other != slave && other->cfg.alias == slave->cfg.alias &&
+			    other->cfg.position == slave->cfg.position) {
+				ret = -EEXIST;
+				goto out;
+			}
+		}
+	}
+	ctx->config_validated = true;
+out:
+	result.slave_count = ctx->config_slave_count;
+	result.sync_count = ctx->config_sync_count;
+	result.pdo_count = ctx->config_pdo_count;
+	result.entry_count = ctx->config_entry_count;
+	result.result = ret;
+	if (copy_to_user(argp, &result, sizeof(result)))
+		ret = -EFAULT;
+	mutex_unlock(&ctx->lock);
+	return ret;
 }
 
 static int cw_ec_check_header(u16 struct_size, u16 api_major,
@@ -463,6 +778,18 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return cw_ec_setup_reset(ctx, argp);
 	case CW_EC_IOC_SDO_UPLOAD:
 		return cw_ec_sdo_upload(ctx, argp);
+	case CW_EC_IOC_CONFIG_BEGIN:
+		return cw_ec_config_begin(ctx, argp);
+	case CW_EC_IOC_CONFIG_ADD_SLAVE:
+		return cw_ec_config_add_slave(ctx, argp);
+	case CW_EC_IOC_CONFIG_ADD_SYNC:
+		return cw_ec_config_add_sync(ctx, argp);
+	case CW_EC_IOC_CONFIG_ADD_PDO:
+		return cw_ec_config_add_pdo(ctx, argp);
+	case CW_EC_IOC_CONFIG_ADD_ENTRY:
+		return cw_ec_config_add_entry(ctx, argp);
+	case CW_EC_IOC_CONFIG_VALIDATE:
+		return cw_ec_config_validate(ctx, argp);
 	default:
 		return -ENOTTY;
 	}

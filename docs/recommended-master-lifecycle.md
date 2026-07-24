@@ -42,7 +42,7 @@ unchanged while cyclic processing and asynchronous requests run. See the
 [EtherLab API usage notes](https://docs.etherlab.org/ethercat/1.6/doxygen/apiusage.html)
 and [EtherLab application interface](https://docs.etherlab.org/ethercat/1.6/doxygen/group__ApplicationInterface.html).
 
-## Why persistent configuration SDOs are preferred
+## Persistent configuration SDO scope
 
 `ecrt_slave_config_sdo()` and its typed helpers copy each startup value into
 the persistent `ec_slave_config_t` in insertion order. The target EtherLab
@@ -53,6 +53,13 @@ EtherLab's published design explicitly places startup SDO configuration in the
 slave configuration state machine so it is applied every time the slave is
 reconfigured. This is the desired behavior when a powered-down drive returns.
 See the [EtherLab 1.6.9 manual](https://docs.etherlab.org/ethercat/1.6/pdf/ethercat_doc.pdf).
+
+The target 1.6.9 API places a strict boundary around this mechanism:
+`ecrt_slave_config_sdo()` says not to use configuration SDOs for PDO assignment
+objects `0x1c10`--`0x1c2f` or mapping objects `0x1600`--`0x17ff` and
+`0x1a00`--`0x1bff`. Those are owned by `ecrt_slave_config_pdos()` and related
+declarative calls. Persistent configuration SDOs remain appropriate for
+non-PDO startup parameters such as mode of operation at `0x6060:00`.
 
 By contrast, `ecrt_master_sdo_download()` is a blocking ad-hoc transaction.
 It is useful for:
@@ -84,8 +91,9 @@ The ED3L decision gate remains necessary because the drive may require a
 specific mapping sequence. The candidates are:
 
 1. declarative `ecrt_slave_config_pdos()` only;
-2. ordered persistent `ecrt_slave_config_sdo()` mapping;
-3. a documented hybrid with one owner per mapping object.
+2. declarative PDO configuration plus persistent non-PDO startup SDOs;
+3. only if declarative configuration fails, a documented explicit fallback
+   with one owner per mapping object.
 
 One-shot master downloads are the known-good comparison baseline, not the
 preferred final lifecycle.

@@ -14,7 +14,8 @@ decisions, risks, commands, or next steps change.
 
 ## Current Status
 
-- Current phase: Phase 2 complete; Phase 3 setup-SDO investigation/design.
+- Current phase: Phase 2 complete; Phase 3 decision gate, preparing the
+  declarative PDO test path.
 - The implementation plan has been read in full.
 - A minimal kernel probe, DKMS-aware build, environment documentation, and
   lifecycle test script exist.
@@ -30,9 +31,11 @@ decisions, risks, commands, or next steps change.
   iterations completed, with the final 20 adding no kernel warning.
 - No persistent configuration, PDO/domain, process-image, or cyclic code
   exists.
-- A provisional bounded ad-hoc SDO batch now exists in uncommitted Phase 3
-  work for commissioning/decision-gate tests. It is not the persistent
-  production setup mechanism and has not been loaded or executed on hardware.
+- API 0.3 now accepts and validates a bounded pending
+  slave/Sync/PDO/PDO-entry hierarchy. It does not yet construct EtherLab
+  configuration objects, create/register a domain, activate, or cycle.
+- A provisional bounded ad-hoc SDO batch exists for commissioning and
+  decision-gate tests. It is not the persistent production setup mechanism.
 - Bounded SDO upload is hardware-proven against ED3L `0x6060:00`; no write has
   been issued. Post-power-up readback showed all five drives in the default
   two-entry position PDO layout, not the planned velocity layout. Confirm the
@@ -57,11 +60,12 @@ decisions, risks, commands, or next steps change.
   IOD algorithm first: user space owns DC policy/parameters; the kernel cyclic
   backend owns reference selection, application time, cyclic sync calls, and
   low-overhead DC status/statistics.
-- Research confirms the recommended production path is persistent EtherLab
-  slave configuration: declarative PDOs plus ordered configuration SDOs applied
-  by the EtherLab PREOP state machine and replayed on reconfiguration. Ad-hoc
-  master SDO downloads are for commissioning and the decision gate, not the
-  normal recovery mechanism.
+- EtherLab 1.6.9 explicitly reserves PDO assignment/mapping for declarative
+  `ecrt_slave_config_pdos()` configuration. Persistent
+  `ecrt_slave_config_sdo()` entries are replayed on reconfiguration, but its
+  API says not to use them for PDO assignment or mapping objects. Use them for
+  ordinary startup parameters such as operating mode. Ad-hoc master SDO
+  downloads remain a commissioning fallback, not normal recovery.
 - EtherCAT station aliases are optional. Baseline matching must support alias
   zero using configured physical topology and absolute position. Never
   remap an absent logical axis to another identical device merely because its
@@ -263,3 +267,16 @@ Update this section during work. Use dated entries for facts that may change.
 - 2026-07-24: Exact Phase 2 contention test completed: module registration
   succeeded while IOD ran, `cw_ec_bus` received `EBUSY`, and IOD retained
   active Operation state with 29 slaves/link up.
+- 2026-07-24: Phase 3 commissioning support was committed as `fb3ac46`. A
+  cleaned 21-write explicit ED3L recipe succeeded on position 29 and readback
+  matched the desired layout.
+- 2026-07-24: The installed EtherLab 1.6.9 `ecrt.h` confirms configuration SDOs
+  are retained and replayed after slave power loss, but PDO assignment and
+  mapping SDOs must instead be represented through
+  `ecrt_slave_config_pdos()`. The next implementation is the generic
+  declarative PDO decision-gate path.
+- 2026-07-24: API 0.3 pending declarative configuration validation built and
+  passed its live ABI suite with IOD stopped. The test performed no EtherLab
+  configuration, activation, or slave write; unload produced no recent kernel
+  warning/error. Next: construct immutable EtherLab arrays from validated
+  metadata and add a separate apply/activate decision-gate operation.

@@ -124,8 +124,10 @@ replay.
 1. Run the known-good legacy `sdo.sh`/IOD startup path and capture every object
    again.
 2. Save that velocity mapping as Test A.
-3. Test ordered persistent configuration SDOs.
-4. Test declarative `ecrt_slave_config_pdos()`.
+3. Test declarative `ecrt_slave_config_pdos()` for mapping and assignment.
+4. Attach only non-PDO startup values, such as `0x6060:00`, through persistent
+   configuration SDOs. EtherLab 1.6.9 explicitly says not to use
+   `ecrt_slave_config_sdo()` for PDO assignment or mapping objects.
 5. Compare actual readback, OP transition, working counter, repeated lifecycle,
    startup absent, power loss, and restoration without restart.
 6. Verify a non-energizing recovery output image before any motion-capable

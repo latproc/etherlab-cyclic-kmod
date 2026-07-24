@@ -85,6 +85,25 @@ velocity PDO layout.
 See `docs/ed3l-pdo-configuration-test.md` for exact values and remaining
 persistent/declarative decision-gate tests.
 
+## API 0.3 pending-configuration validation
+
+On 2026-07-24, the API 0.3 module built against the target kernel/EtherLab
+artifacts, loaded with IOD stopped, and passed the extended
+`cw_ec_abi_test`. The new cases covered:
+
+```text
+PASS: config add before begin returned Invalid argument
+PASS: duplicate config slave ID returned File exists
+PASS: validate orphan config sync returned No such file or directory
+PASS: valid config hierarchy accepted
+PASS: config mutation after validation returned Invalid argument
+```
+
+The test used fictitious pending metadata only. It did not apply an EtherLab
+slave configuration, activate the master, or write any slave. The module
+unloaded cleanly and the subsequent five-minute kernel warning/error window was
+empty.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device
