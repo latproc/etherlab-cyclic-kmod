@@ -11,7 +11,7 @@
 #endif
 
 #define CW_EC_API_VERSION_MAJOR 0U
-#define CW_EC_API_VERSION_MINOR 6U
+#define CW_EC_API_VERSION_MINOR 7U
 
 #define CW_EC_CYCLE_PERIOD_MIN_NS 100000U
 #define CW_EC_CYCLE_PERIOD_MAX_NS 1000000000U
@@ -25,6 +25,7 @@
 #define CW_EC_CONFIG_PDO_MAX 4096U
 #define CW_EC_CONFIG_ENTRY_MAX 16384U
 #define CW_EC_CONFIG_DC_MAX CW_EC_CONFIG_SLAVE_MAX
+#define CW_EC_PROCESS_IMAGE_MAX (64U * 1024U)
 
 enum cw_ec_sdo_type {
 	CW_EC_SDO_U8 = 1,
@@ -343,6 +344,18 @@ struct cw_ec_io_status {
 	__u64 output_sequence;
 };
 
+struct cw_ec_input_snapshot {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 data_ptr;
+	__u32 data_capacity;
+	__u32 data_size;
+	__u64 config_generation;
+	__u64 input_sequence;
+	__u64 cycle_count;
+};
+
 #define CW_EC_IOC_MAGIC 0xec
 
 #define CW_EC_IOC_GET_API_VERSION \
@@ -393,5 +406,7 @@ struct cw_ec_io_status {
 	_IOWR(CW_EC_IOC_MAGIC, 0x33, struct cw_ec_dc_status)
 #define CW_EC_IOC_GET_IO_STATUS \
 	_IOWR(CW_EC_IOC_MAGIC, 0x40, struct cw_ec_io_status)
+#define CW_EC_IOC_GET_INPUT_SNAPSHOT \
+	_IOWR(CW_EC_IOC_MAGIC, 0x41, struct cw_ec_input_snapshot)
 
 #endif /* CW_ETHERCAT_UAPI_H */

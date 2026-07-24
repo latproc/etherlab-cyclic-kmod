@@ -14,8 +14,8 @@ decisions, risks, commands, or next steps change.
 
 ## Current Status
 
-- Current phase: standalone Phase 3 transport work; implementing distributed
-  clocks before process-image exchange and the architecture review gate.
+- Current phase: standalone Phase 3 transport work; implementing copied
+  process-image exchange before the architecture review gate.
 - The implementation plan has been read in full.
 - A minimal kernel probe, DKMS-aware build, environment documentation, and
   lifecycle test script exist.
@@ -42,6 +42,12 @@ decisions, risks, commands, or next steps change.
   reference-led controller, cyclic slave synchronization, monitoring, and a
   bounded status ioctl. Four motion-inhibited position-29 runs reached complete
   WC with valid reference reads, monitor results, and zero cycle errors.
+- API 0.6 adds generation-bound health/fault/re-arm status while outputs remain
+  hard-disarmed.
+- API 0.7 adds a coherent copied, read-only domain snapshot. It uses
+  preallocated double buffers and never waits for user space in the cyclic
+  path. A motion-inhibited position-29 run returned live TxPDO bytes with all
+  RxPDO/output bytes zero.
 - A provisional bounded ad-hoc SDO batch exists for commissioning and
   decision-gate tests. It is not the persistent production setup mechanism.
 - Bounded SDO upload is hardware-proven against ED3L `0x6060:00`; no write has
@@ -271,7 +277,7 @@ Keep this section concise. Historical milestones and validation evidence are in
 `docs/project-history.md`; focused details belong in the relevant design,
 testing, safety, and build documents.
 
-- Current API: 0.6.
+- Current API: 0.7.
 - API 0.4 zero-output cyclic activation is hardware-proven on ED3L position 29
   with complete working counter and exact 28-byte PDO layout.
 - Deactivation waits for configured slaves to leave SAFEOP/OP and invalidates
@@ -288,9 +294,13 @@ testing, safety, and build documents.
   Position 29 reported healthy with all configured counts correct while
   outputs remained hard-disarmed. The fault transition/latch still requires a
   deliberate power-loss test.
+- API 0.7 adds a generation-bound copied domain snapshot with a 64 KiB limit.
+  A five-second position-29 retry reached OP and returned a coherent 28-byte
+  image with live input data and zero outputs. It recorded one 8.1 ms scheduling
+  overrun, so this is functional evidence, not timing acceptance.
 - Copied process-image concurrency and recovery rules are documented in
   `docs/process-image-exchange.md`.
-- Next step: validate the health fault latch, then add copied input snapshots
-  without adding an output writer.
+- Next step: add copied output publication without an arm operation, while
+  preserving hard-zero outputs in the cyclic path.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

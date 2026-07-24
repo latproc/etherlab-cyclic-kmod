@@ -52,3 +52,8 @@ commands, outputs, and design details.
 - Added API 0.6 generation-bound bus/configured-slave/domain health status.
   A zero-output position-29 run reported healthy with 34 responding slaves and
   the configured slave online/operational. Fault-latch validation remains.
+- Added API 0.7 coherent copied, read-only domain snapshots with a 64 KiB
+  activation bound and preallocated double buffering. A motion-inhibited
+  position-29 run returned live TxPDO data while all RxPDO/output bytes
+  remained zero. One scheduling overrun was observed, so timing acceptance
+  remains open.

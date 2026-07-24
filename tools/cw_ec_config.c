@@ -525,6 +525,11 @@ static int cycle(const char *path, uint32_t period_ns,
 		.struct_size = sizeof(io_status),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	struct cw_ec_input_snapshot snapshot = {
+		.struct_size = sizeof(snapshot),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
+	uint8_t *snapshot_data = NULL;
 	struct cw_ec_cycle_deactivate deactivate = {
 		.struct_size = sizeof(deactivate),
 		.api_major = CW_EC_API_VERSION_MAJOR,
@@ -611,6 +616,30 @@ static int cycle(const char *path, uint32_t period_ns,
 	       io_status.configured_slave_count,
 	       io_status.configured_slaves_online,
 	       io_status.configured_slaves_operational);
+	snapshot_data = calloc(activate.domain_size, 1);
+	if (!snapshot_data) {
+		fprintf(stderr, "cw_ec_config: allocate input snapshot: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	snapshot.data_ptr = (uintptr_t)snapshot_data;
+	snapshot.data_capacity = activate.domain_size;
+	if (ioctl(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT, &snapshot) < 0) {
+		fprintf(stderr, "cw_ec_config: input snapshot failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	printf("input snapshot: generation=%" PRIu64
+	       " sequence=%" PRIu64 " cycle=%" PRIu64 " size=%" PRIu32
+	       " data=",
+	       (uint64_t)snapshot.config_generation,
+	       (uint64_t)snapshot.input_sequence,
+	       (uint64_t)snapshot.cycle_count, snapshot.data_size);
+	for (uint32_t i = 0; i < snapshot.data_size && i < 64; i++)
+		printf("%02x", snapshot_data[i]);
+	if (snapshot.data_size > 64)
+		printf("...");
+	printf("\n");
 	if (ioctl(fd, CW_EC_IOC_CYCLE_DEACTIVATE, &deactivate) < 0) {
 		fprintf(stderr, "cw_ec_config: deactivation failed: %s\n",
 			strerror(errno));
@@ -625,6 +654,7 @@ out:
 	 */
 	if (active)
 		fprintf(stderr, "cw_ec_config: closing active session for cleanup\n");
+	free(snapshot_data);
 	if (close(fd) < 0) {
 		fprintf(stderr, "cw_ec_config: close: %s\n", strerror(errno));
 		ret = 1;

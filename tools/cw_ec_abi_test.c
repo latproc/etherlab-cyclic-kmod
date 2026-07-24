@@ -143,6 +143,13 @@ int main(int argc, char **argv)
 		.struct_size = sizeof(io_status),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	uint8_t snapshot_byte;
+	struct cw_ec_input_snapshot snapshot = {
+		.struct_size = sizeof(snapshot),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.data_ptr = (uintptr_t)&snapshot_byte,
+		.data_capacity = sizeof(snapshot_byte),
+	};
 	unsigned long unknown_ioctl = _IO(CW_EC_IOC_MAGIC, 0x7f);
 	int failures = 0;
 	int second_fd;
@@ -472,6 +479,18 @@ int main(int argc, char **argv)
 	} else {
 		printf("PASS: generation-bound inactive IO status is clean\n");
 	}
+	snapshot.flags = 1;
+	errno = 0;
+	failures += expect_errno("unsupported input snapshot flags",
+				 ioctl(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT,
+				       &snapshot),
+				 EINVAL);
+	snapshot.flags = 0;
+	errno = 0;
+	failures += expect_errno("input snapshot while inactive",
+				 ioctl(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT,
+				       &snapshot),
+				 EINVAL);
 	cycle_activate.cycle_period_ns = CW_EC_CYCLE_PERIOD_MIN_NS - 1;
 	errno = 0;
 	failures += expect_errno("cycle period below minimum",

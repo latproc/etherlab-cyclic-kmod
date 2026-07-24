@@ -288,6 +288,28 @@ zero overruns. Outputs remained permanently zero/disarmed. A deliberate
 power-loss/restoration test is still required to validate the unhealthy
 transition and sticky re-arm latch.
 
+## API 0.7 copied-snapshot smoke test
+
+The non-activating ABI suite rejected unsupported snapshot flags and snapshot
+requests while inactive. The first three-second hardware attempt published
+3,000 coherent snapshots but position 29 remained non-operational with WC zero;
+the returned image was therefore all zero. This was not counted as a pass.
+
+A five-second motion-inhibited retry reached OP and reported:
+
+```text
+cycles=4991 errors=0 overruns=1 maximum_lateness=8136627 ns
+wc=3 wc_state=2
+generation=3 healthy=1 armed=0 faults=0x00000000
+input sequence=4992 cycle=4992 size=28
+data=00000000000000000000000000000000000008160000000000004700
+```
+
+The first 18 bytes are the configured RxPDO/output region and remained zero.
+The final 10 bytes contain the live TxPDO/input region. The run validates
+coherent copied exchange and generation/sequence reporting, but its single
+8.1 ms scheduling overrun means it is not timing-acceptance evidence.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

@@ -239,8 +239,25 @@ health, current and last-latched fault masks, and a fault transition count.
 The bus becomes healthy only when the link is up, every configured slave is
 online and operational, and domain working counter is complete. After health
 has first been reached, a transition to unhealthy latches `rearm_required`.
-API 0.6 has no process-image writer or arm operation: `outputs_armed`, input
-sequence, and output sequence remain zero.
+API 0.7 adds `CW_EC_IOC_GET_INPUT_SNAPSHOT`. The name describes the
+user-space direction: it is a read-only snapshot of the complete EtherLab
+domain layout, including both input and output regions. The request contains a
+user pointer and capacity. On success it returns the exact data size,
+configuration generation, published input sequence, and associated cycle
+count. A capacity smaller than the domain returns `ENOSPC` after reporting the
+required size. Unsupported flags return `EINVAL`, and snapshots are unavailable
+while inactive.
+
+Activation rejects domains larger than `CW_EC_PROCESS_IMAGE_MAX` (64 KiB).
+Two zeroed buffers are allocated before EtherLab activation. The cyclic thread
+copies processed domain data into the inactive buffer and publishes it under a
+spinlock. A process-context reader reserves the current buffer during
+`copy_to_user`; the cyclic thread skips a publication rather than waiting for
+or overwriting that reader. Deactivation joins the cyclic thread before freeing
+the buffers.
+
+API 0.7 still has no process-image writer or arm operation: `outputs_armed` and
+output sequence remain zero.
 
 Activation requires an applied configuration and registered domain. The caller
 supplies a cycle period from 100 microseconds through one second; flags must be

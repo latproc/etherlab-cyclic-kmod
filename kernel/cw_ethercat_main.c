@@ -11,9 +11,11 @@
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/spinlock.h>
 #include <linux/string.h>
 #include <linux/timekeeping.h>
 #include <linux/uaccess.h>
+#include <linux/vmalloc.h>
 
 #include <ecrt.h>
 
@@ -94,6 +96,11 @@ struct cw_ec_file {
 	atomic_t io_configured_slaves_operational;
 	atomic64_t io_fault_count;
 	bool io_ever_healthy;
+	spinlock_t input_lock;
+	u8 *input_buffers[2];
+	u8 input_active;
+	int input_reader;
+	atomic64_t input_sequence;
 	bool active;
 };
 
@@ -166,6 +173,17 @@ static void cw_ec_invalidate_applied_config(struct cw_ec_file *ctx)
 	ctx->domain_registered = false;
 	ctx->domain_data = NULL;
 	ctx->domain_size = 0;
+}
+
+static void cw_ec_free_input_buffers(struct cw_ec_file *ctx)
+{
+	kvfree(ctx->input_buffers[0]);
+	kvfree(ctx->input_buffers[1]);
+	ctx->input_buffers[0] = NULL;
+	ctx->input_buffers[1] = NULL;
+	ctx->input_active = 0;
+	ctx->input_reader = -1;
+	atomic64_set(&ctx->input_sequence, 0);
 }
 
 static void cw_ec_setup_clear(struct cw_ec_file *ctx)
@@ -395,6 +413,27 @@ static void cw_ec_update_io_health(struct cw_ec_file *ctx,
 	}
 }
 
+static void cw_ec_publish_input_snapshot(struct cw_ec_file *ctx)
+{
+	unsigned long irq_flags;
+	u8 target;
+
+	spin_lock_irqsave(&ctx->input_lock, irq_flags);
+	target = ctx->input_active ^ 1U;
+	if (ctx->input_reader == target) {
+		spin_unlock_irqrestore(&ctx->input_lock, irq_flags);
+		return;
+	}
+	spin_unlock_irqrestore(&ctx->input_lock, irq_flags);
+
+	memcpy(ctx->input_buffers[target], ctx->domain_data, ctx->domain_size);
+
+	spin_lock_irqsave(&ctx->input_lock, irq_flags);
+	ctx->input_active = target;
+	atomic64_inc(&ctx->input_sequence);
+	spin_unlock_irqrestore(&ctx->input_lock, irq_flags);
+}
+
 static int cw_ec_cycle_thread(void *data)
 {
 	struct cw_ec_file *ctx = data;
@@ -433,6 +472,8 @@ static int cw_ec_cycle_thread(void *data)
 		operation_result = ecrt_domain_process(ctx->domain);
 		if (operation_result && !cycle_result)
 			cycle_result = operation_result;
+		if (!operation_result)
+			cw_ec_publish_input_snapshot(ctx);
 		if (ctx->config_dc_count)
 			operation_result = cw_ec_dc_process_receive(ctx);
 		else
@@ -530,6 +571,7 @@ static int cw_ec_deactivate_locked(struct cw_ec_file *ctx)
 	ret = ecrt_master_deactivate(ctx->master);
 	ctx->active = false;
 	settle_ret = ret ? 0 : cw_ec_wait_configured_slaves_settled(ctx);
+	cw_ec_free_input_buffers(ctx);
 	cw_ec_invalidate_applied_config(ctx);
 	if (settle_ret)
 		ctx->config_poisoned = true;
@@ -565,6 +607,8 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 
 	ctx->master = master;
 	mutex_init(&ctx->lock);
+	spin_lock_init(&ctx->input_lock);
+	ctx->input_reader = -1;
 	INIT_LIST_HEAD(&ctx->setup_sdos);
 	INIT_LIST_HEAD(&ctx->config_slaves);
 	INIT_LIST_HEAD(&ctx->config_syncs);
@@ -598,6 +642,7 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	atomic_set(&ctx->io_configured_slaves_online, 0);
 	atomic_set(&ctx->io_configured_slaves_operational, 0);
 	atomic64_set(&ctx->io_fault_count, 0);
+	atomic64_set(&ctx->input_sequence, 0);
 	file->private_data = ctx;
 	nonseekable_open(inode, file);
 
@@ -1135,16 +1180,34 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 		ret = -EOVERFLOW;
 		goto out;
 	}
+	if (domain_size > CW_EC_PROCESS_IMAGE_MAX) {
+		ret = -E2BIG;
+		goto out;
+	}
+	ctx->input_buffers[0] = kvzalloc(domain_size, GFP_KERNEL);
+	if (!ctx->input_buffers[0]) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	ctx->input_buffers[1] = kvzalloc(domain_size, GFP_KERNEL);
+	if (!ctx->input_buffers[1]) {
+		ret = -ENOMEM;
+		cw_ec_free_input_buffers(ctx);
+		goto out;
+	}
 
 	ctx->cycle_period_ns = period_ns;
 	ctx->application_time_ns =
 		div64_u64(ktime_get_ns(), period_ns) * period_ns;
 	ret = ecrt_master_application_time(ctx->master,
 					  ctx->application_time_ns);
-	if (ret)
+	if (ret) {
+		cw_ec_free_input_buffers(ctx);
 		goto out;
+	}
 	ret = ecrt_master_activate(ctx->master);
 	if (ret) {
+		cw_ec_free_input_buffers(ctx);
 		ctx->config_poisoned = true;
 		goto out;
 	}
@@ -1154,6 +1217,7 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	if (ctx->domain_size && !ctx->domain_data) {
 		ret = -EFAULT;
 		ecrt_master_deactivate(ctx->master);
+		cw_ec_free_input_buffers(ctx);
 		cw_ec_invalidate_applied_config(ctx);
 		goto out;
 	}
@@ -1202,12 +1266,16 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	atomic_set(&ctx->io_configured_slaves_operational, 0);
 	atomic64_set(&ctx->io_fault_count, 0);
 	ctx->io_ever_healthy = false;
+	ctx->input_active = 0;
+	ctx->input_reader = -1;
+	atomic64_set(&ctx->input_sequence, 0);
 	ctx->cycle_thread = kthread_run(cw_ec_cycle_thread, ctx,
 					"cw_ec_cycle");
 	if (IS_ERR(ctx->cycle_thread)) {
 		ret = PTR_ERR(ctx->cycle_thread);
 		ctx->cycle_thread = NULL;
 		ecrt_master_deactivate(ctx->master);
+		cw_ec_free_input_buffers(ctx);
 		cw_ec_invalidate_applied_config(ctx);
 		goto out;
 	}
@@ -1367,11 +1435,80 @@ static long cw_ec_get_io_status(struct cw_ec_file *ctx, void __user *argp)
 	result.domain_size = ctx->domain_size;
 	result.config_generation = ctx->config_generation;
 	result.fault_count = atomic64_read(&ctx->io_fault_count);
+	result.input_sequence = atomic64_read(&ctx->input_sequence);
 	mutex_unlock(&ctx->lock);
 
 	if (copy_to_user(argp, &result, sizeof(result)))
 		return -EFAULT;
 	return 0;
+}
+
+static long cw_ec_get_input_snapshot(struct cw_ec_file *ctx,
+				     void __user *argp)
+{
+	struct cw_ec_input_snapshot result;
+	unsigned long irq_flags;
+	void __user *data_ptr;
+	u64 requested_ptr;
+	u32 capacity;
+	u8 reader;
+	int ret = 0;
+
+	if (copy_from_user(&result, argp, sizeof(result)))
+		return -EFAULT;
+	ret = cw_ec_check_header(result.struct_size, result.api_major,
+				 sizeof(result));
+	if (ret)
+		return ret;
+	if (result.flags || !result.data_ptr)
+		return -EINVAL;
+	requested_ptr = result.data_ptr;
+	capacity = result.data_capacity;
+	data_ptr = u64_to_user_ptr(requested_ptr);
+
+	mutex_lock(&ctx->lock);
+	memset(&result, 0, sizeof(result));
+	result.struct_size = sizeof(result);
+	result.api_major = CW_EC_API_VERSION_MAJOR;
+	result.data_ptr = requested_ptr;
+	result.data_capacity = capacity;
+	result.data_size = ctx->domain_size;
+	result.config_generation = ctx->config_generation;
+	if (!ctx->active || !ctx->input_buffers[0] ||
+	    !ctx->input_buffers[1]) {
+		ret = -EINVAL;
+		goto out_copy_result;
+	}
+	if (capacity < ctx->domain_size) {
+		ret = -ENOSPC;
+		goto out_copy_result;
+	}
+
+	spin_lock_irqsave(&ctx->input_lock, irq_flags);
+	if (ctx->input_reader >= 0) {
+		spin_unlock_irqrestore(&ctx->input_lock, irq_flags);
+		ret = -EBUSY;
+		goto out_copy_result;
+	}
+	reader = ctx->input_active;
+	ctx->input_reader = reader;
+	result.input_sequence = atomic64_read(&ctx->input_sequence);
+	result.cycle_count = atomic64_read(&ctx->cycle_count);
+	spin_unlock_irqrestore(&ctx->input_lock, irq_flags);
+
+	if (copy_to_user(data_ptr, ctx->input_buffers[reader],
+			 ctx->domain_size))
+		ret = -EFAULT;
+
+	spin_lock_irqsave(&ctx->input_lock, irq_flags);
+	ctx->input_reader = -1;
+	spin_unlock_irqrestore(&ctx->input_lock, irq_flags);
+
+out_copy_result:
+	if (copy_to_user(argp, &result, sizeof(result)))
+		ret = -EFAULT;
+	mutex_unlock(&ctx->lock);
+	return ret;
 }
 
 #define CW_EC_CONFIG_ADD_CHILD(function_name, node_type, cfg_member, list_name, \
@@ -1971,6 +2108,8 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return cw_ec_cycle_get_dc_status(ctx, argp);
 	case CW_EC_IOC_GET_IO_STATUS:
 		return cw_ec_get_io_status(ctx, argp);
+	case CW_EC_IOC_GET_INPUT_SNAPSHOT:
+		return cw_ec_get_input_snapshot(ctx, argp);
 	default:
 		break;
 	}
