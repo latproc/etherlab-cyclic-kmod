@@ -35,6 +35,8 @@
 *.i*86
 *.x86_64
 *.hex
+/tools/cw_ec_bus
+/tools/cw_ec_abi_test
 
 # Debug files
 *.dSYM/
