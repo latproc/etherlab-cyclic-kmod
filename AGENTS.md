@@ -311,3 +311,10 @@ Update this section during work. Use dated entries for facts that may change.
   by flattened `pos`. Preserve this for unconverted systems, add explicit
   `(index, subindex)` selection for converted systems, and provide a dry-run
   conversion tool rather than changing selector meaning in place.
+- 2026-07-24: Added standalone `cw_ec_config` and an ED3L position-29 velocity
+  fixture. Syntax validation and live no-activation preparation passed,
+  producing the expected contiguous 28-byte domain layout for ten stable
+  object entries. Release/unload produced no recent kernel warning/error.
+  This is not yet evidence that the drive accepts declarative mapping or
+  recovers after a power cycle; activation and cyclic pumping are still
+  required for that decision gate.

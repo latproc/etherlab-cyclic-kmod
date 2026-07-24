@@ -133,6 +133,32 @@ after the fix. The deliberately absent slave allowed domain layout and cleanup
 to be tested without activation or bus traffic; recent kernel warnings/errors
 remained empty after unload.
 
+## ED3L declarative no-activation preparation
+
+The standalone `cw_ec_config` tool and
+`tools/configs/ed3l_velocity_pos29.conf` fixture were tested on 2026-07-24.
+Syntax checking reported one slave, two Sync Managers, two PDOs, and ten
+entries. With IOD stopped, `prepare` constructed the configuration and domain
+and returned:
+
+```text
+0x6040:00 offset=0  length=16
+0x60ff:00 offset=2  length=32
+0x6083:00 offset=6  length=32
+0x6084:00 offset=10 length=32
+0x60e0:00 offset=14 length=16
+0x60e1:00 offset=16 length=16
+0x6041:00 offset=18 length=16
+0x606c:00 offset=20 length=32
+0x6077:00 offset=24 length=16
+0x603f:00 offset=26 length=16
+```
+
+The stable IDs in this fixture encode `(index << 8) | subindex`; that is a
+user-space convention, not a kernel requirement. The master was not activated,
+no configuration was sent to the drive, and recent kernel warnings/errors
+remained empty after release and unload.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

@@ -190,3 +190,20 @@ After successful registration, `CW_EC_IOC_GET_ENTRY_OFFSET` resolves a stable
 user-supplied `entry_id` to its domain byte offset, bit position, and bit
 length. Unknown IDs return `ENOENT`. Domain creation does not activate the
 master, obtain the process-data pointer, or send traffic.
+
+## Standalone declarative file format
+
+`tools/cw_ec_config` provides a temporary dependency-free text format for
+testing this UAPI independently of Clockwork:
+
+```text
+slave CONFIG_ID ALIAS POSITION VENDOR_ID PRODUCT_CODE REVISION
+sync CONFIG_ID SLAVE_CONFIG_ID SYNC_INDEX DIRECTION WATCHDOG
+pdo CONFIG_ID SYNC_CONFIG_ID PDO_INDEX
+entry CONFIG_ID PDO_CONFIG_ID ENTRY_ID INDEX SUBINDEX BIT_LENGTH
+```
+
+Numbers accept C base notation, including hexadecimal. Directions are `input`
+or `output`; watchdog values are `default`, `enable`, or `disable`. The tool
+first parses and bounds the complete file, then submits it in file order.
+`prepare` stops after domain registration and closes the device.

@@ -101,6 +101,21 @@ See [the UAPI documentation](docs/uapi.md).
 recipe execution. Writes require exclusive master ownership and alter physical
 slave state. They are not the future persistent recovery mechanism.
 
+## Declarative configuration tool
+
+`cw_ec_config` reads a dependency-free line format containing generic slave,
+Sync Manager, PDO, and PDO-entry records:
+
+```sh
+./tools/cw_ec_config check tools/configs/ed3l_velocity_pos29.conf
+./tools/cw_ec_config prepare tools/configs/ed3l_velocity_pos29.conf
+```
+
+`check` validates syntax and resource counts without opening the device.
+`prepare` submits the hierarchy, constructs EtherLab configuration, creates a
+domain, and prints offsets keyed by stable entry IDs. It deliberately does not
+activate the master or send process data.
+
 Examples:
 
 ```sh

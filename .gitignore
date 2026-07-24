@@ -38,6 +38,7 @@
 /tools/cw_ec_bus
 /tools/cw_ec_abi_test
 /tools/cw_ec_sdo
+/tools/cw_ec_config
 
 # Debug files
 *.dSYM/
