@@ -126,3 +126,8 @@ commands, outputs, and design details.
   `0x38` across domain-incomplete/offline/not-operational phases, retained one
   fault transition, recovered to OP/valid without restart, and remained
   disarmed pending explicit re-arm.
+- Added active, disarmed hostile-ABI checks for snapshot capacity/flags,
+  publish size/generation, arm sequence/generation, disarm generation, and
+  duplicate activation. Position 29 recovered from post-power-cycle
+  `SAFEOP+ERROR`, passed every rejection with OP/complete WC, and returned the
+  master idle after close.

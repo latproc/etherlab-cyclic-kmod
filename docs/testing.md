@@ -462,6 +462,25 @@ New kernel warning/error lines: none
 Master 0 was idle/inactive and the cyclic task count matched baseline after
 every iteration.
 
+## API 0.10 active hostile-input checks
+
+`cw_ec_config cycle-abi` activates a configured domain but never arms outputs.
+It requires a healthy bus, then verifies undersized snapshot capacity, bad
+flags, stale publish/arm/disarm generations, wrong output size, unknown output
+sequence, and duplicate activation return their documented errors.
+
+The position-29 test initially found the drive in `SAFEOP+ERROR` following the
+earlier deliberate power cycle. Declarative activation recovered it to OP and
+the retry passed every check:
+
+```text
+cycles=6405 errors=0 overruns=0 wc=3 wc_state=2
+healthy=1 armed=0 rearm_required=0
+slave id=1 online=1 operational=1 valid=1 al=0x08
+```
+
+Close/unload returned master 0 idle/inactive with 34 slaves.
+
 ## Zero-armed controller death
 
 `tools/cw_ec_test_controller_death.sh` starts `cycle-zero-hold`, waits until an

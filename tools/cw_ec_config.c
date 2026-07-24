@@ -57,8 +57,23 @@ static void usage(const char *program)
 		"  %s cycle CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-zero-arm CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-zero-hold CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
-		"  %s cycle-monitor CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n",
-		program, program, program, program, program, program);
+		"  %s cycle-monitor CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
+		"  %s cycle-abi CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n",
+		program, program, program, program, program, program, program);
+}
+
+static int expect_ioctl_errno(int fd, unsigned long request, void *argument,
+			      int expected, const char *name)
+{
+	errno = 0;
+	if (ioctl(fd, request, argument) < 0 && errno == expected) {
+		printf("PASS: active %s returned %s\n", name,
+		       strerror(expected));
+		return 0;
+	}
+	fprintf(stderr, "cw_ec_config: active %s expected %s, got %s\n",
+		name, strerror(expected), errno ? strerror(errno) : "success");
+	return 1;
 }
 
 static int parse_u64(const char *text, uint64_t maximum, uint64_t *value)
@@ -569,7 +584,7 @@ out:
 
 static int cycle(const char *path, uint32_t period_ns,
 		 unsigned int duration_seconds, bool arm_zero,
-		 bool hold_zero, bool monitor,
+		 bool hold_zero, bool monitor, bool active_abi,
 		 const char *device)
 {
 	struct cw_ec_config_validate validate;
@@ -634,7 +649,7 @@ static int cycle(const char *path, uint32_t period_ns,
 	printf("activated zero-output domain: size=%" PRIu32
 	       " period=%" PRIu32 " ns for %u second(s)\n",
 	       activate.domain_size, period_ns, duration_seconds);
-	if (hold_zero || arm_zero || monitor) {
+	if (hold_zero || arm_zero || monitor || active_abi) {
 		unsigned int attempts;
 
 		for (attempts = 0; attempts < 100; attempts++) {
@@ -691,6 +706,76 @@ static int cycle(const char *path, uint32_t period_ns,
 		       (uint64_t)output.config_generation,
 		       (uint64_t)output.output_sequence);
 		fflush(stdout);
+	}
+	if (active_abi) {
+		uint8_t byte = 0;
+		struct cw_ec_input_snapshot invalid_snapshot = {
+			.struct_size = sizeof(invalid_snapshot),
+			.api_major = CW_EC_API_VERSION_MAJOR,
+			.data_ptr = (uintptr_t)&byte,
+			.data_capacity = activate.domain_size - 1U,
+		};
+		struct cw_ec_output_publish invalid_output = {
+			.struct_size = sizeof(invalid_output),
+			.api_major = CW_EC_API_VERSION_MAJOR,
+			.data_ptr = (uintptr_t)&byte,
+			.mask_ptr = (uintptr_t)&byte,
+			.data_size = activate.domain_size,
+			.config_generation = io_status.config_generation - 1U,
+		};
+		struct cw_ec_output_arm invalid_arm = {
+			.struct_size = sizeof(invalid_arm),
+			.api_major = CW_EC_API_VERSION_MAJOR,
+			.config_generation = io_status.config_generation - 1U,
+			.output_sequence = 1,
+		};
+		struct cw_ec_output_disarm invalid_disarm = {
+			.struct_size = sizeof(invalid_disarm),
+			.api_major = CW_EC_API_VERSION_MAJOR,
+			.config_generation = io_status.config_generation - 1U,
+		};
+		struct cw_ec_cycle_activate duplicate_activate = activate;
+
+		if (expect_ioctl_errno(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT,
+				       &invalid_snapshot, ENOSPC,
+				       "undersized snapshot") ||
+		    invalid_snapshot.data_size != activate.domain_size)
+			goto out;
+		invalid_snapshot.flags = 1;
+		invalid_snapshot.data_capacity = activate.domain_size;
+		if (expect_ioctl_errno(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT,
+				       &invalid_snapshot, EINVAL,
+				       "snapshot flags"))
+			goto out;
+		if (expect_ioctl_errno(fd, CW_EC_IOC_PUBLISH_OUTPUT,
+				       &invalid_output, ESTALE,
+				       "stale output generation"))
+			goto out;
+		invalid_output.config_generation =
+			io_status.config_generation;
+		invalid_output.data_size = activate.domain_size - 1U;
+		if (expect_ioctl_errno(fd, CW_EC_IOC_PUBLISH_OUTPUT,
+				       &invalid_output, EMSGSIZE,
+				       "wrong output size"))
+			goto out;
+		if (expect_ioctl_errno(fd, CW_EC_IOC_ARM_OUTPUTS,
+				       &invalid_arm, ESTALE,
+				       "stale arm generation"))
+			goto out;
+		invalid_arm.config_generation = io_status.config_generation;
+		if (expect_ioctl_errno(fd, CW_EC_IOC_ARM_OUTPUTS,
+				       &invalid_arm, ESTALE,
+				       "unknown output sequence"))
+			goto out;
+		if (expect_ioctl_errno(fd, CW_EC_IOC_DISARM_OUTPUTS,
+				       &invalid_disarm, ESTALE,
+				       "stale disarm generation"))
+			goto out;
+		if (expect_ioctl_errno(fd, CW_EC_IOC_CYCLE_ACTIVATE,
+				       &duplicate_activate, EBUSY,
+				       "duplicate activation"))
+			goto out;
+		printf("PASS: active hostile-ABI checks left outputs disarmed\n");
 	}
 	if (monitor) {
 		unsigned int samples = duration_seconds * 4U;
@@ -990,7 +1075,8 @@ int main(int argc, char **argv)
 	if ((!strcmp(argv[1], "cycle") ||
 	     !strcmp(argv[1], "cycle-zero-arm") ||
 	     !strcmp(argv[1], "cycle-zero-hold") ||
-	     !strcmp(argv[1], "cycle-monitor")) &&
+	     !strcmp(argv[1], "cycle-monitor") ||
+	     !strcmp(argv[1], "cycle-abi")) &&
 	    (argc == 5 || argc == 6)) {
 		if (parse_u64(argv[3], CW_EC_CYCLE_PERIOD_MAX_NS, &period) ||
 		    period < CW_EC_CYCLE_PERIOD_MIN_NS ||
@@ -1003,7 +1089,8 @@ int main(int argc, char **argv)
 		return cycle(argv[2], period, duration,
 			     !strcmp(argv[1], "cycle-zero-arm"),
 			     !strcmp(argv[1], "cycle-zero-hold"),
-			     !strcmp(argv[1], "cycle-monitor"), device);
+			     !strcmp(argv[1], "cycle-monitor"),
+			     !strcmp(argv[1], "cycle-abi"), device);
 	}
 	usage(argv[0]);
 	return 2;

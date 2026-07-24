@@ -100,6 +100,10 @@ The kernel-safety gate is not closed.
    CPU and system load.
 8. **Manual EtherLab build compatibility is untested.** Only the exact DKMS
    target has evidence.
+9. **Active hostile-input coverage is established for process-image and
+   lifecycle controls.** Disarmed hardware checks cover invalid capacity,
+   flags, generation, size, sequence, and duplicate activation. Broader fuzz
+   and debug-kernel instrumentation remain future hardening.
 
 ## Documentation acceptance gate
 

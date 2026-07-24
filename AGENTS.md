@@ -273,6 +273,9 @@ testing, safety, and build documents.
 - Fault detail accumulates all causes within a re-arm epoch. A repeated live
   power cycle ended with latched mask `0x38`, one fault transition, restored
   OP/valid input, and outputs still disarmed.
+- Active API 0.10 hostile-input checks pass for undersized snapshots, bad
+  flags, stale generations, wrong output size, unknown output sequence, stale
+  disarm, and duplicate activation. The checks leave outputs disarmed.
 - Next step: select the next independently testable kernel-safety blocker.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

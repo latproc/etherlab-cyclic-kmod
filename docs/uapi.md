@@ -397,8 +397,11 @@ deactivates. `cycle-zero-arm` instead publishes an all-zero shadow and tests
 exact-sequence arm, synchronous disarm, stale-sequence rejection, and fresh
 zero-sequence recovery. `cycle-zero-hold` waits for a healthy bus, arms an
 all-zero shadow, emits a flushed readiness marker, and holds it for
-controller-death testing. Closing the descriptor is also a kernel-enforced
-cleanup path if status or explicit deactivation fails. All cycle commands
+controller-death testing. `cycle-monitor` observes disarmed per-slave recovery
+transitions. `cycle-abi` keeps outputs disarmed while checking active-state
+size, flag, generation, sequence, and lifecycle rejection paths. Closing the
+descriptor is also a kernel-enforced cleanup path if status or explicit
+deactivation fails. All cycle commands
 change EtherCAT slave PDO configuration during activation and are hardware
 commissioning operations; neither requests a nonzero transmitted output.
 
