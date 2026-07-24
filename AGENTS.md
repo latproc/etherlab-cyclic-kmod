@@ -353,3 +353,11 @@ Update this section during work. Use dated entries for facts that may change.
   topology with the rebuilt IOD, restore the two LPC files from their
   pre-conversion backups, and rerun the dry-run conversion before any live IO
   validation.
+- 2026-07-24: A fresh rebuilt-IOD capture exported the configured PDO view for
+  both EL5152 revisions. It proved configured `pos 2` is `0x7000:03` in PDO
+  `0x1600` and configured `pos 24` is `0x6000:11` in PDO `0x1A00`. The two
+  SVN-controlled LPC files were restored to pristine content and reconverted:
+  212 declarations changed one-for-one, no selector targets `0x0000:00`, the
+  syntax/dependency-graph checker passed, and a repeat converter audit reports
+  zero pending changes. Live IOD binding and IO-value validation remain before
+  an SVN commit.
