@@ -62,3 +62,7 @@ commands, outputs, and design details.
   all-ones shadow was published during a
   motion-inhibited position-29 run; all configured output bytes remained zero,
   WC was complete, and 5,000 cycles completed without errors or overruns.
+- Deliberately power-cycled the servo supply during a 90-second zero-output
+  run. Position 29 recovered to OP/complete WC without restarting the
+  transport, while `rearm_required` stayed latched with one fault epoch and
+  outputs remained disarmed.

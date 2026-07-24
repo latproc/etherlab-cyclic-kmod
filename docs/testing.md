@@ -334,6 +334,27 @@ the independent hard-zero cyclic gate. The internal ownership-mask merge is
 not observable on the bus until an arm test and is therefore not yet claimed
 as hardware-proven.
 
+## Power-loss recovery and re-arm latch
+
+With API 0.8 cycling position 29 at 1 ms and outputs permanently disarmed, the
+servo supply was deliberately removed for about five seconds and restored.
+The same process continued running for 90 seconds and finished with:
+
+```text
+cycles=90000 overruns=0 wc=3 wc_state=2
+cycle errors=29063
+DC read errors=29065 reference resumptions=2
+generation=1 healthy=1 armed=0 rearm_required=1
+current faults=0x00000000 latched faults=0x00000020 fault_count=1
+link=1 responding=34 configured=1 online=1 operational=1
+```
+
+`0x20` is `CW_EC_IO_FAULT_DOMAIN_INCOMPLETE`, the first unhealthy condition
+observed. The drive recovered to OP and complete WC without restarting the
+transport, but the re-arm requirement remained sticky. The cycle/DC error
+counters captured the unavailable/reconfiguration interval. The final snapshot
+contained live input data and all configured output bytes remained zero.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device

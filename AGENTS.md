@@ -297,8 +297,9 @@ testing, safety, and build documents.
   application period, and zero shift. These remain user-space policy.
 - API 0.6 adds generation-bound bus health and stale-output re-arm status.
   Position 29 reported healthy with all configured counts correct while
-  outputs remained hard-disarmed. The fault transition/latch still requires a
-  deliberate power-loss test.
+  outputs remained hard-disarmed. A deliberate servo-supply power cycle then
+  recovered position 29 to OP/complete WC without restarting the transport,
+  while `rearm_required` remained set with one latched fault epoch.
 - API 0.7 adds a generation-bound copied domain snapshot with a 64 KiB limit.
   A five-second position-29 retry reached OP and returned a coherent 28-byte
   image with live input data and zero outputs. It recorded one 8.1 ms scheduling
@@ -312,8 +313,7 @@ testing, safety, and build documents.
   until the future arm test.
 - Copied process-image concurrency and recovery rules are documented in
   `docs/process-image-exchange.md`.
-- Next step: validate the health fault latch with deliberate drive power loss,
-  then design the explicit generation/sequence-bound arm operation and its
-  motion-inhibited commissioning test.
+- Next step: design the explicit generation/sequence-bound arm operation and
+  its motion-inhibited commissioning test.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

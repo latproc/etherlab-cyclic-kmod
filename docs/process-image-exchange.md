@@ -35,6 +35,12 @@ the bus is healthy.
 This behavior is deterministic software containment, not a replacement for
 hardware safety.
 
+The health/latch half of this rule is hardware-proven. With the cyclic
+transport active and outputs disarmed, removing and restoring the servo supply
+returned the configured drive to OP and complete WC without restarting the
+transport. `rearm_required` remained set and the fault epoch count remained
+one after recovery.
+
 ## Copy concurrency
 
 Read-only snapshots use two preallocated buffers. A process-context reader reserves
