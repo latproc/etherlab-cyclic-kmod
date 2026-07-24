@@ -256,8 +256,22 @@ spinlock. A process-context reader reserves the current buffer during
 or overwriting that reader. Deactivation joins the cyclic thread before freeing
 the buffers.
 
-API 0.7 still has no process-image writer or arm operation: `outputs_armed` and
-output sequence remain zero.
+API 0.8 adds `CW_EC_IOC_PUBLISH_OUTPUT`. The caller supplies complete
+domain-sized data and per-bit update-mask arrays plus the exact active
+configuration generation. A stale generation returns `ESTALE`; a size other
+than the active domain returns `EMSGSIZE`; unsupported flags/reserved fields
+return `EINVAL`.
+
+The kernel copies into the inactive preallocated output buffer, intersects the
+caller mask with the topology-derived output mask, and merges only those bits
+with the previous published shadow. It then atomically publishes the buffer
+and increments `output_sequence`. The returned sequence is also visible through
+`CW_EC_IOC_GET_IO_STATUS`.
+
+Publication is intentionally not activation. API 0.8 has no arm operation,
+`outputs_armed` remains false, and the cyclic thread clears every configured
+output bit in domain memory before every queue/send. This makes publication and
+masking independently testable without transmitting the requested values.
 
 Activation requires an applied configuration and registered domain. The caller
 supplies a cycle period from 100 microseconds through one second; flags must be

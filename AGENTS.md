@@ -48,6 +48,11 @@ decisions, risks, commands, or next steps change.
   preallocated double buffers and never waits for user space in the cyclic
   path. A motion-inhibited position-29 run returned live TxPDO bytes with all
   RxPDO/output bytes zero.
+- API 0.8 accepts generation-bound copied output shadows and masks them to
+  configured output entries, but provides no arm operation. Its domain-sized
+  data plus per-bit update mask matches IOD's existing update representation.
+  The cyclic thread clears all configured output bits before every send.
+  Publishing all-ones data/mask on position 29 left all 18 output bytes zero.
 - A provisional bounded ad-hoc SDO batch exists for commissioning and
   decision-gate tests. It is not the persistent production setup mechanism.
 - Bounded SDO upload is hardware-proven against ED3L `0x6060:00`; no write has
@@ -277,7 +282,7 @@ Keep this section concise. Historical milestones and validation evidence are in
 `docs/project-history.md`; focused details belong in the relevant design,
 testing, safety, and build documents.
 
-- Current API: 0.7.
+- Current API: 0.8.
 - API 0.4 zero-output cyclic activation is hardware-proven on ED3L position 29
   with complete working counter and exact 28-byte PDO layout.
 - Deactivation waits for configured slaves to leave SAFEOP/OP and invalidates
@@ -298,9 +303,17 @@ testing, safety, and build documents.
   A five-second position-29 retry reached OP and returned a coherent 28-byte
   image with live input data and zero outputs. It recorded one 8.1 ms scheduling
   overrun, so this is functional evidence, not timing acceptance.
+- API 0.8 adds copied, generation-bound output publication without arming.
+  The published image is masked to entries owned by output Sync Managers, and
+  the cyclic path still forces those bits zero. A five-second all-ones shadow
+  test completed 5,000 cycles with complete WC, no errors/overruns, and zero
+  in every configured output byte. Publication and the hard-zero gate are
+  hardware-proven; the retained ownership-masked shadow is not bus-observable
+  until the future arm test.
 - Copied process-image concurrency and recovery rules are documented in
   `docs/process-image-exchange.md`.
-- Next step: add copied output publication without an arm operation, while
-  preserving hard-zero outputs in the cyclic path.
+- Next step: validate the health fault latch with deliberate drive power loss,
+  then design the explicit generation/sequence-bound arm operation and its
+  motion-inhibited commissioning test.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.

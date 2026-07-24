@@ -529,7 +529,13 @@ static int cycle(const char *path, uint32_t period_ns,
 		.struct_size = sizeof(snapshot),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	struct cw_ec_output_publish output = {
+		.struct_size = sizeof(output),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+	};
 	uint8_t *snapshot_data = NULL;
+	uint8_t *output_data = NULL;
+	uint8_t *output_mask = NULL;
 	struct cw_ec_cycle_deactivate deactivate = {
 		.struct_size = sizeof(deactivate),
 		.api_major = CW_EC_API_VERSION_MAJOR,
@@ -616,6 +622,29 @@ static int cycle(const char *path, uint32_t period_ns,
 	       io_status.configured_slave_count,
 	       io_status.configured_slaves_online,
 	       io_status.configured_slaves_operational);
+	output_data = malloc(activate.domain_size);
+	output_mask = malloc(activate.domain_size);
+	if (!output_data || !output_mask) {
+		fprintf(stderr, "cw_ec_config: allocate output image: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	memset(output_data, 0xff, activate.domain_size);
+	memset(output_mask, 0xff, activate.domain_size);
+	output.data_ptr = (uintptr_t)output_data;
+	output.mask_ptr = (uintptr_t)output_mask;
+	output.data_size = activate.domain_size;
+	output.config_generation = io_status.config_generation;
+	if (ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output) < 0) {
+		fprintf(stderr, "cw_ec_config: output publish failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	printf("published masked output shadow: generation=%" PRIu64
+	       " sequence=%" PRIu64 " (outputs remain disarmed)\n",
+	       (uint64_t)output.config_generation,
+	       (uint64_t)output.output_sequence);
+	usleep((useconds_t)(period_ns / 1000U) * 10U);
 	snapshot_data = calloc(activate.domain_size, 1);
 	if (!snapshot_data) {
 		fprintf(stderr, "cw_ec_config: allocate input snapshot: %s\n",
@@ -654,6 +683,8 @@ out:
 	 */
 	if (active)
 		fprintf(stderr, "cw_ec_config: closing active session for cleanup\n");
+	free(output_data);
+	free(output_mask);
 	free(snapshot_data);
 	if (close(fd) < 0) {
 		fprintf(stderr, "cw_ec_config: close: %s\n", strerror(errno));

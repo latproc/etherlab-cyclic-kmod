@@ -11,7 +11,7 @@
 #endif
 
 #define CW_EC_API_VERSION_MAJOR 0U
-#define CW_EC_API_VERSION_MINOR 7U
+#define CW_EC_API_VERSION_MINOR 8U
 
 #define CW_EC_CYCLE_PERIOD_MIN_NS 100000U
 #define CW_EC_CYCLE_PERIOD_MAX_NS 1000000000U
@@ -356,6 +356,18 @@ struct cw_ec_input_snapshot {
 	__u64 cycle_count;
 };
 
+struct cw_ec_output_publish {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 data_ptr;
+	__u64 mask_ptr;
+	__u32 data_size;
+	__u32 reserved;
+	__u64 config_generation;
+	__u64 output_sequence;
+};
+
 #define CW_EC_IOC_MAGIC 0xec
 
 #define CW_EC_IOC_GET_API_VERSION \
@@ -408,5 +420,7 @@ struct cw_ec_input_snapshot {
 	_IOWR(CW_EC_IOC_MAGIC, 0x40, struct cw_ec_io_status)
 #define CW_EC_IOC_GET_INPUT_SNAPSHOT \
 	_IOWR(CW_EC_IOC_MAGIC, 0x41, struct cw_ec_input_snapshot)
+#define CW_EC_IOC_PUBLISH_OUTPUT \
+	_IOWR(CW_EC_IOC_MAGIC, 0x42, struct cw_ec_output_publish)
 
 #endif /* CW_ETHERCAT_UAPI_H */

@@ -42,10 +42,28 @@ the active buffer briefly under a spinlock; the cyclic thread skips publishing
 a new snapshot rather than overwriting a reserved buffer.
 
 Outputs use two preallocated buffers and a short pointer/state spinlock. A
-writer reserves the free buffer, copies from user space without holding the
-spinlock, then publishes it. The cyclic thread swaps a complete pending image
-at a cycle boundary. It never waits for a user copy and never copies from a
-buffer being modified.
+writer selects the inactive buffer, copies domain-sized data and per-bit update
+mask arrays from user space without holding the spinlock, intersects that mask
+with the topology-derived output mask, and merges the selected bits over the
+previous shadow. API 0.8 does not yet let the cyclic thread consume this
+shadow; it continues forcing configured outputs zero. The eventual arm stage
+will read only the published active buffer at a cycle boundary, so it will
+never wait for or copy from a buffer being modified.
+
+## IOD format compatibility
+
+The current IOD path represents process data as a full zero-based EtherLab
+domain byte array. Output updates carry a second equally sized byte array whose
+set bits select individual bits to change. `IOComponent` builds this mask from
+`io_offset`, `io_bitpos`, and `bitlen`, including values crossing byte
+boundaries; `ECInterface::updateDomain()` applies those masked bits to domain
+memory.
+
+API 0.8 deliberately uses the same data-plus-bit-mask shape. An eventual IOD
+adapter can therefore forward its accumulated output data and update mask
+without expanding them into entry records. The kernel independently intersects
+the IOD mask with the output mask derived from configured output Sync Managers,
+so an incorrect application mask cannot select input or padding bits.
 
 All buffers, masks, and metadata are allocated before activation and freed only
 after the cyclic thread is synchronously joined.
@@ -56,6 +74,6 @@ after the cyclic thread is synchronously joined.
    permanently zero. Completed in API 0.6.
 2. Add copied read-only domain snapshots and a standalone reader. Completed in
    API 0.7.
-3. Add copied output publication without arming.
+3. Add copied output publication without arming. Completed in API 0.8.
 4. Add explicit re-arm and one motion-inhibited test output.
 5. Measure copy and masking cost before considering mmap.

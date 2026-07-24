@@ -57,3 +57,8 @@ commands, outputs, and design details.
   position-29 run returned live TxPDO data while all RxPDO/output bytes
   remained zero. One scheduling overrun was observed, so timing acceptance
   remains open.
+- Added API 0.8 generation-bound copied output publication with output-entry
+  masking and IOD-compatible per-bit update masks, but no arm operation. An
+  all-ones shadow was published during a
+  motion-inhibited position-29 run; all configured output bytes remained zero,
+  WC was complete, and 5,000 cycles completed without errors or overruns.

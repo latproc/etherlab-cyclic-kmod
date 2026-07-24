@@ -150,6 +150,14 @@ int main(int argc, char **argv)
 		.data_ptr = (uintptr_t)&snapshot_byte,
 		.data_capacity = sizeof(snapshot_byte),
 	};
+	struct cw_ec_output_publish output = {
+		.struct_size = sizeof(output),
+		.api_major = CW_EC_API_VERSION_MAJOR,
+		.data_ptr = (uintptr_t)&snapshot_byte,
+		.mask_ptr = (uintptr_t)&snapshot_byte,
+		.data_size = sizeof(snapshot_byte),
+		.config_generation = 1,
+	};
 	unsigned long unknown_ioctl = _IO(CW_EC_IOC_MAGIC, 0x7f);
 	int failures = 0;
 	int second_fd;
@@ -490,6 +498,16 @@ int main(int argc, char **argv)
 	failures += expect_errno("input snapshot while inactive",
 				 ioctl(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT,
 				       &snapshot),
+				 EINVAL);
+	output.flags = 1;
+	errno = 0;
+	failures += expect_errno("unsupported output publish flags",
+				 ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output),
+				 EINVAL);
+	output.flags = 0;
+	errno = 0;
+	failures += expect_errno("output publish while inactive",
+				 ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output),
 				 EINVAL);
 	cycle_activate.cycle_period_ns = CW_EC_CYCLE_PERIOD_MIN_NS - 1;
 	errno = 0;

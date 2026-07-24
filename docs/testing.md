@@ -310,6 +310,30 @@ The final 10 bytes contain the live TxPDO/input region. The run validates
 coherent copied exchange and generation/sequence reporting, but its single
 8.1 ms scheduling overrun means it is not timing-acceptance evidence.
 
+## API 0.8 disarmed-output publication smoke test
+
+The non-activating ABI suite rejected unsupported output-publication flags and
+publication while inactive. A five-second motion-inhibited position-29 run
+then published all-ones data with an all-ones update mask against generation 2.
+The kernel reported output sequence 1 while `outputs_armed` remained false.
+
+```text
+cycles=5000 errors=0 overruns=0 maximum_lateness=55608 ns
+wc=3 wc_state=2
+generation=3 healthy=1 armed=0 faults=0x00000000
+published output sequence=1
+snapshot sequence=5010 cycle=5010 size=28
+data=00000000000000000000000000000000000008160000000000004700
+```
+
+The first activation after loading the corrected ABI remained non-operational
+with WC zero; the established retry reached OP and produced the evidence above.
+All 18 configured output bytes remained zero after publication; the final 10
+input bytes contained live drive data. This proves publication sequencing and
+the independent hard-zero cyclic gate. The internal ownership-mask merge is
+not observable on the bus until an arm test and is therefore not yet claimed
+as hardware-proven.
+
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device
