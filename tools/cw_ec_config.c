@@ -3,7 +3,6 @@
 #define _GNU_SOURCE
 
 #include <errno.h>
-#include <fcntl.h>
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -14,7 +13,28 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "cw_ethercat_uapi.h"
+#include "cw_ethercat.h"
+
+/* Map libcwethercat -errno returns to ioctl-style (-1 + errno). */
+static int lib_ret(int ret)
+{
+	if (ret == 0)
+		return 0;
+	errno = -ret;
+	return -1;
+}
+
+static int open_handle(const char *device, cw_ec_handle **out)
+{
+	int ret = cw_ec_open(device, out);
+
+	if (ret) {
+		errno = -ret;
+		return -1;
+	}
+	return 0;
+}
+
 
 #define LINE_MAX_BYTES 1024U
 #define TOKEN_MAX 10U
@@ -176,9 +196,15 @@ static void usage(const char *program)
 		program, program, program, program, program, program, program);
 }
 
-static int expect_ioctl_errno(int fd, unsigned long request, void *argument,
-			      int expected, const char *name)
+static int expect_ioctl_errno(cw_ec_handle *h, unsigned long request,
+			      void *argument, int expected, const char *name)
 {
+	int fd = cw_ec_fd(h);
+
+	if (fd < 0) {
+		fprintf(stderr, "cw_ec_config: active %s: bad handle\n", name);
+		return 1;
+	}
 	errno = 0;
 	if (ioctl(fd, request, argument) < 0 && errno == expected) {
 		printf("PASS: active %s returned %s\n", name,
@@ -647,34 +673,32 @@ static void image_set_value(uint8_t *image, uint8_t *mask,
 	}
 }
 
-static int submit_record(int fd, const struct record *record)
+static int submit_record(cw_ec_handle *h, const struct record *record)
 {
 	switch (record->kind) {
 	case RECORD_SLAVE:
-		return ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &record->slave);
+		return lib_ret(cw_ec_config_add_slave(h, &record->slave));
 	case RECORD_SYNC:
-		return ioctl(fd, CW_EC_IOC_CONFIG_ADD_SYNC, &record->sync);
+		return lib_ret(cw_ec_config_add_sync(h, &record->sync));
 	case RECORD_PDO:
-		return ioctl(fd, CW_EC_IOC_CONFIG_ADD_PDO, &record->pdo);
+		return lib_ret(cw_ec_config_add_pdo(h, &record->pdo));
 	case RECORD_ENTRY:
-		return ioctl(fd, CW_EC_IOC_CONFIG_ADD_ENTRY, &record->entry);
+		return lib_ret(cw_ec_config_add_entry(h, &record->entry));
 	case RECORD_DC:
-		return ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC, &record->dc);
+		return lib_ret(cw_ec_config_add_dc(h, &record->dc));
 	case RECORD_DC_POLICY:
-		return ioctl(fd, CW_EC_IOC_CONFIG_SET_DC_POLICY,
-			     &record->dc_policy);
+		return lib_ret(cw_ec_config_add_dc_policy(h, &record->dc_policy));
 	case RECORD_DOMAIN:
-		return ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
-			     &record->domain);
+		return lib_ret(cw_ec_config_add_domain(h, &record->domain));
 	case RECORD_DOMAIN_ASSIGNMENT:
-		return ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
-			     &record->domain_assignment);
+		return lib_ret(cw_ec_config_add_domain_assignment(
+			h, &record->domain_assignment));
 	default:
 		return 0;
 	}
 }
 
-static int submit_config(int fd, const char *path)
+static int submit_config(cw_ec_handle *h, const char *path)
 {
 	char line[LINE_MAX_BYTES];
 	unsigned int line_number = 0;
@@ -688,7 +712,7 @@ static int submit_config(int fd, const char *path)
 
 		line_number++;
 		parsed = parse_record(line, &record);
-		if (parsed > 0 && submit_record(fd, &record) < 0) {
+		if (parsed > 0 && submit_record(h, &record) < 0) {
 			fprintf(stderr, "%s:%u: kernel rejected record: %s\n",
 				path, line_number, strerror(errno));
 			fclose(file);
@@ -699,7 +723,7 @@ static int submit_config(int fd, const char *path)
 	return 0;
 }
 
-static int print_offsets(int fd, const char *path)
+static int print_offsets(cw_ec_handle *h, const char *path)
 {
 	char line[LINE_MAX_BYTES];
 	struct record record;
@@ -717,7 +741,7 @@ static int print_offsets(int fd, const char *path)
 		offset.struct_size = sizeof(offset);
 		offset.api_major = CW_EC_API_VERSION_MAJOR;
 		offset.entry_id = record.entry.entry_id;
-		if (ioctl(fd, CW_EC_IOC_GET_ENTRY_OFFSET, &offset) < 0) {
+		if (lib_ret(cw_ec_get_entry_offset(h, &offset)) < 0) {
 			fprintf(stderr, "entry %" PRIu32 ": offset lookup: %s\n",
 				offset.entry_id, strerror(errno));
 			fclose(file);
@@ -734,7 +758,7 @@ static int print_offsets(int fd, const char *path)
 	return 0;
 }
 
-static int configure_fd(int fd, const char *path,
+static int configure_handle(cw_ec_handle *h, const char *path,
 			struct cw_ec_config_validate *validated)
 {
 	struct cw_ec_config_begin begin = {
@@ -753,15 +777,15 @@ static int configure_fd(int fd, const char *path,
 		.struct_size = sizeof(domain),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
-	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &begin) < 0 ||
-	    submit_config(fd, path) < 0)
+	if (lib_ret(cw_ec_config_begin(h)) < 0 ||
+	    submit_config(h, path) < 0)
 		return -1;
-	if (ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE, &validate) < 0) {
+	if (lib_ret(cw_ec_config_validate(h, &validate)) < 0) {
 		fprintf(stderr, "cw_ec_config: validation failed: %s\n",
 			strerror(errno));
 		return -1;
 	}
-	if (ioctl(fd, CW_EC_IOC_CONFIG_APPLY, &apply) < 0) {
+	if (lib_ret(cw_ec_config_apply(h, &apply)) < 0) {
 		fprintf(stderr,
 			"cw_ec_config: apply failed: %s; kind=%u id=%" PRIu32
 			"\n",
@@ -769,14 +793,14 @@ static int configure_fd(int fd, const char *path,
 			apply.failed_config_id);
 		return -1;
 	}
-	if (ioctl(fd, CW_EC_IOC_DOMAIN_CREATE, &domain) < 0) {
+	if (lib_ret(cw_ec_domain_create(h, &domain)) < 0) {
 		fprintf(stderr,
 			"cw_ec_config: domain registration failed: %s; id=%"
 			PRIu32 "\n",
 			strerror(errno), domain.failed_config_id);
 		return -1;
 	}
-	if (!suppress_offset_output && print_offsets(fd, path))
+	if (!suppress_offset_output && print_offsets(h, path))
 		return -1;
 	*validated = validate;
 	return 0;
@@ -885,7 +909,7 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 	bool active = false;
 	bool armed = false;
 	unsigned int attempts;
-	int fd;
+	cw_ec_handle *h = NULL;
 	int ret = 1;
 
 	if (!getenv("CW_EC_NONZERO_OUTPUT_AUTHORIZED") ||
@@ -901,15 +925,14 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 			entry_id);
 		return 2;
 	}
-	fd = open(device, O_RDWR | O_CLOEXEC);
-	if (fd < 0) {
+	if (open_handle(device, &h) < 0) {
 		fprintf(stderr, "cw_ec_config: cannot open %s: %s\n",
 			device, strerror(errno));
 		return 1;
 	}
-	if (configure_fd(fd, path, &validate))
+	if (configure_handle(h, path, &validate))
 		goto out;
-	if (ioctl(fd, CW_EC_IOC_GET_ENTRY_OFFSET, &offset) < 0) {
+	if (lib_ret(cw_ec_get_entry_offset(h, &offset)) < 0) {
 		fprintf(stderr, "cw_ec_config: entry %" PRIu32
 			" offset lookup failed: %s\n", entry_id,
 			strerror(errno));
@@ -923,7 +946,7 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 		fprintf(stderr, "cw_ec_config: invalid pulse bit position\n");
 		goto out;
 	}
-	if (ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE, &activate) < 0) {
+	if (lib_ret(cw_ec_cycle_activate(h, activate.cycle_period_ns, activate.flags, &activate)) < 0) {
 		fprintf(stderr, "cw_ec_config: activation failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -932,7 +955,7 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 	for (attempts = 0; attempts < 100; attempts++) {
 		io_status.struct_size = sizeof(io_status);
 		io_status.api_major = CW_EC_API_VERSION_MAJOR;
-		if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0) {
+		if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
 			fprintf(stderr, "cw_ec_config: IO status failed: %s\n",
 				strerror(errno));
 			goto out;
@@ -968,14 +991,14 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 	output.mask_ptr = (uintptr_t)mask;
 	output.data_size = activate.domain_size;
 	output.config_generation = io_status.config_generation;
-	if (ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output) < 0) {
+	if (lib_ret(cw_ec_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
 		fprintf(stderr, "cw_ec_config: pulse publication failed: %s\n",
 			strerror(errno));
 		goto out;
 	}
 	arm.config_generation = output.config_generation;
 	arm.output_sequence = output.output_sequence;
-	if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) < 0) {
+	if (lib_ret(cw_ec_arm_output(h, &arm)) < 0) {
 		fprintf(stderr, "cw_ec_config: pulse arm failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -983,7 +1006,7 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 	armed = true;
 	io_status.struct_size = sizeof(io_status);
 	io_status.api_major = CW_EC_API_VERSION_MAJOR;
-	if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0 ||
+	if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0 ||
 	    !io_status.outputs_armed) {
 		fprintf(stderr,
 			"cw_ec_config: pulse was not reported armed\n");
@@ -995,7 +1018,7 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 	fflush(stdout);
 	usleep((useconds_t)pulse_ms * 1000U);
 	disarm.config_generation = output.config_generation;
-	if (ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm) < 0) {
+	if (lib_ret(cw_ec_disarm_output(h, &disarm)) < 0) {
 		fprintf(stderr, "cw_ec_config: pulse disarm failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -1003,14 +1026,14 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 	armed = false;
 	io_status.struct_size = sizeof(io_status);
 	io_status.api_major = CW_EC_API_VERSION_MAJOR;
-	if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0 ||
+	if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0 ||
 	    io_status.outputs_armed || !io_status.rearm_required) {
 		fprintf(stderr,
 			"cw_ec_config: pulse disarm state was not latched\n");
 		goto out;
 	}
 	printf("PULSE: synchronously disarmed; output returned to zero\n");
-	if (ioctl(fd, CW_EC_IOC_CYCLE_DEACTIVATE, &deactivate) < 0) {
+	if (lib_ret(cw_ec_cycle_deactivate(h, &deactivate)) < 0) {
 		fprintf(stderr, "cw_ec_config: deactivation failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -1020,7 +1043,7 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 out:
 	if (armed) {
 		disarm.config_generation = output.config_generation;
-		if (ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm) < 0)
+		if (lib_ret(cw_ec_disarm_output(h, &disarm)) < 0)
 			fprintf(stderr,
 				"cw_ec_config: cleanup disarm failed: %s\n",
 				strerror(errno));
@@ -1029,14 +1052,11 @@ out:
 		fprintf(stderr, "cw_ec_config: closing active pulse session for cleanup\n");
 	free(mask);
 	free(data);
-	if (close(fd) < 0) {
-		fprintf(stderr, "cw_ec_config: close: %s\n", strerror(errno));
-		ret = 1;
-	}
+	cw_ec_close(h);
 	return ret;
 }
 
-static int print_slave_statuses(int fd, const char *path,
+static int print_slave_statuses(cw_ec_handle *h, const char *path,
 				uint64_t generation)
 {
 	FILE *stream;
@@ -1068,8 +1088,7 @@ static int print_slave_statuses(int fd, const char *path,
 		if (record.kind != RECORD_SLAVE)
 			continue;
 		status.config_id = record.slave.config_id;
-		if (ioctl(fd, CW_EC_IOC_GET_CONFIG_SLAVE_STATUS,
-			  &status) < 0) {
+		if (lib_ret(cw_ec_get_config_slave_status(h, &status)) < 0) {
 			fprintf(stderr,
 				"cw_ec_config: slave status %" PRIu32
 				" failed: %s\n",
@@ -1096,7 +1115,7 @@ out:
 	return ret;
 }
 
-static int print_domain_statuses(int fd, const char *path,
+static int print_domain_statuses(cw_ec_handle *h, const char *path,
 				 uint64_t generation)
 {
 	FILE *stream;
@@ -1120,7 +1139,7 @@ static int print_domain_statuses(int fd, const char *path,
 		if (record.kind != RECORD_DOMAIN)
 			continue;
 		status.domain_config_id = record.domain.config_id;
-		if (ioctl(fd, CW_EC_IOC_GET_DOMAIN_STATUS, &status) < 0) {
+		if (lib_ret(cw_ec_get_domain_status(h, &status)) < 0) {
 			fprintf(stderr,
 				"cw_ec_config: domain status %" PRIu32
 				" failed: %s\n",
@@ -1175,15 +1194,15 @@ static int first_domain_id(const char *path, uint32_t *domain_id)
 static int prepare(const char *path, const char *device)
 {
 	struct cw_ec_config_validate validate;
-	int fd = open(device, O_RDWR | O_CLOEXEC);
+	cw_ec_handle *h = NULL;
 	int ret = 1;
 
-	if (fd < 0) {
+	if (open_handle(device, &h) < 0) {
 		fprintf(stderr, "cw_ec_config: cannot open %s: %s\n",
 			device, strerror(errno));
 		return 1;
 	}
-	if (configure_fd(fd, path, &validate))
+	if (configure_handle(h, path, &validate))
 		goto out;
 	printf("prepared %u slave(s), %u sync manager(s), %u PDO(s), "
 	       "%u entry/entries; master was not activated\n",
@@ -1191,10 +1210,7 @@ static int prepare(const char *path, const char *device)
 	       validate.entry_count);
 	ret = 0;
 out:
-	if (close(fd) < 0) {
-		fprintf(stderr, "cw_ec_config: close: %s\n", strerror(errno));
-		ret = 1;
-	}
+	cw_ec_close(h);
 	return ret;
 }
 
@@ -1272,22 +1288,22 @@ static int cycle(const char *path, uint32_t period_ns,
 		.struct_size = sizeof(deactivate),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
-	int fd = open(device, O_RDWR | O_CLOEXEC);
+	cw_ec_handle *h = NULL;
 	bool active = false;
 	bool held_armed = false;
 	int ret = 1;
 
-	if (fd < 0) {
+	if (open_handle(device, &h) < 0) {
 		fprintf(stderr, "cw_ec_config: cannot open %s: %s\n",
 			device, strerror(errno));
 		return 1;
 	}
-	if (configure_fd(fd, path, &validate))
+	if (configure_handle(h, path, &validate))
 		goto out;
 	if (history_depth) {
 		io_status.struct_size = sizeof(io_status);
 		io_status.api_major = CW_EC_API_VERSION_MAJOR;
-		if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0) {
+		if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
 			fprintf(stderr,
 				"cw_ec_config: pre-activation history status failed: %s\n",
 				strerror(errno));
@@ -1296,8 +1312,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		history_config.config_generation =
 			io_status.config_generation;
 		history_config.depth = history_depth;
-		if (ioctl(fd, CW_EC_IOC_CONFIGURE_INPUT_HISTORY,
-			  &history_config) < 0) {
+		if (lib_ret(cw_ec_configure_input_history(h, &history_config)) < 0) {
 			fprintf(stderr,
 				"cw_ec_config: input history configuration failed: %s\n",
 				strerror(errno));
@@ -1307,7 +1322,7 @@ static int cycle(const char *path, uint32_t period_ns,
 	if (lease_zero) {
 		io_status.struct_size = sizeof(io_status);
 		io_status.api_major = CW_EC_API_VERSION_MAJOR;
-		if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0) {
+		if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
 			fprintf(stderr,
 				"cw_ec_config: pre-activation IO status failed: %s\n",
 				strerror(errno));
@@ -1315,15 +1330,14 @@ static int cycle(const char *path, uint32_t period_ns,
 		}
 		lease_config.config_generation =
 			io_status.config_generation;
-		if (ioctl(fd, CW_EC_IOC_CONFIGURE_OUTPUT_LEASE,
-			  &lease_config) < 0) {
+		if (lib_ret(cw_ec_configure_output_lease(h, &lease_config)) < 0) {
 			fprintf(stderr,
 				"cw_ec_config: output lease configuration failed: %s\n",
 				strerror(errno));
 			goto out;
 		}
 	}
-	if (ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE, &activate) < 0) {
+	if (lib_ret(cw_ec_cycle_activate(h, activate.cycle_period_ns, activate.flags, &activate)) < 0) {
 		fprintf(stderr, "cw_ec_config: activation failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -1332,19 +1346,19 @@ static int cycle(const char *path, uint32_t period_ns,
 	printf("activated zero-output domain: size=%" PRIu32
 	       " period=%" PRIu32 " ns for %u second(s)\n",
 	       activate.domain_size, period_ns, duration_seconds);
-	if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0) {
+	if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
 		fprintf(stderr, "cw_ec_config: initial IO status failed: %s\n",
 			strerror(errno));
 		goto out;
 	}
-	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_INFO, &cycle_info) < 0) {
+	if (lib_ret(cw_ec_cycle_info(h, &cycle_info)) < 0) {
 		fprintf(stderr, "cw_ec_config: initial cycle info failed: %s\n",
 			strerror(errno));
 		goto out;
 	}
 	cycle_wait.config_generation = io_status.config_generation;
 	cycle_wait.after_cycle_index = cycle_info.cycle_index;
-	if (ioctl(fd, CW_EC_IOC_CYCLE_WAIT, &cycle_wait) < 0) {
+	if (lib_ret(cw_ec_cycle_wait(h, &cycle_wait)) < 0) {
 		fprintf(stderr, "cw_ec_config: wait for cycle failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -1381,8 +1395,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		for (attempts = 0; attempts < 100; attempts++) {
 			io_status.struct_size = sizeof(io_status);
 			io_status.api_major = CW_EC_API_VERSION_MAJOR;
-			if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS,
-				  &io_status) < 0) {
+			if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
 				fprintf(stderr,
 					"cw_ec_config: IO status failed: %s\n",
 					strerror(errno));
@@ -1395,7 +1408,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		if (!io_status.bus_healthy) {
 			fprintf(stderr,
 				"cw_ec_config: bus did not become healthy within five seconds\n");
-			if (print_slave_statuses(fd, path,
+			if (print_slave_statuses(h, path,
 						 io_status.config_generation))
 				fprintf(stderr,
 					"cw_ec_config: failed to report slave status\n");
@@ -1410,7 +1423,7 @@ static int cycle(const char *path, uint32_t period_ns,
 			.cycle_period_ns = target_period_ns,
 		};
 
-		if (ioctl(fd, CW_EC_IOC_CYCLE_SET_PERIOD, &update) < 0) {
+		if (lib_ret(cw_ec_cycle_set_period(h, &update)) < 0) {
 			fprintf(stderr,
 				"cw_ec_config: cycle period update failed: %s\n",
 				strerror(errno));
@@ -1446,7 +1459,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		output.mask_ptr = (uintptr_t)output_mask;
 		output.data_size = activate.domain_size;
 		output.config_generation = io_status.config_generation;
-		if (ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output) < 0) {
+		if (lib_ret(cw_ec_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
 			fprintf(stderr,
 				"cw_ec_config: zero hold publication failed: %s\n",
 				strerror(errno));
@@ -1454,7 +1467,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		}
 		arm.config_generation = output.config_generation;
 		arm.output_sequence = output.output_sequence;
-		if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) < 0) {
+		if (lib_ret(cw_ec_arm_output(h, &arm)) < 0) {
 			fprintf(stderr,
 				"cw_ec_config: zero hold arm failed: %s\n",
 				strerror(errno));
@@ -1525,84 +1538,83 @@ static int cycle(const char *path, uint32_t period_ns,
 			goto out;
 		invalid_domain.domain_config_id = domain_id;
 
-		if (expect_ioctl_errno(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT,
+		if (expect_ioctl_errno(h, CW_EC_IOC_GET_INPUT_SNAPSHOT,
 				       &invalid_snapshot, ENOSPC,
 				       "undersized snapshot") ||
 		    invalid_snapshot.data_size != activate.domain_size)
 			goto out;
 		invalid_snapshot.flags = 1;
 		invalid_snapshot.data_capacity = activate.domain_size;
-		if (expect_ioctl_errno(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT,
+		if (expect_ioctl_errno(h, CW_EC_IOC_GET_INPUT_SNAPSHOT,
 				       &invalid_snapshot, EINVAL,
 				       "snapshot flags"))
 			goto out;
-		if (expect_ioctl_errno(fd, CW_EC_IOC_PUBLISH_OUTPUT,
+		if (expect_ioctl_errno(h, CW_EC_IOC_PUBLISH_OUTPUT,
 				       &invalid_output, ESTALE,
 				       "stale output generation"))
 			goto out;
 		invalid_output.config_generation =
 			io_status.config_generation;
 		invalid_output.data_size = activate.domain_size - 1U;
-		if (expect_ioctl_errno(fd, CW_EC_IOC_PUBLISH_OUTPUT,
+		if (expect_ioctl_errno(h, CW_EC_IOC_PUBLISH_OUTPUT,
 				       &invalid_output, EMSGSIZE,
 				       "wrong output size"))
 			goto out;
-		if (expect_ioctl_errno(fd, CW_EC_IOC_ARM_OUTPUTS,
+		if (expect_ioctl_errno(h, CW_EC_IOC_ARM_OUTPUTS,
 				       &invalid_arm, ESTALE,
 				       "stale arm generation"))
 			goto out;
 		invalid_arm.config_generation = io_status.config_generation;
-		if (expect_ioctl_errno(fd, CW_EC_IOC_ARM_OUTPUTS,
+		if (expect_ioctl_errno(h, CW_EC_IOC_ARM_OUTPUTS,
 				       &invalid_arm, ESTALE,
 				       "unknown output sequence"))
 			goto out;
-		if (expect_ioctl_errno(fd, CW_EC_IOC_DISARM_OUTPUTS,
+		if (expect_ioctl_errno(h, CW_EC_IOC_DISARM_OUTPUTS,
 				       &invalid_disarm, ESTALE,
 				       "stale disarm generation"))
 			goto out;
-		if (expect_ioctl_errno(fd, CW_EC_IOC_CYCLE_ACTIVATE,
+		if (expect_ioctl_errno(h, CW_EC_IOC_CYCLE_ACTIVATE,
 				       &duplicate_activate, EBUSY,
 				       "duplicate activation"))
 			goto out;
-		if (expect_ioctl_errno(fd, CW_EC_IOC_CYCLE_GET_INFO,
+		if (expect_ioctl_errno(h, CW_EC_IOC_CYCLE_GET_INFO,
 				       &invalid_cycle_info, EINVAL,
 				       "cycle info reserved fields"))
 			goto out;
-		if (expect_ioctl_errno(fd, CW_EC_IOC_CYCLE_WAIT,
+		if (expect_ioctl_errno(h, CW_EC_IOC_CYCLE_WAIT,
 				       &invalid_cycle_wait, ESTALE,
 				       "stale cycle wait generation"))
 			goto out;
-		if (expect_ioctl_errno(fd, CW_EC_IOC_CYCLE_SET_PERIOD,
+		if (expect_ioctl_errno(h, CW_EC_IOC_CYCLE_SET_PERIOD,
 				       &invalid_period_update, ESTALE,
 				       "stale period-update generation"))
 			goto out;
 		invalid_cycle_wait.config_generation =
 			io_status.config_generation;
 		invalid_cycle_wait.after_cycle_index = UINT64_MAX;
-		if (expect_ioctl_errno(fd, CW_EC_IOC_CYCLE_WAIT,
+		if (expect_ioctl_errno(h, CW_EC_IOC_CYCLE_WAIT,
 				       &invalid_cycle_wait, EINVAL,
 				       "future cycle wait index"))
 			goto out;
-		if (expect_ioctl_errno(fd, CW_EC_IOC_GET_DOMAIN_STATUS,
+		if (expect_ioctl_errno(h, CW_EC_IOC_GET_DOMAIN_STATUS,
 				       &invalid_domain, ESTALE,
 				       "stale domain generation"))
 			goto out;
 		invalid_domain.config_generation =
 			io_status.config_generation;
 		invalid_domain.domain_config_id = 0;
-		if (expect_ioctl_errno(fd, CW_EC_IOC_GET_DOMAIN_STATUS,
+		if (expect_ioctl_errno(h, CW_EC_IOC_GET_DOMAIN_STATUS,
 				       &invalid_domain, ENOENT,
 				       "unknown domain ID"))
 			goto out;
 		invalid_domain.domain_config_id = domain_id;
 		invalid_domain.reserved0[0] = 1;
-		if (expect_ioctl_errno(fd, CW_EC_IOC_GET_DOMAIN_STATUS,
+		if (expect_ioctl_errno(h, CW_EC_IOC_GET_DOMAIN_STATUS,
 				       &invalid_domain, EINVAL,
 				       "domain status reserved fields"))
 			goto out;
 		invalid_domain.reserved0[0] = 0;
-		if (ioctl(fd, CW_EC_IOC_GET_DOMAIN_STATUS,
-			  &invalid_domain) < 0 ||
+		if (lib_ret(cw_ec_get_domain_status(h, &invalid_domain)) < 0 ||
 		    !invalid_domain.active || !invalid_domain.data_valid) {
 			fprintf(stderr,
 				"cw_ec_config: active domain status validation failed: %s\n",
@@ -1645,8 +1657,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		batch.max_records = max_records;
 		batch.data_capacity =
 			max_records * activate.domain_size;
-		if (ioctl(fd, CW_EC_IOC_GET_INPUT_HISTORY_BATCH,
-			  &batch) < 0) {
+		if (lib_ret(cw_ec_get_input_history_batch(h, &batch)) < 0) {
 			fprintf(stderr,
 				"cw_ec_config: initial history cursor failed: %s\n",
 				strerror(errno));
@@ -1684,10 +1695,7 @@ static int cycle(const char *path, uint32_t period_ns,
 				batch.max_records = max_records;
 				batch.data_capacity =
 					max_records * activate.domain_size;
-				if (ioctl(
-					    fd,
-					    CW_EC_IOC_GET_INPUT_HISTORY_BATCH,
-					    &batch) < 0) {
+				if (lib_ret(cw_ec_get_input_history_batch(h, &batch)) < 0) {
 					fprintf(stderr,
 						"cw_ec_config: history batch failed: %s\n",
 						strerror(errno));
@@ -1768,8 +1776,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		memset(&cycle_info, 0, sizeof(cycle_info));
 		cycle_info.struct_size = sizeof(cycle_info);
 		cycle_info.api_major = CW_EC_API_VERSION_MAJOR;
-		if (ioctl(fd, CW_EC_IOC_CYCLE_GET_INFO,
-			  &cycle_info) < 0) {
+		if (lib_ret(cw_ec_cycle_info(h, &cycle_info)) < 0) {
 			fprintf(stderr,
 				"cw_ec_config: exchange initial cycle info failed: %s\n",
 				strerror(errno));
@@ -1792,8 +1799,7 @@ static int cycle(const char *path, uint32_t period_ns,
 			uint64_t observation_ns;
 			uint64_t now_ns;
 
-			if (ioctl(fd, CW_EC_IOC_CYCLE_WAIT,
-				  &cycle_wait) < 0) {
+			if (lib_ret(cw_ec_cycle_wait(h, &cycle_wait)) < 0) {
 				fprintf(stderr,
 					"cw_ec_config: exchange cycle wait failed: %s\n",
 					strerror(errno));
@@ -1836,15 +1842,13 @@ static int cycle(const char *path, uint32_t period_ns,
 					   previous_cycle - 1U;
 			previous_cycle = cycle_wait.cycle.cycle_index;
 			cycle_wait.after_cycle_index = previous_cycle;
-			if (ioctl(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT,
-				  &snapshot) < 0) {
+			if (lib_ret(cw_ec_get_input_snapshot(h, &snapshot, (void *)(uintptr_t)snapshot.data_ptr, snapshot.data_capacity)) < 0) {
 				fprintf(stderr,
 					"cw_ec_config: exchange input snapshot failed: %s\n",
 					strerror(errno));
 				goto out;
 			}
-			if (ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT,
-				  &output) < 0) {
+			if (lib_ret(cw_ec_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
 				fprintf(stderr,
 					"cw_ec_config: disarmed exchange publication failed: %s\n",
 					strerror(errno));
@@ -1902,8 +1906,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		while (samples--) {
 			io_status.struct_size = sizeof(io_status);
 			io_status.api_major = CW_EC_API_VERSION_MAJOR;
-			if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS,
-				  &io_status) < 0) {
+			if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
 				fprintf(stderr,
 					"cw_ec_config: monitored IO status failed: %s\n",
 					strerror(errno));
@@ -1929,11 +1932,11 @@ static int cycle(const char *path, uint32_t period_ns,
 				       io_status.configured_slaves_online,
 				       io_status.configured_slaves_operational);
 				if (print_slave_statuses(
-					    fd, path,
+					    h, path,
 					    io_status.config_generation))
 					goto out;
 				if (print_domain_statuses(
-					    fd, path,
+					    h, path,
 					    io_status.config_generation))
 					goto out;
 				fflush(stdout);
@@ -1946,7 +1949,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		while (duration_seconds)
 			duration_seconds = sleep(duration_seconds);
 	}
-	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_STATUS, &status) < 0) {
+	if (lib_ret(cw_ec_cycle_status(h, &status)) < 0) {
 		fprintf(stderr, "cw_ec_config: status failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -1967,7 +1970,7 @@ static int cycle(const char *path, uint32_t period_ns,
 	cycle_info.flags = 0;
 	cycle_info.reserved0 = 0;
 	cycle_info.reserved1 = 0;
-	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_INFO, &cycle_info) < 0) {
+	if (lib_ret(cw_ec_cycle_info(h, &cycle_info)) < 0) {
 		fprintf(stderr, "cw_ec_config: cycle info failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -1990,7 +1993,7 @@ static int cycle(const char *path, uint32_t period_ns,
 	       cycle_info.working_counter, cycle_info.working_counter_state,
 	       cycle_info.outputs_armed, cycle_info.bus_healthy,
 	       cycle_info.cycle_result);
-	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_DC_STATUS, &dc_status) < 0) {
+	if (lib_ret(cw_ec_get_dc_status(h, &dc_status)) < 0) {
 		fprintf(stderr, "cw_ec_config: DC status failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -2015,7 +2018,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		       (uint64_t)dc_status.monitor_success_count,
 		       (uint64_t)dc_status.monitor_timeout_count);
 	}
-	if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0) {
+	if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
 		fprintf(stderr, "cw_ec_config: IO status failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -2035,13 +2038,13 @@ static int cycle(const char *path, uint32_t period_ns,
 	       io_status.configured_slave_count,
 	       io_status.configured_slaves_online,
 	       io_status.configured_slaves_operational);
-	if (print_slave_statuses(fd, path, io_status.config_generation))
+	if (print_slave_statuses(h, path, io_status.config_generation))
 		goto out;
-	if (print_domain_statuses(fd, path, io_status.config_generation))
+	if (print_domain_statuses(h, path, io_status.config_generation))
 		goto out;
 	if (held_armed) {
 		disarm.config_generation = output.config_generation;
-		if (ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm) < 0) {
+		if (lib_ret(cw_ec_disarm_output(h, &disarm)) < 0) {
 			fprintf(stderr,
 				"cw_ec_config: held-output disarm failed: %s\n",
 				strerror(errno));
@@ -2064,7 +2067,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		output.mask_ptr = (uintptr_t)output_mask;
 		output.data_size = activate.domain_size;
 		output.config_generation = io_status.config_generation;
-		if (ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output) < 0) {
+		if (lib_ret(cw_ec_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
 			fprintf(stderr, "cw_ec_config: output publish failed: %s\n",
 				strerror(errno));
 			goto out;
@@ -2081,14 +2084,13 @@ static int cycle(const char *path, uint32_t period_ns,
 
 			arm.config_generation = output.config_generation;
 			arm.output_sequence = output.output_sequence;
-			if (expect_ioctl_errno(fd, CW_EC_IOC_ARM_OUTPUTS,
+			if (expect_ioctl_errno(h, CW_EC_IOC_ARM_OUTPUTS,
 					       &arm, EAGAIN,
 					       "arm without lease renewal"))
 				goto out;
 			lease_renew.config_generation =
 				output.config_generation;
-			if (ioctl(fd, CW_EC_IOC_RENEW_OUTPUT_LEASE,
-				  &lease_renew) < 0 ||
+			if (lib_ret(cw_ec_renew_output_lease(h, &lease_renew)) < 0 ||
 			    lease_renew.remaining_cycles != 100 ||
 			    lease_renew.renewal_count != 1) {
 				fprintf(stderr,
@@ -2096,7 +2098,7 @@ static int cycle(const char *path, uint32_t period_ns,
 					errno ? strerror(errno) : "invalid result");
 				goto out;
 			}
-			if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) < 0) {
+			if (lib_ret(cw_ec_arm_output(h, &arm)) < 0) {
 				fprintf(stderr,
 					"cw_ec_config: leased zero arm failed: %s\n",
 					strerror(errno));
@@ -2105,8 +2107,7 @@ static int cycle(const char *path, uint32_t period_ns,
 			usleep((useconds_t)(period_ns / 1000U) * 150U);
 			io_status.struct_size = sizeof(io_status);
 			io_status.api_major = CW_EC_API_VERSION_MAJOR;
-			if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS,
-				  &io_status) < 0 ||
+			if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0 ||
 			    io_status.outputs_armed ||
 			    !io_status.rearm_required ||
 			    !(io_status.current_faults &
@@ -2118,8 +2119,7 @@ static int cycle(const char *path, uint32_t period_ns,
 			}
 			lease_status.config_generation =
 				output.config_generation;
-			if (ioctl(fd, CW_EC_IOC_GET_OUTPUT_LEASE_STATUS,
-				  &lease_status) < 0 ||
+			if (lib_ret(cw_ec_get_output_lease_status(h, &lease_status)) < 0 ||
 			    lease_status.valid ||
 			    lease_status.remaining_cycles ||
 			    lease_status.expiry_count != 1) {
@@ -2134,19 +2134,18 @@ static int cycle(const char *path, uint32_t period_ns,
 			lease_renew.api_major = CW_EC_API_VERSION_MAJOR;
 			lease_renew.config_generation =
 				output.config_generation;
-			if (ioctl(fd, CW_EC_IOC_RENEW_OUTPUT_LEASE,
-				  &lease_renew) < 0)
+			if (lib_ret(cw_ec_renew_output_lease(h, &lease_renew)) < 0)
 				goto out;
-			if (expect_ioctl_errno(fd, CW_EC_IOC_ARM_OUTPUTS,
+			if (expect_ioctl_errno(h, CW_EC_IOC_ARM_OUTPUTS,
 					       &arm, EAGAIN,
 					       "stale publication after lease expiry"))
 				goto out;
-			if (ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output) < 0)
+			if (lib_ret(cw_ec_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0)
 				goto out;
 			arm.output_sequence = output.output_sequence;
 			disarm.config_generation = output.config_generation;
-			if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) < 0 ||
-			    ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm) < 0) {
+			if (lib_ret(cw_ec_arm_output(h, &arm)) < 0 ||
+			    lib_ret(cw_ec_disarm_output(h, &disarm)) < 0) {
 				fprintf(stderr,
 					"cw_ec_config: lease recovery arm/disarm failed: %s\n",
 					strerror(errno));
@@ -2156,7 +2155,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		} else if (arm_zero) {
 			arm.config_generation = output.config_generation;
 			arm.output_sequence = output.output_sequence;
-			if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) < 0) {
+			if (lib_ret(cw_ec_arm_output(h, &arm)) < 0) {
 				fprintf(stderr,
 					"cw_ec_config: zero-output arm failed: %s\n",
 					strerror(errno));
@@ -2165,7 +2164,7 @@ static int cycle(const char *path, uint32_t period_ns,
 			usleep((useconds_t)(period_ns / 1000U) * 10U);
 			io_status.struct_size = sizeof(io_status);
 			io_status.api_major = CW_EC_API_VERSION_MAJOR;
-			if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0 ||
+			if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0 ||
 			    !io_status.outputs_armed) {
 				fprintf(stderr,
 					"cw_ec_config: zero-output arm was not reported active\n");
@@ -2173,8 +2172,7 @@ static int cycle(const char *path, uint32_t period_ns,
 			}
 			cycle_info.struct_size = sizeof(cycle_info);
 			cycle_info.api_major = CW_EC_API_VERSION_MAJOR;
-			if (ioctl(fd, CW_EC_IOC_CYCLE_GET_INFO,
-				  &cycle_info) < 0 ||
+			if (lib_ret(cw_ec_cycle_info(h, &cycle_info)) < 0 ||
 			    cycle_info.output_sequence_consumed !=
 				    output.output_sequence ||
 			    !cycle_info.stale_output_cycles) {
@@ -2190,7 +2188,7 @@ static int cycle(const char *path, uint32_t period_ns,
 				       cycle_info.output_sequence_consumed,
 			       (uint64_t)cycle_info.stale_output_cycles);
 			disarm.config_generation = output.config_generation;
-			if (ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm) < 0) {
+			if (lib_ret(cw_ec_disarm_output(h, &disarm)) < 0) {
 				fprintf(stderr,
 					"cw_ec_config: synchronous disarm failed: %s\n",
 					strerror(errno));
@@ -2198,7 +2196,7 @@ static int cycle(const char *path, uint32_t period_ns,
 			}
 			io_status.struct_size = sizeof(io_status);
 			io_status.api_major = CW_EC_API_VERSION_MAJOR;
-			if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0 ||
+			if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0 ||
 			    io_status.outputs_armed ||
 			    !io_status.rearm_required) {
 				fprintf(stderr,
@@ -2207,21 +2205,21 @@ static int cycle(const char *path, uint32_t period_ns,
 			}
 			printf("zero-output shadow synchronously disarmed; fresh publication required\n");
 			errno = 0;
-			if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) == 0 ||
+			if (lib_ret(cw_ec_arm_output(h, &arm)) == 0 ||
 			    errno != EAGAIN) {
 				fprintf(stderr,
 					"cw_ec_config: stale arm was not rejected with EAGAIN\n");
 				goto out;
 			}
 			printf("stale output sequence correctly rejected after disarm\n");
-			if (ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output) < 0) {
+			if (lib_ret(cw_ec_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
 				fprintf(stderr,
 					"cw_ec_config: fresh zero publication failed: %s\n",
 					strerror(errno));
 				goto out;
 			}
 			arm.output_sequence = output.output_sequence;
-			if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) < 0) {
+			if (lib_ret(cw_ec_arm_output(h, &arm)) < 0) {
 				fprintf(stderr,
 					"cw_ec_config: fresh zero arm failed: %s\n",
 					strerror(errno));
@@ -2230,7 +2228,7 @@ static int cycle(const char *path, uint32_t period_ns,
 			printf("fresh zero-output sequence=%" PRIu64
 			       " accepted after disarm\n",
 			       (uint64_t)output.output_sequence);
-			if (ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm) < 0) {
+			if (lib_ret(cw_ec_disarm_output(h, &disarm)) < 0) {
 				fprintf(stderr,
 					"cw_ec_config: final synchronous disarm failed: %s\n",
 					strerror(errno));
@@ -2248,7 +2246,7 @@ static int cycle(const char *path, uint32_t period_ns,
 	}
 	snapshot.data_ptr = (uintptr_t)snapshot_data;
 	snapshot.data_capacity = activate.domain_size;
-	if (ioctl(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT, &snapshot) < 0) {
+	if (lib_ret(cw_ec_get_input_snapshot(h, &snapshot, (void *)(uintptr_t)snapshot.data_ptr, snapshot.data_capacity)) < 0) {
 		fprintf(stderr, "cw_ec_config: input snapshot failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -2264,7 +2262,7 @@ static int cycle(const char *path, uint32_t period_ns,
 	if (snapshot.data_size > 64)
 		printf("...");
 	printf("\n");
-	if (ioctl(fd, CW_EC_IOC_CYCLE_DEACTIVATE, &deactivate) < 0) {
+	if (lib_ret(cw_ec_cycle_deactivate(h, &deactivate)) < 0) {
 		fprintf(stderr, "cw_ec_config: deactivation failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -2281,10 +2279,7 @@ out:
 	free(output_data);
 	free(output_mask);
 	free(snapshot_data);
-	if (close(fd) < 0) {
-		fprintf(stderr, "cw_ec_config: close: %s\n", strerror(errno));
-		ret = 1;
-	}
+	cw_ec_close(h);
 	return ret;
 }
 
@@ -2304,7 +2299,7 @@ static void io_print_help(void)
 	       "  quit                         disarm, deactivate, and exit\n");
 }
 
-static int io_read_entry(int fd, uint32_t domain_size, uint8_t *snapshot_data,
+static int io_read_entry(cw_ec_handle *h, uint32_t domain_size, uint8_t *snapshot_data,
 			 struct io_entry *entry)
 {
 	struct cw_ec_input_snapshot snapshot = {
@@ -2321,7 +2316,7 @@ static int io_read_entry(int fd, uint32_t domain_size, uint8_t *snapshot_data,
 			entry->offset.bit_length);
 		return -1;
 	}
-	if (ioctl(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT, &snapshot) < 0) {
+	if (lib_ret(cw_ec_get_input_snapshot(h, &snapshot, (void *)(uintptr_t)snapshot.data_ptr, snapshot.data_capacity)) < 0) {
 		fprintf(stderr, "cw_ec_io: input snapshot failed: %s\n",
 			strerror(errno));
 		return -1;
@@ -2337,7 +2332,7 @@ static int io_read_entry(int fd, uint32_t domain_size, uint8_t *snapshot_data,
 	return 0;
 }
 
-static void io_print_status(int fd)
+static void io_print_status(cw_ec_handle *h)
 {
 	struct cw_ec_io_status status = {
 		.struct_size = sizeof(status),
@@ -2348,8 +2343,8 @@ static void io_print_status(int fd)
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
 
-	if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &status) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CYCLE_GET_STATUS, &cycle) < 0) {
+	if (lib_ret(cw_ec_get_io_status(h, &status)) < 0 ||
+	    lib_ret(cw_ec_cycle_status(h, &cycle)) < 0) {
 		fprintf(stderr, "cw_ec_io: status failed: %s\n",
 			strerror(errno));
 		return;
@@ -2406,7 +2401,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 	bool armed = false;
 	bool staged = false;
 	bool published = false;
-	int fd = -1;
+	cw_ec_handle *h = NULL;
 	int ret = 1;
 	uint32_t i;
 
@@ -2415,14 +2410,13 @@ static int interactive_io(const char *path, uint32_t period_ns,
 		fprintf(stderr, "cw_ec_io: cannot load configuration metadata\n");
 		return 1;
 	}
-	fd = open(device, O_RDWR | O_CLOEXEC);
-	if (fd < 0) {
+	if (open_handle(device, &h) < 0) {
 		fprintf(stderr, "cw_ec_io: cannot open %s: %s\n",
 			device, strerror(errno));
 		goto out;
 	}
 	suppress_offset_output = true;
-	if (configure_fd(fd, path, &validate))
+	if (configure_handle(h, path, &validate))
 		goto out;
 	for (i = 0; i < metadata.entry_count; i++) {
 		metadata.entries[i].offset.struct_size =
@@ -2431,8 +2425,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 			CW_EC_API_VERSION_MAJOR;
 		metadata.entries[i].offset.entry_id =
 			metadata.entries[i].cfg.entry_id;
-		if (ioctl(fd, CW_EC_IOC_GET_ENTRY_OFFSET,
-			  &metadata.entries[i].offset) < 0) {
+		if (lib_ret(cw_ec_get_entry_offset(h, &metadata.entries[i].offset)) < 0) {
 			fprintf(stderr,
 				"cw_ec_io: offset lookup for entry %" PRIu32
 				" failed: %s\n",
@@ -2441,7 +2434,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 			goto out;
 		}
 	}
-	if (ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE, &activate) < 0) {
+	if (lib_ret(cw_ec_cycle_activate(h, activate.cycle_period_ns, activate.flags, &activate)) < 0) {
 		fprintf(stderr, "cw_ec_io: activation failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -2458,7 +2451,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 	for (i = 0; i < 100; i++) {
 		io_status.struct_size = sizeof(io_status);
 		io_status.api_major = CW_EC_API_VERSION_MAJOR;
-		if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0)
+		if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0)
 			goto out;
 		if (io_status.bus_healthy)
 			break;
@@ -2495,7 +2488,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 			continue;
 		}
 		if (!strcmp(name, "status")) {
-			io_print_status(fd);
+			io_print_status(h);
 			continue;
 		}
 		if (!strcmp(name, "list")) {
@@ -2541,7 +2534,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 				continue;
 			}
 			while (count--) {
-				if (io_read_entry(fd, activate.domain_size,
+				if (io_read_entry(h, activate.domain_size,
 						  snapshot_data, entry))
 					break;
 				if (count)
@@ -2612,8 +2605,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 			}
 			io_status.struct_size = sizeof(io_status);
 			io_status.api_major = CW_EC_API_VERSION_MAJOR;
-			if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS,
-				  &io_status) < 0) {
+			if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
 				printf("status failed: %s\n", strerror(errno));
 				continue;
 			}
@@ -2622,8 +2614,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 			output.data_size = activate.domain_size;
 			output.config_generation =
 				io_status.config_generation;
-			if (ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT,
-				  &output) < 0) {
+			if (lib_ret(cw_ec_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
 				printf("publish failed: %s\n", strerror(errno));
 				continue;
 			}
@@ -2647,7 +2638,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 			}
 			arm.config_generation = output.config_generation;
 			arm.output_sequence = output.output_sequence;
-			if (ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm) < 0) {
+			if (lib_ret(cw_ec_arm_output(h, &arm)) < 0) {
 				printf("arm failed: %s\n", strerror(errno));
 				continue;
 			}
@@ -2659,8 +2650,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 		if (!strcmp(name, "disarm")) {
 			io_status.struct_size = sizeof(io_status);
 			io_status.api_major = CW_EC_API_VERSION_MAJOR;
-			if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS,
-				  &io_status) < 0)
+			if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0)
 				continue;
 			if (!io_status.outputs_armed) {
 				armed = false;
@@ -2669,8 +2659,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 			}
 			disarm.config_generation =
 				io_status.config_generation;
-			if (ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS,
-				  &disarm) < 0) {
+			if (lib_ret(cw_ec_disarm_output(h, &disarm)) < 0) {
 				printf("disarm failed: %s\n", strerror(errno));
 				continue;
 			}
@@ -2685,27 +2674,24 @@ static int interactive_io(const char *path, uint32_t period_ns,
 		ret = 0;
 
 out:
-	if (fd >= 0 && active) {
+	if (h && active) {
 		io_status.struct_size = sizeof(io_status);
 		io_status.api_major = CW_EC_API_VERSION_MAJOR;
-		if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) == 0 &&
+		if (lib_ret(cw_ec_get_io_status(h, &io_status)) == 0 &&
 		    io_status.outputs_armed) {
 			disarm.config_generation =
 				io_status.config_generation;
-			if (ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS,
-				  &disarm) < 0)
+			if (lib_ret(cw_ec_disarm_output(h, &disarm)) < 0)
 				fprintf(stderr,
 					"cw_ec_io: cleanup disarm failed: %s\n",
 					strerror(errno));
 		}
-		if (ioctl(fd, CW_EC_IOC_CYCLE_DEACTIVATE,
-			  &deactivate) < 0)
+		if (lib_ret(cw_ec_cycle_deactivate(h, &deactivate)) < 0)
 			fprintf(stderr,
 				"cw_ec_io: cleanup deactivation failed: %s\n",
 				strerror(errno));
 	}
-	if (fd >= 0 && close(fd) < 0)
-		ret = 1;
+	cw_ec_close(h);
 	free(snapshot_data);
 	free(output_data);
 	free(output_mask);

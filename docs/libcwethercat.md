@@ -1,8 +1,8 @@
 # libcwethercat — Generic User-Space Library API
 
-**Status:** design specification for the shared userspace library (plan
-Phase 7). Transport UAPI is API 0.16. Library sources under `lib/` are not
-yet implemented; this document is the contract for that work.
+**Status:** Phase 7 library landed for API 0.16. Sources live under `lib/`
+and `include/cw_ethercat.h`. This document remains the public contract;
+keep it aligned when the API changes.
 
 This project is a **generic** EtherCAT cyclic transport. It is not a
 Clockwork-only stack. Any controller may use the kernel module and this
@@ -57,10 +57,10 @@ The library lives in **this repository**, next to the UAPI and tools:
 etherlab-cyclic-kmod/
 ├── include/
 │   ├── cw_ethercat_uapi.h      # wire ABI (kernel + userspace)
-│   └── cw_ethercat.h           # public library API (to add)
+│   └── cw_ethercat.h           # public library API
 ├── lib/
-│   ├── cw_ethercat.c           # implementation (to add)
-│   └── ...
+│   ├── cw_ethercat.c           # implementation
+│   └── cwethercat.pc.in
 ├── kernel/
 ├── tools/                      # migrate onto the library over time
 └── docs/
@@ -118,9 +118,10 @@ before using optional features.
 
 ### 2.4 Licensing
 
-The kernel module is GPL-2.0-only. The library license must be an
-**explicit** documented decision before arbitrary applications link it.
-Do not silently mix licenses.
+The kernel module is GPL-2.0-only. The initial `libcwethercat` sources and
+public headers use **GPL-2.0-only** to match the repository default. A
+different userspace license (for example LGPL) requires an explicit
+documented decision before broader proprietary linking is claimed.
 
 ---
 
@@ -395,12 +396,13 @@ Full behavioural detail: [`developer-guide.md`](developer-guide.md).
 Migrate tools onto `libcwethercat` so the library is proven before external
 integrations:
 
-| Priority | Tool | Library subset |
-|----------|------|----------------|
-| 1 | `cw_ec_bus` | open, negotiate, discovery |
-| 2 | `cw_ec_sdo` | setup / upload |
-| 3 | `cw_ec_config` | full config, cycle, images |
-| 4 | ABI / stress tools | error paths |
+| Tool | Library? | Coverage |
+|------|----------|----------|
+| `cw_ec_bus` | yes | open, negotiate, discovery |
+| `cw_ec_sdo` | yes | setup / upload / recipes |
+| `cw_ec_config` | yes | full config, cycle, images, timing; hostile active checks still use raw ioctl via `cw_ec_fd` so wrong `struct_size` is not papered over |
+| `cw_ec_config_stress` | yes | maximum pending create/reset limits |
+| `cw_ec_abi_test` | **no** (intentional) | raw ioctl hostile ABI suite against the kernel UAPI |
 
 External controllers should use the same installed library, not a fork of
 ioctl glue.
@@ -409,13 +411,14 @@ ioctl glue.
 
 ## 8. Implementation checklist (this repository)
 
-- [ ] Add `include/cw_ethercat.h` matching §4
-- [ ] Implement `lib/` sources
-- [ ] `make lib` / `make install-lib` / pkg-config
-- [ ] Migrate `tools/cw_ec_bus` to the library
-- [ ] Migrate configuration/cycle portions of `tools/cw_ec_config`
-- [ ] Document package version and library license decision
-- [ ] Keep this document updated when the public API ships
+- [x] Add `include/cw_ethercat.h` matching §4
+- [x] Implement `lib/` sources
+- [x] `make lib` / `make install-lib` / pkg-config
+- [x] Migrate `tools/cw_ec_bus` to the library
+- [x] Migrate `tools/cw_ec_sdo`, `tools/cw_ec_config`, `tools/cw_ec_config_stress`
+- [x] Keep `tools/cw_ec_abi_test` on raw ioctls for hostile UAPI checks
+- [x] Document package version and library license decision (GPL-2.0-only v1)
+- [x] Keep this document updated when the public API ships
 
 ---
 

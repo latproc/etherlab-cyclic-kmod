@@ -3,14 +3,12 @@
 #define _GNU_SOURCE
 
 #include <errno.h>
-#include <fcntl.h>
 #include <inttypes.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <unistd.h>
 
-#include "cw_ethercat_uapi.h"
+#include "cw_ethercat.h"
 
 static const char *al_state_name(unsigned int state)
 {
@@ -31,14 +29,14 @@ static const char *al_state_name(unsigned int state)
 int main(int argc, char **argv)
 {
 	const char *device = "/dev/cw_ethercat0";
+	cw_ec_handle *h = NULL;
 	struct cw_ec_api_version version;
-	struct cw_ec_capabilities capabilities = {
-		.struct_size = sizeof(capabilities),
-		.api_major = CW_EC_API_VERSION_MAJOR,
-	};
+	struct cw_ec_capabilities capabilities;
 	struct cw_ec_master_info master;
-	unsigned int position;
-	int fd;
+	cw_ec_slave_summary *slaves = NULL;
+	size_t slave_count = 0;
+	size_t i;
+	int ret;
 
 	if (argc > 2) {
 		fprintf(stderr, "usage: %s [device]\n", argv[0]);
@@ -47,44 +45,54 @@ int main(int argc, char **argv)
 	if (argc == 2)
 		device = argv[1];
 
-	fd = open(device, O_RDWR | O_CLOEXEC);
-	if (fd < 0) {
-		fprintf(stderr, "cw_ec_bus: cannot open %s: %s\n",
-			device, strerror(errno));
-		if (errno == EBUSY)
+	ret = cw_ec_open(device, &h);
+	if (ret) {
+		fprintf(stderr, "cw_ec_bus: cannot open %s: %s\n", device,
+			strerror(-ret));
+		if (ret == -EBUSY)
 			fprintf(stderr,
 				"cw_ec_bus: EtherLab master 0 is already owned\n");
 		return 1;
 	}
 
-	memset(&version, 0, sizeof(version));
-	if (ioctl(fd, CW_EC_IOC_GET_API_VERSION, &version) < 0) {
-		fprintf(stderr, "cw_ec_bus: GET_API_VERSION: %s\n",
-			strerror(errno));
-		close(fd);
-		return 1;
-	}
-	if (version.struct_size != sizeof(version) ||
-	    version.major != CW_EC_API_VERSION_MAJOR) {
-		fprintf(stderr,
-			"cw_ec_bus: incompatible API: kernel %u.%u, tool %u.%u\n",
-			version.major, version.minor, CW_EC_API_VERSION_MAJOR,
-			CW_EC_API_VERSION_MINOR);
-		close(fd);
-		return 1;
-	}
-	if (ioctl(fd, CW_EC_IOC_GET_CAPABILITIES, &capabilities) < 0) {
-		fprintf(stderr, "cw_ec_bus: GET_CAPABILITIES: %s\n",
-			strerror(errno));
-		close(fd);
+	ret = cw_ec_require_api(h, CW_EC_API_VERSION_MAJOR,
+				CW_EC_API_VERSION_MINOR);
+	if (ret) {
+		if (cw_ec_get_api_version(h, &version) == 0) {
+			fprintf(stderr,
+				"cw_ec_bus: incompatible API: kernel %u.%u, tool %u.%u\n",
+				version.major, version.minor,
+				CW_EC_API_VERSION_MAJOR,
+				CW_EC_API_VERSION_MINOR);
+		} else {
+			fprintf(stderr, "cw_ec_bus: require API: %s\n",
+				strerror(-ret));
+		}
+		cw_ec_close(h);
 		return 1;
 	}
 
-	memset(&master, 0, sizeof(master));
-	if (ioctl(fd, CW_EC_IOC_GET_MASTER_INFO, &master) < 0) {
+	ret = cw_ec_get_api_version(h, &version);
+	if (ret) {
+		fprintf(stderr, "cw_ec_bus: GET_API_VERSION: %s\n",
+			strerror(-ret));
+		cw_ec_close(h);
+		return 1;
+	}
+
+	ret = cw_ec_get_capabilities(h, &capabilities);
+	if (ret) {
+		fprintf(stderr, "cw_ec_bus: GET_CAPABILITIES: %s\n",
+			strerror(-ret));
+		cw_ec_close(h);
+		return 1;
+	}
+
+	ret = cw_ec_get_master_info(h, &master);
+	if (ret) {
 		fprintf(stderr, "cw_ec_bus: GET_MASTER_INFO: %s\n",
-			strerror(errno));
-		close(fd);
+			strerror(-ret));
+		cw_ec_close(h);
 		return 1;
 	}
 
@@ -97,33 +105,34 @@ int main(int argc, char **argv)
 	printf("slaves: %" PRIu32 "\n\n", master.slave_count);
 	printf("pos  alias  vendor      product     revision    state   err  name\n");
 
-	for (position = 0; position < master.slave_count; position++) {
-		struct cw_ec_slave_info slave = {
-			.struct_size = sizeof(slave),
-			.api_major = CW_EC_API_VERSION_MAJOR,
-			.position = position,
-		};
-
-		if (ioctl(fd, CW_EC_IOC_GET_SLAVE_INFO, &slave) < 0) {
-			fprintf(stderr,
-				"cw_ec_bus: GET_SLAVE_INFO position %u: %s\n",
-				position, strerror(errno));
-			close(fd);
+	if (master.slave_count) {
+		slaves = calloc(master.slave_count, sizeof(*slaves));
+		if (!slaves) {
+			fprintf(stderr, "cw_ec_bus: out of memory\n");
+			cw_ec_close(h);
 			return 1;
 		}
+		ret = cw_ec_list_slaves(h, slaves, master.slave_count,
+					&slave_count);
+		if (ret) {
+			fprintf(stderr, "cw_ec_bus: list slaves: %s\n",
+				strerror(-ret));
+			free(slaves);
+			cw_ec_close(h);
+			return 1;
+		}
+	}
 
+	for (i = 0; i < slave_count; i++) {
 		printf("%-4" PRIu16 " %-6" PRIu16 " 0x%08" PRIx32
 		       "  0x%08" PRIx32 "  0x%08" PRIx32 "  %-7s %-4u %s\n",
-		       slave.position, slave.alias, slave.vendor_id,
-		       slave.product_code, slave.revision_number,
-		       al_state_name(slave.al_state), slave.error_flag,
-		       slave.name);
+		       slaves[i].position, slaves[i].alias, slaves[i].vendor_id,
+		       slaves[i].product_code, slaves[i].revision_number,
+		       al_state_name(slaves[i].al_state), slaves[i].error_flag,
+		       slaves[i].name);
 	}
 
-	if (close(fd) < 0) {
-		fprintf(stderr, "cw_ec_bus: close: %s\n", strerror(errno));
-		return 1;
-	}
-
+	free(slaves);
+	cw_ec_close(h);
 	return 0;
 }

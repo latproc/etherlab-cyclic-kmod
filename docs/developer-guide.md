@@ -45,8 +45,9 @@ set `struct_size` and `api_major`, and leave every reserved field zero.
 Treat every ioctl failure as meaningful; do not retry configuration errors
 blindly.
 
-Prefer the planned `libcwethercat` wrapper for tools and external controllers
-instead of open-coding ioctls. The generic library API and install layout are
+Prefer `libcwethercat` for tools and external controllers instead of
+open-coding ioctls. Build with `make lib` and install headers/library with
+`make install-lib PREFIX=...`. The generic library API and install layout are
 specified in [`libcwethercat.md`](libcwethercat.md). That document also has an
 optional appendix for one existing runtime (Clockwork/IOD); the library itself
 is not Clockwork-specific.

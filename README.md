@@ -235,8 +235,8 @@ layout is stable across a changed configuration.
   cycle timeline.
 - [UAPI](docs/uapi.md) — ioctl structures, validation, and exact semantics.
 - [Developer guide](docs/developer-guide.md) — implementing a new controller.
-- [libcwethercat](docs/libcwethercat.md) — generic userspace library API,
-  install surface, and optional consumer integration notes.
+- [libcwethercat](docs/libcwethercat.md) — generic userspace library API
+  (`make lib` / `make install-lib`) and optional consumer integration notes.
 - [Operator guide](docs/operator-guide.md) — safe build and test sequence.
 - [Testing](docs/testing.md) — test matrix and recorded evidence.
 - [Process-image exchange](docs/process-image-exchange.md) — buffering,

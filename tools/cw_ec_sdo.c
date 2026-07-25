@@ -3,17 +3,14 @@
 #define _GNU_SOURCE
 
 #include <errno.h>
-#include <fcntl.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <unistd.h>
 
-#include "cw_ethercat_uapi.h"
+#include "cw_ethercat.h"
 
 static void usage(const char *program)
 {
@@ -187,48 +184,52 @@ static int prepare_request(char **argv, struct cw_ec_setup_sdo *request)
 	return encode_value(argv[3], argv[6], request);
 }
 
+static int open_device(const char *device, cw_ec_handle **out)
+{
+	int ret = cw_ec_open(device, out);
+
+	if (ret) {
+		fprintf(stderr, "cw_ec_sdo: cannot open %s: %s\n", device,
+			strerror(-ret));
+		return 1;
+	}
+	return 0;
+}
+
 static int execute_write(const char *device,
 			 const struct cw_ec_setup_sdo *request)
 {
-	struct cw_ec_setup_begin begin = {
-		.struct_size = sizeof(begin),
-		.api_major = CW_EC_API_VERSION_MAJOR,
-	};
-	struct cw_ec_setup_apply apply = {
-		.struct_size = sizeof(apply),
-		.api_major = CW_EC_API_VERSION_MAJOR,
-	};
-	int saved_errno;
-	int fd;
+	struct cw_ec_setup_apply apply;
+	cw_ec_handle *h = NULL;
+	int ret;
 
-	fd = open(device, O_RDWR | O_CLOEXEC);
-	if (fd < 0) {
-		fprintf(stderr, "cw_ec_sdo: cannot open %s: %s\n",
-			device, strerror(errno));
+	if (open_device(device, &h))
 		return 1;
-	}
-	if (ioctl(fd, CW_EC_IOC_SETUP_BEGIN, &begin) < 0) {
+
+	ret = cw_ec_setup_begin(h);
+	if (ret) {
 		fprintf(stderr, "cw_ec_sdo: SETUP_BEGIN: %s\n",
-			strerror(errno));
-		close(fd);
+			strerror(-ret));
+		cw_ec_close(h);
 		return 1;
 	}
-	if (ioctl(fd, CW_EC_IOC_SETUP_ADD_SDO, request) < 0) {
+	ret = cw_ec_setup_add_sdo(h, request);
+	if (ret) {
 		fprintf(stderr, "cw_ec_sdo: SETUP_ADD_SDO: %s\n",
-			strerror(errno));
-		close(fd);
+			strerror(-ret));
+		cw_ec_close(h);
 		return 1;
 	}
-	if (ioctl(fd, CW_EC_IOC_SETUP_APPLY, &apply) < 0) {
-		saved_errno = errno;
+	ret = cw_ec_setup_apply(h, &apply);
+	if (ret) {
 		fprintf(stderr,
 			"cw_ec_sdo: write failed: %s; sequence=%" PRIu32
 			" slave=%" PRIu16 " object=0x%04" PRIx16 ":%02" PRIx8
 			" abort=0x%08" PRIx32 "\n",
-			strerror(saved_errno), apply.failed_sequence,
+			strerror(-ret), apply.failed_sequence,
 			apply.failed_position, apply.failed_index,
 			apply.failed_subindex, apply.abort_code);
-		close(fd);
+		cw_ec_close(h);
 		return 1;
 	}
 
@@ -237,10 +238,7 @@ static int execute_write(const char *device,
 	       request->position, request->index, request->subindex,
 	       request->data_len);
 
-	if (close(fd) < 0) {
-		fprintf(stderr, "cw_ec_sdo: close: %s\n", strerror(errno));
-		return 1;
-	}
+	cw_ec_close(h);
 	return 0;
 }
 
@@ -250,10 +248,10 @@ static int execute_read(const char *device, char **argv)
 		.struct_size = sizeof(upload),
 		.api_major = CW_EC_API_VERSION_MAJOR,
 	};
+	cw_ec_handle *h = NULL;
 	uint64_t value;
 	unsigned int i;
-	int saved_errno;
-	int fd;
+	int ret;
 
 	if (parse_u64(argv[2], UINT16_MAX, &value))
 		return 2;
@@ -268,20 +266,17 @@ static int execute_read(const char *device, char **argv)
 		return 2;
 	upload.requested_len = value;
 
-	fd = open(device, O_RDWR | O_CLOEXEC);
-	if (fd < 0) {
-		fprintf(stderr, "cw_ec_sdo: cannot open %s: %s\n",
-			device, strerror(errno));
+	if (open_device(device, &h))
 		return 1;
-	}
-	if (ioctl(fd, CW_EC_IOC_SDO_UPLOAD, &upload) < 0) {
-		saved_errno = errno;
+
+	ret = cw_ec_sdo_upload(h, &upload);
+	if (ret) {
 		fprintf(stderr,
 			"cw_ec_sdo: read slave %" PRIu16 " object 0x%04" PRIx16
 			":%02" PRIx8 " failed: %s; abort=0x%08" PRIx32 "\n",
 			upload.position, upload.index, upload.subindex,
-			strerror(saved_errno), upload.abort_code);
-		close(fd);
+			strerror(-ret), upload.abort_code);
+		cw_ec_close(h);
 		return 1;
 	}
 
@@ -291,29 +286,20 @@ static int execute_read(const char *device, char **argv)
 		printf("%02" PRIx8, upload.data[i]);
 	printf(" (%" PRIu16 " bytes)\n", upload.result_len);
 
-	if (close(fd) < 0) {
-		fprintf(stderr, "cw_ec_sdo: close: %s\n", strerror(errno));
-		return 1;
-	}
+	cw_ec_close(h);
 	return 0;
 }
 
 static int execute_recipe(const char *device, const char *path, int apply_recipe)
 {
-	struct cw_ec_setup_begin begin = {
-		.struct_size = sizeof(begin),
-		.api_major = CW_EC_API_VERSION_MAJOR,
-	};
-	struct cw_ec_setup_apply apply = {
-		.struct_size = sizeof(apply),
-		.api_major = CW_EC_API_VERSION_MAJOR,
-	};
+	struct cw_ec_setup_apply apply;
 	char line[1024];
 	unsigned int line_number = 0;
 	unsigned int count = 0;
 	uint32_t last_sequence = 0;
 	FILE *stream;
-	int fd;
+	cw_ec_handle *h = NULL;
+	int ret;
 
 	stream = fopen(path, "r");
 	if (!stream) {
@@ -322,18 +308,16 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 		return 1;
 	}
 
-	fd = open(device, O_RDWR | O_CLOEXEC);
-	if (fd < 0) {
-		fprintf(stderr, "cw_ec_sdo: cannot open %s: %s\n",
-			device, strerror(errno));
+	if (open_device(device, &h)) {
 		fclose(stream);
 		return 1;
 	}
-	if (ioctl(fd, CW_EC_IOC_SETUP_BEGIN, &begin) < 0) {
+	ret = cw_ec_setup_begin(h);
+	if (ret) {
 		fprintf(stderr, "cw_ec_sdo: SETUP_BEGIN: %s\n",
-			strerror(errno));
+			strerror(-ret));
 		fclose(stream);
-		close(fd);
+		cw_ec_close(h);
 		return 1;
 	}
 
@@ -369,7 +353,7 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 			fprintf(stderr, "cw_ec_sdo: invalid recipe line %u\n",
 				line_number);
 			fclose(stream);
-			close(fd);
+			cw_ec_close(h);
 			return 2;
 		}
 
@@ -382,17 +366,18 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 			fprintf(stderr, "cw_ec_sdo: invalid recipe line %u\n",
 				line_number);
 			fclose(stream);
-			close(fd);
+			cw_ec_close(h);
 			return 2;
 		}
 		request.sequence = sequence;
 
-		if (ioctl(fd, CW_EC_IOC_SETUP_ADD_SDO, &request) < 0) {
+		ret = cw_ec_setup_add_sdo(h, &request);
+		if (ret) {
 			fprintf(stderr,
 				"cw_ec_sdo: add recipe line %u: %s\n",
-				line_number, strerror(errno));
+				line_number, strerror(-ret));
 			fclose(stream);
-			close(fd);
+			cw_ec_close(h);
 			return 1;
 		}
 		last_sequence = sequence;
@@ -402,37 +387,37 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 		fprintf(stderr, "cw_ec_sdo: read recipe %s: %s\n",
 			path, strerror(errno));
 		fclose(stream);
-		close(fd);
+		cw_ec_close(h);
 		return 1;
 	}
 	fclose(stream);
 
 	if (!count) {
 		fprintf(stderr, "cw_ec_sdo: recipe contains no operations\n");
-		close(fd);
+		cw_ec_close(h);
 		return 2;
 	}
 
-	if (apply_recipe && ioctl(fd, CW_EC_IOC_SETUP_APPLY, &apply) < 0) {
-		fprintf(stderr,
-			"cw_ec_sdo: recipe failed: result=%" PRId32
-			" sequence=%" PRIu32 " slave=%" PRIu16
-			" object=0x%04" PRIx16 ":%02" PRIx8
-			" abort=0x%08" PRIx32 "\n",
-			apply.result, apply.failed_sequence,
-			apply.failed_position, apply.failed_index,
-			apply.failed_subindex, apply.abort_code);
-		close(fd);
-		return 1;
+	if (apply_recipe) {
+		ret = cw_ec_setup_apply(h, &apply);
+		if (ret) {
+			fprintf(stderr,
+				"cw_ec_sdo: recipe failed: result=%" PRId32
+				" sequence=%" PRIu32 " slave=%" PRIu16
+				" object=0x%04" PRIx16 ":%02" PRIx8
+				" abort=0x%08" PRIx32 "\n",
+				apply.result, apply.failed_sequence,
+				apply.failed_position, apply.failed_index,
+				apply.failed_subindex, apply.abort_code);
+			cw_ec_close(h);
+			return 1;
+		}
 	}
 
 	printf("%s %u ordered SDO writes from %s\n",
 	       apply_recipe ? "applied" : "staged without applying",
 	       count, path);
-	if (close(fd) < 0) {
-		fprintf(stderr, "cw_ec_sdo: close: %s\n", strerror(errno));
-		return 1;
-	}
+	cw_ec_close(h);
 	return 0;
 }
 
