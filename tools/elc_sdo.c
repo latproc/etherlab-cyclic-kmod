@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "cw_ethercat.h"
+#include "elc_ethercat.h"
 
 static void usage(const char *program)
 {
@@ -80,7 +80,7 @@ static int parse_bytes(const char *text, uint8_t *data, uint16_t *data_len)
 		length -= 2;
 	}
 	if (!length || length % 2 ||
-	    length / 2 > CW_EC_SETUP_SDO_DATA_MAX)
+	    length / 2 > ELC_SETUP_SDO_DATA_MAX)
 		return -1;
 
 	for (i = 0; i < length / 2; i++) {
@@ -96,7 +96,7 @@ static int parse_bytes(const char *text, uint8_t *data, uint16_t *data_len)
 }
 
 static int encode_value(const char *type, const char *text,
-			struct cw_ec_setup_sdo *request)
+			struct elc_setup_sdo *request)
 {
 	uint64_t unsigned_value;
 	int64_t signed_value;
@@ -104,19 +104,19 @@ static int encode_value(const char *type, const char *text,
 	if (!strcmp(type, "u8")) {
 		if (parse_u64(text, UINT8_MAX, &unsigned_value))
 			return -1;
-		request->type = CW_EC_SDO_U8;
+		request->type = ELC_SDO_U8;
 		request->data_len = 1;
 		request->data[0] = unsigned_value;
 	} else if (!strcmp(type, "s8")) {
 		if (parse_s64(text, INT8_MIN, INT8_MAX, &signed_value))
 			return -1;
-		request->type = CW_EC_SDO_S8;
+		request->type = ELC_SDO_S8;
 		request->data_len = 1;
 		request->data[0] = (uint8_t)(int8_t)signed_value;
 	} else if (!strcmp(type, "u16")) {
 		if (parse_u64(text, UINT16_MAX, &unsigned_value))
 			return -1;
-		request->type = CW_EC_SDO_U16;
+		request->type = ELC_SDO_U16;
 		request->data_len = 2;
 		request->data[0] = unsigned_value;
 		request->data[1] = unsigned_value >> 8;
@@ -126,14 +126,14 @@ static int encode_value(const char *type, const char *text,
 		if (parse_s64(text, INT16_MIN, INT16_MAX, &signed_value))
 			return -1;
 		encoded = (uint16_t)(int16_t)signed_value;
-		request->type = CW_EC_SDO_S16;
+		request->type = ELC_SDO_S16;
 		request->data_len = 2;
 		request->data[0] = encoded;
 		request->data[1] = encoded >> 8;
 	} else if (!strcmp(type, "u32")) {
 		if (parse_u64(text, UINT32_MAX, &unsigned_value))
 			return -1;
-		request->type = CW_EC_SDO_U32;
+		request->type = ELC_SDO_U32;
 		request->data_len = 4;
 		request->data[0] = unsigned_value;
 		request->data[1] = unsigned_value >> 8;
@@ -145,14 +145,14 @@ static int encode_value(const char *type, const char *text,
 		if (parse_s64(text, INT32_MIN, INT32_MAX, &signed_value))
 			return -1;
 		encoded = (uint32_t)(int32_t)signed_value;
-		request->type = CW_EC_SDO_S32;
+		request->type = ELC_SDO_S32;
 		request->data_len = 4;
 		request->data[0] = encoded;
 		request->data[1] = encoded >> 8;
 		request->data[2] = encoded >> 16;
 		request->data[3] = encoded >> 24;
 	} else if (!strcmp(type, "bytes")) {
-		request->type = CW_EC_SDO_BYTES;
+		request->type = ELC_SDO_BYTES;
 		if (parse_bytes(text, request->data, &request->data_len))
 			return -1;
 	} else {
@@ -162,13 +162,13 @@ static int encode_value(const char *type, const char *text,
 	return 0;
 }
 
-static int prepare_request(char **argv, struct cw_ec_setup_sdo *request)
+static int prepare_request(char **argv, struct elc_setup_sdo *request)
 {
 	uint64_t value;
 
 	memset(request, 0, sizeof(*request));
 	request->struct_size = sizeof(*request);
-	request->api_major = CW_EC_API_VERSION_MAJOR;
+	request->api_major = ELC_API_VERSION_MAJOR;
 	request->sequence = 1;
 
 	if (parse_u64(argv[2], UINT16_MAX, &value))
@@ -184,9 +184,9 @@ static int prepare_request(char **argv, struct cw_ec_setup_sdo *request)
 	return encode_value(argv[3], argv[6], request);
 }
 
-static int open_device(const char *device, cw_ec_handle **out)
+static int open_device(const char *device, elc_handle **out)
 {
-	int ret = cw_ec_open(device, out);
+	int ret = elc_open(device, out);
 
 	if (ret) {
 		fprintf(stderr, "elc_sdo: cannot open %s: %s\n", device,
@@ -197,30 +197,30 @@ static int open_device(const char *device, cw_ec_handle **out)
 }
 
 static int execute_write(const char *device,
-			 const struct cw_ec_setup_sdo *request)
+			 const struct elc_setup_sdo *request)
 {
-	struct cw_ec_setup_apply apply;
-	cw_ec_handle *h = NULL;
+	struct elc_setup_apply apply;
+	elc_handle *h = NULL;
 	int ret;
 
 	if (open_device(device, &h))
 		return 1;
 
-	ret = cw_ec_setup_begin(h);
+	ret = elc_setup_begin(h);
 	if (ret) {
 		fprintf(stderr, "elc_sdo: SETUP_BEGIN: %s\n",
 			strerror(-ret));
-		cw_ec_close(h);
+		elc_close(h);
 		return 1;
 	}
-	ret = cw_ec_setup_add_sdo(h, request);
+	ret = elc_setup_add_sdo(h, request);
 	if (ret) {
 		fprintf(stderr, "elc_sdo: SETUP_ADD_SDO: %s\n",
 			strerror(-ret));
-		cw_ec_close(h);
+		elc_close(h);
 		return 1;
 	}
-	ret = cw_ec_setup_apply(h, &apply);
+	ret = elc_setup_apply(h, &apply);
 	if (ret) {
 		fprintf(stderr,
 			"elc_sdo: write failed: %s; sequence=%" PRIu32
@@ -229,7 +229,7 @@ static int execute_write(const char *device,
 			strerror(-ret), apply.failed_sequence,
 			apply.failed_position, apply.failed_index,
 			apply.failed_subindex, apply.abort_code);
-		cw_ec_close(h);
+		elc_close(h);
 		return 1;
 	}
 
@@ -238,17 +238,17 @@ static int execute_write(const char *device,
 	       request->position, request->index, request->subindex,
 	       request->data_len);
 
-	cw_ec_close(h);
+	elc_close(h);
 	return 0;
 }
 
 static int execute_read(const char *device, char **argv)
 {
-	struct cw_ec_sdo_upload upload = {
+	struct elc_sdo_upload upload = {
 		.struct_size = sizeof(upload),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	cw_ec_handle *h = NULL;
+	elc_handle *h = NULL;
 	uint64_t value;
 	unsigned int i;
 	int ret;
@@ -262,21 +262,21 @@ static int execute_read(const char *device, char **argv)
 	if (parse_u64(argv[4], UINT8_MAX, &value))
 		return 2;
 	upload.subindex = value;
-	if (parse_u64(argv[5], CW_EC_SETUP_SDO_DATA_MAX, &value) || !value)
+	if (parse_u64(argv[5], ELC_SETUP_SDO_DATA_MAX, &value) || !value)
 		return 2;
 	upload.requested_len = value;
 
 	if (open_device(device, &h))
 		return 1;
 
-	ret = cw_ec_sdo_upload(h, &upload);
+	ret = elc_sdo_upload(h, &upload);
 	if (ret) {
 		fprintf(stderr,
 			"elc_sdo: read slave %" PRIu16 " object 0x%04" PRIx16
 			":%02" PRIx8 " failed: %s; abort=0x%08" PRIx32 "\n",
 			upload.position, upload.index, upload.subindex,
 			strerror(-ret), upload.abort_code);
-		cw_ec_close(h);
+		elc_close(h);
 		return 1;
 	}
 
@@ -286,19 +286,19 @@ static int execute_read(const char *device, char **argv)
 		printf("%02" PRIx8, upload.data[i]);
 	printf(" (%" PRIu16 " bytes)\n", upload.result_len);
 
-	cw_ec_close(h);
+	elc_close(h);
 	return 0;
 }
 
 static int execute_recipe(const char *device, const char *path, int apply_recipe)
 {
-	struct cw_ec_setup_apply apply;
+	struct elc_setup_apply apply;
 	char line[1024];
 	unsigned int line_number = 0;
 	unsigned int count = 0;
 	uint32_t last_sequence = 0;
 	FILE *stream;
-	cw_ec_handle *h = NULL;
+	elc_handle *h = NULL;
 	int ret;
 
 	stream = fopen(path, "r");
@@ -312,17 +312,17 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 		fclose(stream);
 		return 1;
 	}
-	ret = cw_ec_setup_begin(h);
+	ret = elc_setup_begin(h);
 	if (ret) {
 		fprintf(stderr, "elc_sdo: SETUP_BEGIN: %s\n",
 			strerror(-ret));
 		fclose(stream);
-		cw_ec_close(h);
+		elc_close(h);
 		return 1;
 	}
 
 	while (fgets(line, sizeof(line), stream)) {
-		struct cw_ec_setup_sdo request;
+		struct elc_setup_sdo request;
 		char *tokens[6];
 		char *cursor;
 		char *extra;
@@ -353,7 +353,7 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 			fprintf(stderr, "elc_sdo: invalid recipe line %u\n",
 				line_number);
 			fclose(stream);
-			cw_ec_close(h);
+			elc_close(h);
 			return 2;
 		}
 
@@ -366,18 +366,18 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 			fprintf(stderr, "elc_sdo: invalid recipe line %u\n",
 				line_number);
 			fclose(stream);
-			cw_ec_close(h);
+			elc_close(h);
 			return 2;
 		}
 		request.sequence = sequence;
 
-		ret = cw_ec_setup_add_sdo(h, &request);
+		ret = elc_setup_add_sdo(h, &request);
 		if (ret) {
 			fprintf(stderr,
 				"elc_sdo: add recipe line %u: %s\n",
 				line_number, strerror(-ret));
 			fclose(stream);
-			cw_ec_close(h);
+			elc_close(h);
 			return 1;
 		}
 		last_sequence = sequence;
@@ -387,19 +387,19 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 		fprintf(stderr, "elc_sdo: read recipe %s: %s\n",
 			path, strerror(errno));
 		fclose(stream);
-		cw_ec_close(h);
+		elc_close(h);
 		return 1;
 	}
 	fclose(stream);
 
 	if (!count) {
 		fprintf(stderr, "elc_sdo: recipe contains no operations\n");
-		cw_ec_close(h);
+		elc_close(h);
 		return 2;
 	}
 
 	if (apply_recipe) {
-		ret = cw_ec_setup_apply(h, &apply);
+		ret = elc_setup_apply(h, &apply);
 		if (ret) {
 			fprintf(stderr,
 				"elc_sdo: recipe failed: result=%" PRId32
@@ -409,7 +409,7 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 				apply.result, apply.failed_sequence,
 				apply.failed_position, apply.failed_index,
 				apply.failed_subindex, apply.abort_code);
-			cw_ec_close(h);
+			elc_close(h);
 			return 1;
 		}
 	}
@@ -417,14 +417,14 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 	printf("%s %u ordered SDO writes from %s\n",
 	       apply_recipe ? "applied" : "staged without applying",
 	       count, path);
-	cw_ec_close(h);
+	elc_close(h);
 	return 0;
 }
 
 int main(int argc, char **argv)
 {
-	const char *device = "/dev/cw_ethercat0";
-	struct cw_ec_setup_sdo request;
+	const char *device = "/dev/elc_ethercat0";
+	struct elc_setup_sdo request;
 	int validate_only;
 
 	if (argc < 2 ||

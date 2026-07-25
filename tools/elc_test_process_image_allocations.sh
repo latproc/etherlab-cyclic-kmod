@@ -8,12 +8,12 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-module_path=${ELC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
-module_name=cw_ethercat
-device=${ELC_DEVICE:-/dev/cw_ethercat0}
+module_path=${ELC_MODULE:-"$project_dir/kernel/elc_ethercat.ko"}
+module_name=elc_ethercat
+device=${ELC_DEVICE:-/dev/elc_ethercat0}
 config=${ELC_CONFIG:-"$project_dir/tools/configs/ed3l_velocity_dc_pos29.conf"}
 period=${ELC_TEST_PERIOD_NS:-1000000}
-pre_image_allocations=${CW_EC_PRE_IMAGE_ALLOCATIONS:-18}
+pre_image_allocations=${ELC_PRE_IMAGE_ALLOCATIONS:-18}
 
 if [ "${ELC_MOTION_INHIBITED:-}" != YES ]; then
 	echo "error: set ELC_MOTION_INHIBITED=YES only after motion is safely inhibited" >&2
@@ -21,7 +21,7 @@ if [ "${ELC_MOTION_INHIBITED:-}" != YES ]; then
 fi
 case "$pre_image_allocations" in
 	''|*[!0-9]*|0)
-		echo "error: CW_EC_PRE_IMAGE_ALLOCATIONS must be a positive integer" >&2
+		echo "error: ELC_PRE_IMAGE_ALLOCATIONS must be a positive integer" >&2
 		exit 2
 		;;
 esac

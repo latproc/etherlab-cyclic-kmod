@@ -7,8 +7,8 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-module_path=${CW_EC_PROBE_MODULE:-"$project_dir/kernel/cw_ethercat_probe.ko"}
-module_name=cw_ethercat_probe
+module_path=${ELC_PROBE_MODULE:-"$project_dir/kernel/elc_ethercat_probe.ko"}
+module_name=elc_ethercat_probe
 repeat=${ELC_TEST_REPEAT:-1}
 
 case "$repeat" in

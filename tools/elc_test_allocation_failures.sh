@@ -7,12 +7,12 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-module_path=${ELC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
-device=${ELC_DEVICE:-/dev/cw_ethercat0}
-recipe=${CW_EC_RECIPE:-"$project_dir/tools/recipes/ed3l_velocity_pdo_pos29.txt"}
+module_path=${ELC_MODULE:-"$project_dir/kernel/elc_ethercat.ko"}
+device=${ELC_DEVICE:-/dev/elc_ethercat0}
+recipe=${ELC_RECIPE:-"$project_dir/tools/recipes/ed3l_velocity_pdo_pos29.txt"}
 config=${ELC_CONFIG:-"$project_dir/tools/configs/ed3l_velocity_dc_pos29.conf"}
-domain_config=${CW_EC_DOMAIN_CONFIG:-"$project_dir/tools/configs/el5152_pos3_with_absent_ed3l_pos29.conf"}
-module_name=cw_ethercat
+domain_config=${ELC_DOMAIN_CONFIG:-"$project_dir/tools/configs/el5152_pos3_with_absent_ed3l_pos29.conf"}
+module_name=elc_ethercat
 
 if [ "$(id -u)" -ne 0 ]; then
 	echo "error: run as root" >&2

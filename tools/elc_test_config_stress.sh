@@ -7,19 +7,19 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-module_path=${ELC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
-module_name=cw_ethercat
-device=${ELC_DEVICE:-/dev/cw_ethercat0}
-iterations=${CW_EC_STRESS_ITERATIONS:-10}
+module_path=${ELC_MODULE:-"$project_dir/kernel/elc_ethercat.ko"}
+module_name=elc_ethercat
+device=${ELC_DEVICE:-/dev/elc_ethercat0}
+iterations=${ELC_STRESS_ITERATIONS:-10}
 
 case "$iterations" in
 	''|*[!0-9]*|0)
-		echo "error: CW_EC_STRESS_ITERATIONS must be a positive integer" >&2
+		echo "error: ELC_STRESS_ITERATIONS must be a positive integer" >&2
 		exit 2
 		;;
 esac
 if [ "$iterations" -gt 100 ]; then
-	echo "error: CW_EC_STRESS_ITERATIONS must not exceed 100" >&2
+	echo "error: ELC_STRESS_ITERATIONS must not exceed 100" >&2
 	exit 2
 fi
 if [ "$(id -u)" -ne 0 ]; then

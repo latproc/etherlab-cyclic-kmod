@@ -7,8 +7,8 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-module_path=${ELC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
-module_name=cw_ethercat
+module_path=${ELC_MODULE:-"$project_dir/kernel/elc_ethercat.ko"}
+module_name=elc_ethercat
 config=${ELC_CONFIG:-"$project_dir/tools/configs/ed3l_velocity_dc_pos29.conf"}
 period=${ELC_TEST_PERIOD_NS:-1000000}
 
@@ -46,7 +46,7 @@ trap cleanup EXIT HUP INT TERM
 
 cycle_tasks()
 {
-	ps -e -o comm= | awk '$1 == "cw_ec_cycle" { count++ } END { print count + 0 }'
+	ps -e -o comm= | awk '$1 == "elc_cycle" { count++ } END { print count + 0 }'
 }
 
 before_tasks=$(cycle_tasks)

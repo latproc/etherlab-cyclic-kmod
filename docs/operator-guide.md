@@ -20,7 +20,7 @@ Optional cyclic scheduler controls are immutable module parameters. The tested
 target used the following example settings:
 
 ```sh
-sudo insmod kernel/cw_ethercat.ko cycle_cpu=1 cycle_fifo_priority=70
+sudo insmod kernel/elc_ethercat.ko cycle_cpu=1 cycle_fifo_priority=70
 ```
 
 Omit both parameters to preserve normal scheduler policy and affinity.
@@ -39,9 +39,9 @@ an ambiguous or mismatched result.
 ## Discovery-only check
 
 ```sh
-sudo insmod kernel/cw_ethercat.ko
+sudo insmod kernel/elc_ethercat.ko
 sudo tools/elc_bus
-sudo rmmod cw_ethercat
+sudo rmmod elc_ethercat
 ethercat master
 ```
 
@@ -72,10 +72,10 @@ domain set, prints stable entry IDs and global offsets, but does not activate
 or send cyclic process data:
 
 ```sh
-sudo insmod kernel/cw_ethercat.ko
+sudo insmod kernel/elc_ethercat.ko
 sudo tools/elc_config prepare \
   tools/configs/ed3l_velocity_dc_pos29.conf
-sudo rmmod cw_ethercat
+sudo rmmod elc_ethercat
 ethercat master
 ```
 
@@ -102,10 +102,10 @@ without these records retain the implicit single-domain compatibility mode.
 Only after motion inhibition is confirmed:
 
 ```sh
-sudo insmod kernel/cw_ethercat.ko
+sudo insmod kernel/elc_ethercat.ko
 sudo tools/elc_config cycle \
   tools/configs/ed3l_velocity_dc_pos29.conf 1000000 8
-sudo rmmod cw_ethercat
+sudo rmmod elc_ethercat
 ethercat master
 ```
 
@@ -234,7 +234,7 @@ After any abnormal result:
 5. inspect `dmesg --level=err,warn`; and
 6. preserve logs and the exact fixture before retrying.
 
-If an open file still owns the module, normal `rmmod cw_ethercat` must fail.
+If an open file still owns the module, normal `rmmod elc_ethercat` must fail.
 Resolve the owner; never bypass module reference protection.
 
 ## Bounded one-bit output commissioning
@@ -286,7 +286,7 @@ The CLI also prohibits publishing a replacement image while armed.
 In-tree development teardown is:
 
 ```sh
-sudo rmmod cw_ethercat
+sudo rmmod elc_ethercat
 ethercat master
 make clean
 ```
@@ -295,13 +295,13 @@ For a persistent module-tree installation:
 
 ```sh
 sudo make install
-sudo modprobe cw_ethercat
-sudo rmmod cw_ethercat
+sudo modprobe elc_ethercat
+sudo rmmod elc_ethercat
 sudo make uninstall
 ```
 
-`install` places only `cw_ethercat.ko` and `cw_ethercat_probe.ko` under
-`/lib/modules/$(uname -r)/extra/cw_ethercat/` and refreshes module
+`install` places only `elc_ethercat.ko` and `elc_ethercat_probe.ko` under
+`/lib/modules/$(uname -r)/extra/elc_ethercat/` and refreshes module
 dependencies. `uninstall` removes only those two files and refreshes
 dependencies. It does not remove EtherLab/DKMS artifacts.
 

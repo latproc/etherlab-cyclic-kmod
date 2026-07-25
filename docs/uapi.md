@@ -13,7 +13,7 @@ authority-scoped output leases, and disarmed cycle-boundary period updates.
 
 ## Ownership and lifecycle
 
-The module registers `/dev/cw_ethercat0` without claiming EtherLab master 0.
+The module registers `/dev/elc_ethercat0` without claiming EtherLab master 0.
 Opening the device read-write claims master 0 exclusively. A second open, or
 an open while IOD/direct libethercat already owns the master, fails with
 `EBUSY`.
@@ -28,11 +28,11 @@ application ownership rules.
 
 ## Versioning
 
-The shared header is `include/cw_ethercat_uapi.h`. Structures use fixed-width
+The shared header is `include/elc_ethercat_uapi.h`. Structures use fixed-width
 Linux UAPI types, contain no pointers, and have fixed layouts suitable for the
 compat ioctl path.
 
-The tool first calls `CW_EC_IOC_GET_API_VERSION`. Major versions must match.
+The tool first calls `ELC_IOC_GET_API_VERSION`. Major versions must match.
 Minor versions add:
 
 - 0.2: provisional ad-hoc setup-SDO batch;
@@ -64,13 +64,13 @@ declared reserved field. The kernel rejects nonzero reserved input with
 
 ## Operations
 
-### `CW_EC_IOC_GET_API_VERSION`
+### `ELC_IOC_GET_API_VERSION`
 
-Returns `struct cw_ec_api_version`.
+Returns `struct elc_api_version`.
 
-### `CW_EC_IOC_GET_CAPABILITIES`
+### `ELC_IOC_GET_CAPABILITIES`
 
-Returns `struct cw_ec_capabilities`. API 0.16 reports only implemented,
+Returns `struct elc_capabilities`. API 0.16 reports only implemented,
 documented features: coherent copied process images, cycle timing,
 wait-for-cycle, DC diagnostics, output leases, cycle-period updates, and
 bounded input history.
@@ -78,12 +78,12 @@ Scheduled output and delegated domain connections are not currently reported.
 
 ### Input history
 
-`CW_EC_IOC_CONFIGURE_INPUT_HISTORY` selects a generation-bound ring depth
+`ELC_IOC_CONFIGURE_INPUT_HISTORY` selects a generation-bound ring depth
 before activation. Depth zero disables history. Depth is limited to 4,096
 records and the complete ring image storage is limited to 16 MiB. Allocation
 occurs during activation, before the cyclic task starts.
 
-`CW_EC_IOC_GET_INPUT_HISTORY_BATCH` copies up to 256 ordered records newer than
+`ELC_IOC_GET_INPUT_HISTORY_BATCH` copies up to 256 ordered records newer than
 `after_cycle_index` plus one complete global input image per record. Each
 record identifies its configuration generation, cycle, input sequence,
 scheduled and actual wake time, lateness, and cycle result. The caller supplies
@@ -96,16 +96,16 @@ slot. Cycle IDs remain authoritative. The cyclic task never waits for a reader
 and performs no history allocation. Deactivation joins the task before freeing
 the ring.
 
-### `CW_EC_IOC_GET_MASTER_INFO`
+### `ELC_IOC_GET_MASTER_INFO`
 
-Returns `struct cw_ec_master_info` containing:
+Returns `struct elc_master_info` containing:
 
 - scanned slave count;
 - main link state;
 - scan-in-progress state;
 - EtherLab application time.
 
-### `CW_EC_IOC_GET_SLAVE_INFO`
+### `ELC_IOC_GET_SLAVE_INFO`
 
 The caller initializes:
 
@@ -147,11 +147,11 @@ The following operations exist only to prove ordered blocking SDO downloads
 and reproduce commissioning recipes:
 
 ```text
-CW_EC_IOC_SETUP_BEGIN
-CW_EC_IOC_SETUP_ADD_SDO
-CW_EC_IOC_SETUP_APPLY
-CW_EC_IOC_SETUP_RESET
-CW_EC_IOC_SDO_UPLOAD
+ELC_IOC_SETUP_BEGIN
+ELC_IOC_SETUP_ADD_SDO
+ELC_IOC_SETUP_APPLY
+ELC_IOC_SETUP_RESET
+ELC_IOC_SDO_UPLOAD
 ```
 
 They are deliberately separate from the persistent declarative configuration
@@ -197,13 +197,13 @@ The following operations build and validate kernel-owned pending metadata.
 not activate the master:
 
 ```text
-CW_EC_IOC_CONFIG_BEGIN
-CW_EC_IOC_CONFIG_ADD_SLAVE
-CW_EC_IOC_CONFIG_ADD_SYNC
-CW_EC_IOC_CONFIG_ADD_PDO
-CW_EC_IOC_CONFIG_ADD_ENTRY
-CW_EC_IOC_CONFIG_VALIDATE
-CW_EC_IOC_CONFIG_APPLY
+ELC_IOC_CONFIG_BEGIN
+ELC_IOC_CONFIG_ADD_SLAVE
+ELC_IOC_CONFIG_ADD_SYNC
+ELC_IOC_CONFIG_ADD_PDO
+ELC_IOC_CONFIG_ADD_ENTRY
+ELC_IOC_CONFIG_VALIDATE
+ELC_IOC_CONFIG_APPLY
 ```
 
 Each object has a nonzero configuration ID. Child objects reference their
@@ -221,8 +221,8 @@ API 0.5 adds bounded per-slave distributed-clock records and one optional
 master reference policy:
 
 ```text
-CW_EC_IOC_CONFIG_ADD_DC
-CW_EC_IOC_CONFIG_SET_DC_POLICY
+ELC_IOC_CONFIG_ADD_DC
+ELC_IOC_CONFIG_SET_DC_POLICY
 ```
 
 Each DC record references exactly one configured slave and supplies
@@ -256,7 +256,7 @@ code, but not revision. API 0.3 therefore rejects a nonzero revision constraint
 instead of silently failing to enforce it. A future explicit revision policy
 must preserve absent-at-startup configuration.
 
-`CW_EC_IOC_DOMAIN_CREATE` creates the configured EtherLab domain set (or one
+`ELC_IOC_DOMAIN_CREATE` creates the configured EtherLab domain set (or one
 implicit compatibility domain when none were declared). API 0.11 permits
 mandatory PDO padding only as `entry_id=0, index=0, subindex=0`; padding keeps
 its submitted bit length and position in the EtherLab mapping but is not
@@ -266,7 +266,7 @@ Manager/PDO/entry hierarchy even when object indices are repeated.
 Registration failure poisons the session and requires close/reopen for the
 same rollback reason as configuration apply.
 
-After successful registration, `CW_EC_IOC_GET_ENTRY_OFFSET` resolves a stable
+After successful registration, `ELC_IOC_GET_ENTRY_OFFSET` resolves a stable
 user-supplied `entry_id` to its global process-image byte offset, bit position,
 and bit length. `global_offset` is the preferred member name.
 `domain_offset` remains an ABI-neutral deprecated alias in the same union for
@@ -275,15 +275,15 @@ activate the master, obtain the process-data pointer, or send traffic.
 
 ## API 0.12 multi-domain configuration
 
-API 0.12 adds `CW_EC_IOC_CONFIG_ADD_DOMAIN`,
-`CW_EC_IOC_CONFIG_ASSIGN_DOMAIN`, and `CW_EC_IOC_GET_DOMAIN_STATUS`.
+API 0.12 adds `ELC_IOC_CONFIG_ADD_DOMAIN`,
+`ELC_IOC_CONFIG_ASSIGN_DOMAIN`, and `ELC_IOC_GET_DOMAIN_STATUS`.
 Domain IDs are stable, nonzero
 configuration IDs. In explicit mode every configured slave must resolve to
 exactly one declared domain; duplicate IDs, duplicate assignments, missing
 assignments, and references to unknown domains or slaves are errors.
 
 Domain declaration order defines the order of contiguous segments in the
-single copied process image. `CW_EC_IOC_GET_ENTRY_OFFSET` returns a global
+single copied process image. `ELC_IOC_GET_ENTRY_OFFSET` returns a global
 byte/bit offset, calculated from the assigned domain's segment base plus
 the EtherLab-local entry offset. The kernel does not infer domains from vendor,
 product, position, PDO layout, or online state.
@@ -309,9 +309,9 @@ gating and fresh-publication epochs require a later explicit ABI increment.
 API 0.4 adds:
 
 ```text
-CW_EC_IOC_CYCLE_ACTIVATE
-CW_EC_IOC_CYCLE_GET_STATUS
-CW_EC_IOC_CYCLE_DEACTIVATE
+ELC_IOC_CYCLE_ACTIVATE
+ELC_IOC_CYCLE_GET_STATUS
+ELC_IOC_CYCLE_DEACTIVATE
 ```
 
 The caller selects `cycle_period_ns` on every activation within the published
@@ -321,13 +321,13 @@ This controls the transport's cyclic timer. It does not claim to configure a
 separate EtherLab operation-FSM interval when the installed EtherLab kernel
 module lacks its declared `ecrt_master_set_send_interval()` symbol.
 
-API 0.5 additionally provides `CW_EC_IOC_CYCLE_GET_DC_STATUS` without changing
+API 0.5 additionally provides `ELC_IOC_CYCLE_GET_DC_STATUS` without changing
 the API 0.4 cycle-status structure. The DC snapshot reports enable/reference/
 monitor state, the last reference result and phase difference, bounded cycle
 adjustment, last/maximum synchrony deviation, reference read errors and
 resumptions, and monitor results/timeouts.
 
-API 0.13 adds `CW_EC_IOC_CYCLE_GET_INFO` and `CW_EC_IOC_CYCLE_WAIT`.
+API 0.13 adds `ELC_IOC_CYCLE_GET_INFO` and `ELC_IOC_CYCLE_WAIT`.
 `GET_INFO` returns one coherent record for the most recently completed cycle.
 `WAIT` takes the active configuration generation, the last cycle index seen,
 and a timeout from 1 through 60,000 ms. It sleeps interruptibly until a
@@ -362,8 +362,8 @@ The cycle record is published under a dedicated short spinlock after
 only after that coherent record is complete. The cyclic task neither waits for
 nor calls user space.
 
-API 0.16 adds `CW_EC_IOC_CYCLE_GET_DC_INFO` with structure
-`cw_ec_cycle_dc_info`. It extends the coherent cycle record with the
+API 0.16 adds `ELC_IOC_CYCLE_GET_DC_INFO` with structure
+`elc_cycle_dc_info`. It extends the coherent cycle record with the
 Distributed Clocks motion-clock contract: the exact application time sent
 for that cycle, reference-clock validity and low-32-bit sample, normalized
 phase difference, and the total adjustment applied. All DC fields are
@@ -371,9 +371,9 @@ published under the same `cycle_info_lock` as the base timing record,
 ensuring one atomic snapshot per cycle. DC fields are zero when the
 configuration contains no DC records. `dc_enabled` distinguishes the
 non-DC case from a zero-valued DC field. The new ioctl preserves the
-existing `CW_EC_IOC_CYCLE_GET_INFO` size and semantics unchanged.
+existing `ELC_IOC_CYCLE_GET_INFO` size and semantics unchanged.
 
-API 0.6 adds `CW_EC_IOC_GET_IO_STATUS`. Each successfully validated
+API 0.6 adds `ELC_IOC_GET_IO_STATUS`. Each successfully validated
 configuration receives a nonzero monotonically increasing generation for the
 current module lifetime. While cycling, the status reports master link and
 responding-slave count, online/operational configured-slave counts, domain
@@ -387,7 +387,7 @@ The aggregate bus becomes healthy only when the link is up, every configured
 slave is online and operational, and every domain working counter is complete.
 After health
 has first been reached, a transition to unhealthy latches `rearm_required`.
-API 0.7 adds `CW_EC_IOC_GET_INPUT_SNAPSHOT`. The name describes the
+API 0.7 adds `ELC_IOC_GET_INPUT_SNAPSHOT`. The name describes the
 user-space direction: it is a read-only snapshot of the complete EtherLab
 domain layout, including both input and output regions. The request contains a
 user pointer and capacity. On success it returns the exact data size,
@@ -396,7 +396,7 @@ count. A capacity smaller than the domain returns `ENOSPC` after reporting the
 required size. Unsupported flags return `EINVAL`, and snapshots are unavailable
 while inactive.
 
-Activation rejects domains larger than `CW_EC_PROCESS_IMAGE_MAX` (64 KiB).
+Activation rejects domains larger than `ELC_PROCESS_IMAGE_MAX` (64 KiB).
 Two zeroed buffers are allocated before EtherLab activation. The cyclic thread
 copies processed domain data into the inactive buffer and publishes it under a
 spinlock. A process-context reader reserves the current buffer during
@@ -404,7 +404,7 @@ spinlock. A process-context reader reserves the current buffer during
 or overwriting that reader. Deactivation joins the cyclic thread before freeing
 the buffers.
 
-API 0.8 adds `CW_EC_IOC_PUBLISH_OUTPUT`. The caller supplies complete
+API 0.8 adds `ELC_IOC_PUBLISH_OUTPUT`. The caller supplies complete
 domain-sized data and per-bit update-mask arrays plus the exact active
 configuration generation. A stale generation returns `ESTALE`; a size other
 than the active domain returns `EMSGSIZE`; unsupported flags/reserved fields
@@ -414,14 +414,14 @@ The kernel copies into the inactive preallocated output buffer, intersects the
 caller mask with the topology-derived output mask, and merges only those bits
 with the previous published shadow. It then atomically publishes the buffer
 and increments `output_sequence`. The returned sequence is also visible through
-`CW_EC_IOC_GET_IO_STATUS`.
+`ELC_IOC_GET_IO_STATUS`.
 
 Publication is intentionally not activation. API 0.8 has no arm operation,
 `outputs_armed` remains false, and the cyclic thread clears every configured
 output bit in domain memory before every queue/send. This makes publication and
 masking independently testable without transmitting the requested values.
 
-API 0.9 adds `CW_EC_IOC_ARM_OUTPUTS` and `CW_EC_IOC_DISARM_OUTPUTS`. Arm
+API 0.9 adds `ELC_IOC_ARM_OUTPUTS` and `ELC_IOC_DISARM_OUTPUTS`. Arm
 requires:
 
 - an active cycle and healthy bus;
@@ -443,14 +443,14 @@ the cyclic thread. This prevents a successful disarm ioctl or orderly
 deactivation from leaving a previously selected shadow as the last application
 datagram. Timeout returns `ETIMEDOUT` but leaves the gate disarmed.
 
-API 0.14 adds `CW_EC_IOC_CONFIGURE_OUTPUT_LEASE`,
-`CW_EC_IOC_RENEW_OUTPUT_LEASE`, and
-`CW_EC_IOC_GET_OUTPUT_LEASE_STATUS`.
+API 0.14 adds `ELC_IOC_CONFIGURE_OUTPUT_LEASE`,
+`ELC_IOC_RENEW_OUTPUT_LEASE`, and
+`ELC_IOC_GET_OUTPUT_LEASE_STATUS`.
 
 Lease configuration is permitted only after domain creation and before
 activation, and is bound to the exact configuration generation. A
 `cycle_budget` of zero disables the feature for compatibility. Otherwise the
-accepted range is 1 through `CW_EC_OUTPUT_LEASE_CYCLES_MAX` (1,000,000).
+accepted range is 1 through `ELC_OUTPUT_LEASE_CYCLES_MAX` (1,000,000).
 
 Each activation begins with zero remaining cycles. Renewal while active loads
 the configured budget and increments `renewal_count`; it never publishes or
@@ -462,7 +462,7 @@ output selection. A renewed budget of N therefore permits exactly N
 selections. The budget does not decrease while disarmed. When no budget
 remains at the next selection, the cyclic task atomically disarms, selects
 zeros, records the current publication sequence, latches
-`CW_EC_IO_FAULT_CONTROLLER_STALE` and `rearm_required`, and increments
+`ELC_IO_FAULT_CONTROLLER_STALE` and `rearm_required`, and increments
 `expiry_count`. Input exchange and the EtherCAT cycle continue.
 
 Renewal after expiry clears the current stale-controller bit but not the
@@ -471,7 +471,7 @@ Recovery requires renewal, a publication newer than the expiry sequence, and
 an explicit successful arm. Orderly disarm, deactivation, and close are not
 lease expiries.
 
-API 0.10 adds `CW_EC_IOC_GET_CONFIG_SLAVE_STATUS`, keyed by the stable
+API 0.10 adds `ELC_IOC_GET_CONFIG_SLAVE_STATUS`, keyed by the stable
 user-supplied slave `config_id` and exact configuration generation. A stale
 generation returns `ESTALE`; an unknown ID returns `ENOENT`.
 
@@ -500,7 +500,7 @@ scheduler lateness contributes to the maximum, but only lateness of at least
 one full period is an overrun. There is no normal-cycle logging, allocation,
 blocking mailbox operation, or user-space callback.
 
-### `CW_EC_IOC_CYCLE_SET_PERIOD`
+### `ELC_IOC_CYCLE_SET_PERIOD`
 
 API 0.15 permits a controller to activate conservatively, wait for its required
 slaves and domains to reach OP/valid, and then change the non-DC cyclic period

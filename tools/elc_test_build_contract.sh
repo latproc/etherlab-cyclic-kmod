@@ -50,9 +50,9 @@ make -s -C "$project_dir" modules \
 	ETHERLAB_INCLUDE="$tmp_dir/source/include" \
 	ETHERLAB_SYMVERS="$tmp_dir/build/Module.symvers"
 
-modinfo "$project_dir/kernel/cw_ethercat.ko" |
+modinfo "$project_dir/kernel/elc_ethercat.ko" |
 	grep -q "^vermagic:[[:space:]]*$kernel_release "
-modinfo "$project_dir/kernel/cw_ethercat.ko" |
+modinfo "$project_dir/kernel/elc_ethercat.ko" |
 	grep -q "^license:[[:space:]]*GPL$"
 
 require_failure missing-header make -s -C "$project_dir" check-build-env \

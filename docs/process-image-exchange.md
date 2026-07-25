@@ -50,7 +50,7 @@ gate remain conservative across all configured domains.
 
 When the optional output lease is enabled, its armed-cycle budget is part of
 the same output authority. Expiry synchronously selects the zero image,
-disarms outputs, latches `CW_EC_IO_FAULT_CONTROLLER_STALE`, and requires a
+disarms outputs, latches `ELC_IO_FAULT_CONTROLLER_STALE`, and requires a
 renewal plus a publication newer than the fault epoch before explicit re-arm.
 Renewal never arms outputs. A zero cycle budget preserves the compatibility
 behavior without lease expiry.

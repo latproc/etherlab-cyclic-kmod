@@ -11,7 +11,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-#include "cw_ethercat_uapi.h"
+#include "elc_ethercat_uapi.h"
 
 static int expect_errno(const char *name, int result, int expected)
 {
@@ -27,100 +27,100 @@ static int expect_errno(const char *name, int result, int expected)
 
 int main(int argc, char **argv)
 {
-	const char *device = "/dev/cw_ethercat0";
-	struct cw_ec_slave_info slave;
-	struct cw_ec_capabilities capabilities = {
+	const char *device = "/dev/elc_ethercat0";
+	struct elc_slave_info slave;
+	struct elc_capabilities capabilities = {
 		.struct_size = sizeof(capabilities),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_input_history_config history_config = {
+	struct elc_input_history_config history_config = {
 		.struct_size = sizeof(history_config),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_input_history_record history_record;
+	struct elc_input_history_record history_record;
 	uint8_t history_data[8];
-	struct cw_ec_input_history_batch history_batch = {
+	struct elc_input_history_batch history_batch = {
 		.struct_size = sizeof(history_batch),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.records_ptr = (uintptr_t)&history_record,
 		.data_ptr = (uintptr_t)history_data,
 		.max_records = 1,
 		.data_capacity = sizeof(history_data),
 	};
-	struct cw_ec_setup_begin begin = {
+	struct elc_setup_begin begin = {
 		.struct_size = sizeof(begin),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_setup_sdo setup_sdo = {
+	struct elc_setup_sdo setup_sdo = {
 		.struct_size = sizeof(setup_sdo),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.sequence = 1,
 		.position = 0,
 		.index = 0x2000,
 		.subindex = 0,
-		.type = CW_EC_SDO_U8,
+		.type = ELC_SDO_U8,
 		.data_len = 1,
 		.data = { 0 },
 	};
-	struct cw_ec_setup_apply apply = {
+	struct elc_setup_apply apply = {
 		.struct_size = sizeof(apply),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_sdo_upload upload = {
+	struct elc_sdo_upload upload = {
 		.struct_size = sizeof(upload),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.position = 0,
 		.index = 0x2000,
 		.subindex = 0,
 	};
-	struct cw_ec_config_begin config_begin = {
+	struct elc_config_begin config_begin = {
 		.struct_size = sizeof(config_begin),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_config_slave config_slave = {
+	struct elc_config_slave config_slave = {
 		.struct_size = sizeof(config_slave),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.config_id = 1,
 		.position = 123,
 		.vendor_id = 1,
 		.product_code = 1,
 	};
-	struct cw_ec_config_slave second_config_slave = {
+	struct elc_config_slave second_config_slave = {
 		.struct_size = sizeof(second_config_slave),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.config_id = 2,
 		.position = 124,
 		.vendor_id = 1,
 		.product_code = 1,
 	};
-	struct cw_ec_config_sync config_sync = {
+	struct elc_config_sync config_sync = {
 		.struct_size = sizeof(config_sync),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.config_id = 2,
 		.slave_config_id = 1,
 		.sync_index = 2,
-		.direction = CW_EC_DIR_OUTPUT,
-		.watchdog_mode = CW_EC_WD_DEFAULT,
+		.direction = ELC_DIR_OUTPUT,
+		.watchdog_mode = ELC_WD_DEFAULT,
 	};
-	struct cw_ec_config_pdo config_pdo = {
+	struct elc_config_pdo config_pdo = {
 		.struct_size = sizeof(config_pdo),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.config_id = 3,
 		.sync_config_id = 2,
 		.pdo_index = 0x1600,
 	};
-	struct cw_ec_config_entry config_entry = {
+	struct elc_config_entry config_entry = {
 		.struct_size = sizeof(config_entry),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.config_id = 4,
 		.pdo_config_id = 3,
 		.entry_id = 1001,
 		.index = 0x6040,
 		.bit_length = 16,
 	};
-	struct cw_ec_config_entry config_padding = {
+	struct elc_config_entry config_padding = {
 		.struct_size = sizeof(config_padding),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.config_id = 6,
 		.pdo_config_id = 3,
 		.entry_id = 0,
@@ -128,132 +128,132 @@ int main(int argc, char **argv)
 		.subindex = 0,
 		.bit_length = 8,
 	};
-	struct cw_ec_config_dc config_dc = {
+	struct elc_config_dc config_dc = {
 		.struct_size = sizeof(config_dc),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.config_id = 5,
 		.slave_config_id = 1,
 		.assign_activate = 0x0300,
 		.sync0_cycle_ns = 1000000,
 	};
-	struct cw_ec_config_dc_policy dc_policy = {
+	struct elc_config_dc_policy dc_policy = {
 		.struct_size = sizeof(dc_policy),
-		.api_major = CW_EC_API_VERSION_MAJOR,
-		.reference_mode = CW_EC_DC_REFERENCE_EXPLICIT,
+		.api_major = ELC_API_VERSION_MAJOR,
+		.reference_mode = ELC_DC_REFERENCE_EXPLICIT,
 		.reference_slave_config_id = 1,
 	};
-	struct cw_ec_config_domain config_domain = {
+	struct elc_config_domain config_domain = {
 		.struct_size = sizeof(config_domain),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.config_id = 10,
 	};
-	struct cw_ec_config_domain_assignment domain_assignment = {
+	struct elc_config_domain_assignment domain_assignment = {
 		.struct_size = sizeof(domain_assignment),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.config_id = 11,
 		.slave_config_id = 1,
 		.domain_config_id = 10,
 	};
-	struct cw_ec_config_validate config_validate = {
+	struct elc_config_validate config_validate = {
 		.struct_size = sizeof(config_validate),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_config_apply config_apply = {
+	struct elc_config_apply config_apply = {
 		.struct_size = sizeof(config_apply),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_domain_create domain_create = {
+	struct elc_domain_create domain_create = {
 		.struct_size = sizeof(domain_create),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_entry_offset entry_offset = {
+	struct elc_entry_offset entry_offset = {
 		.struct_size = sizeof(entry_offset),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.entry_id = 1001,
 	};
-	struct cw_ec_cycle_activate cycle_activate = {
+	struct elc_cycle_activate cycle_activate = {
 		.struct_size = sizeof(cycle_activate),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_cycle_status cycle_status = {
+	struct elc_cycle_status cycle_status = {
 		.struct_size = sizeof(cycle_status),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_cycle_info cycle_info = {
+	struct elc_cycle_info cycle_info = {
 		.struct_size = sizeof(cycle_info),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_cycle_wait cycle_wait = {
+	struct elc_cycle_wait cycle_wait = {
 		.struct_size = sizeof(cycle_wait),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.timeout_ms = 1,
 	};
-	struct cw_ec_cycle_period_update period_update = {
+	struct elc_cycle_period_update period_update = {
 		.struct_size = sizeof(period_update),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.cycle_period_ns = 1000000,
 	};
-	struct cw_ec_cycle_deactivate cycle_deactivate = {
+	struct elc_cycle_deactivate cycle_deactivate = {
 		.struct_size = sizeof(cycle_deactivate),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_dc_status dc_status = {
+	struct elc_dc_status dc_status = {
 		.struct_size = sizeof(dc_status),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_io_status io_status = {
+	struct elc_io_status io_status = {
 		.struct_size = sizeof(io_status),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_config_slave_status slave_status = {
+	struct elc_config_slave_status slave_status = {
 		.struct_size = sizeof(slave_status),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.config_id = 1,
 	};
-	struct cw_ec_domain_status domain_status = {
+	struct elc_domain_status domain_status = {
 		.struct_size = sizeof(domain_status),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.domain_config_id = UINT32_MAX,
 	};
 	uint8_t snapshot_byte;
-	struct cw_ec_input_snapshot snapshot = {
+	struct elc_input_snapshot snapshot = {
 		.struct_size = sizeof(snapshot),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.data_ptr = (uintptr_t)&snapshot_byte,
 		.data_capacity = sizeof(snapshot_byte),
 	};
-	struct cw_ec_output_publish output = {
+	struct elc_output_publish output = {
 		.struct_size = sizeof(output),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.data_ptr = (uintptr_t)&snapshot_byte,
 		.mask_ptr = (uintptr_t)&snapshot_byte,
 		.data_size = sizeof(snapshot_byte),
 		.config_generation = 1,
 	};
-	struct cw_ec_output_arm arm = {
+	struct elc_output_arm arm = {
 		.struct_size = sizeof(arm),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.config_generation = 1,
 		.output_sequence = 1,
 	};
-	struct cw_ec_output_disarm disarm = {
+	struct elc_output_disarm disarm = {
 		.struct_size = sizeof(disarm),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.config_generation = 1,
 	};
-	struct cw_ec_output_lease_config lease_config = {
+	struct elc_output_lease_config lease_config = {
 		.struct_size = sizeof(lease_config),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_output_lease_renew lease_renew = {
+	struct elc_output_lease_renew lease_renew = {
 		.struct_size = sizeof(lease_renew),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_output_lease_status lease_status = {
+	struct elc_output_lease_status lease_status = {
 		.struct_size = sizeof(lease_status),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	unsigned long unknown_ioctl = _IO(CW_EC_IOC_MAGIC, 0x7f);
+	unsigned long unknown_ioctl = _IO(ELC_IOC_MAGIC, 0x7f);
 	int failures = 0;
 	int second_fd;
 	int fd;
@@ -285,26 +285,26 @@ int main(int argc, char **argv)
 	capabilities.reserved0 = 1;
 	errno = 0;
 	failures += expect_errno("capabilities reserved field",
-				 ioctl(fd, CW_EC_IOC_GET_CAPABILITIES,
+				 ioctl(fd, ELC_IOC_GET_CAPABILITIES,
 				       &capabilities), EINVAL);
 	capabilities.reserved0 = 0;
-	if (ioctl(fd, CW_EC_IOC_GET_CAPABILITIES, &capabilities) < 0) {
+	if (ioctl(fd, ELC_IOC_GET_CAPABILITIES, &capabilities) < 0) {
 		fprintf(stderr, "FAIL: capabilities query: %s\n",
 			strerror(errno));
 		failures++;
 	} else if ((capabilities.capabilities &
-		    (CW_EC_CAP_COHERENT_PROCESS_IMAGE |
-		     CW_EC_CAP_CYCLE_TIMING | CW_EC_CAP_CYCLE_WAIT |
-		     CW_EC_CAP_DC_DIAGNOSTICS |
-		     CW_EC_CAP_OUTPUT_LEASE |
-		     CW_EC_CAP_CYCLE_PERIOD_UPDATE |
-		     CW_EC_CAP_INPUT_HISTORY)) !=
-		   (CW_EC_CAP_COHERENT_PROCESS_IMAGE |
-		    CW_EC_CAP_CYCLE_TIMING | CW_EC_CAP_CYCLE_WAIT |
-		    CW_EC_CAP_DC_DIAGNOSTICS |
-		    CW_EC_CAP_OUTPUT_LEASE |
-		    CW_EC_CAP_CYCLE_PERIOD_UPDATE |
-		    CW_EC_CAP_INPUT_HISTORY)) {
+		    (ELC_CAP_COHERENT_PROCESS_IMAGE |
+		     ELC_CAP_CYCLE_TIMING | ELC_CAP_CYCLE_WAIT |
+		     ELC_CAP_DC_DIAGNOSTICS |
+		     ELC_CAP_OUTPUT_LEASE |
+		     ELC_CAP_CYCLE_PERIOD_UPDATE |
+		     ELC_CAP_INPUT_HISTORY)) !=
+		   (ELC_CAP_COHERENT_PROCESS_IMAGE |
+		    ELC_CAP_CYCLE_TIMING | ELC_CAP_CYCLE_WAIT |
+		    ELC_CAP_DC_DIAGNOSTICS |
+		    ELC_CAP_OUTPUT_LEASE |
+		    ELC_CAP_CYCLE_PERIOD_UPDATE |
+		    ELC_CAP_INPUT_HISTORY)) {
 		fprintf(stderr, "FAIL: required capability bits missing\n");
 		failures++;
 	} else {
@@ -314,10 +314,10 @@ int main(int argc, char **argv)
 	cycle_info.flags = 1;
 	errno = 0;
 	failures += expect_errno("cycle info flags",
-				 ioctl(fd, CW_EC_IOC_CYCLE_GET_INFO,
+				 ioctl(fd, ELC_IOC_CYCLE_GET_INFO,
 				       &cycle_info), EINVAL);
 	cycle_info.flags = 0;
-	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_INFO, &cycle_info) < 0) {
+	if (ioctl(fd, ELC_IOC_CYCLE_GET_INFO, &cycle_info) < 0) {
 		fprintf(stderr, "FAIL: inactive cycle info: %s\n",
 			strerror(errno));
 		failures++;
@@ -328,84 +328,84 @@ int main(int argc, char **argv)
 	cycle_wait.flags = 1;
 	errno = 0;
 	failures += expect_errno("cycle wait flags",
-				 ioctl(fd, CW_EC_IOC_CYCLE_WAIT, &cycle_wait),
+				 ioctl(fd, ELC_IOC_CYCLE_WAIT, &cycle_wait),
 				 EINVAL);
 	cycle_wait.flags = 0;
-	cycle_wait.timeout_ms = CW_EC_CYCLE_WAIT_TIMEOUT_MAX_MS + 1U;
+	cycle_wait.timeout_ms = ELC_CYCLE_WAIT_TIMEOUT_MAX_MS + 1U;
 	errno = 0;
 	failures += expect_errno("cycle wait timeout limit",
-				 ioctl(fd, CW_EC_IOC_CYCLE_WAIT, &cycle_wait),
+				 ioctl(fd, ELC_IOC_CYCLE_WAIT, &cycle_wait),
 				 EINVAL);
 	cycle_wait.timeout_ms = 1;
 	errno = 0;
 	failures += expect_errno("inactive cycle wait",
-				 ioctl(fd, CW_EC_IOC_CYCLE_WAIT, &cycle_wait),
+				 ioctl(fd, ELC_IOC_CYCLE_WAIT, &cycle_wait),
 				 EINVAL);
 	period_update.flags = 1;
 	errno = 0;
 	failures += expect_errno(
 		"cycle period update flags",
-		ioctl(fd, CW_EC_IOC_CYCLE_SET_PERIOD, &period_update),
+		ioctl(fd, ELC_IOC_CYCLE_SET_PERIOD, &period_update),
 		EINVAL);
 	period_update.flags = 0;
-	period_update.cycle_period_ns = CW_EC_CYCLE_PERIOD_MIN_NS - 1U;
+	period_update.cycle_period_ns = ELC_CYCLE_PERIOD_MIN_NS - 1U;
 	errno = 0;
 	failures += expect_errno(
 		"cycle period update below minimum",
-		ioctl(fd, CW_EC_IOC_CYCLE_SET_PERIOD, &period_update),
+		ioctl(fd, ELC_IOC_CYCLE_SET_PERIOD, &period_update),
 		EINVAL);
 	period_update.cycle_period_ns = 1000000;
 	period_update.applied_period_ns = 1;
 	errno = 0;
 	failures += expect_errno(
 		"cycle period update output fields",
-		ioctl(fd, CW_EC_IOC_CYCLE_SET_PERIOD, &period_update),
+		ioctl(fd, ELC_IOC_CYCLE_SET_PERIOD, &period_update),
 		EINVAL);
 	period_update.applied_period_ns = 0;
 	errno = 0;
 	failures += expect_errno(
 		"inactive cycle period update",
-		ioctl(fd, CW_EC_IOC_CYCLE_SET_PERIOD, &period_update),
+		ioctl(fd, ELC_IOC_CYCLE_SET_PERIOD, &period_update),
 		EINVAL);
 
 	memset(&slave, 0, sizeof(slave));
 	slave.struct_size = sizeof(slave) - 1;
-	slave.api_major = CW_EC_API_VERSION_MAJOR;
+	slave.api_major = ELC_API_VERSION_MAJOR;
 	errno = 0;
 	failures += expect_errno("short slave structure",
-				 ioctl(fd, CW_EC_IOC_GET_SLAVE_INFO, &slave),
+				 ioctl(fd, ELC_IOC_GET_SLAVE_INFO, &slave),
 				 EINVAL);
 
 	memset(&slave, 0, sizeof(slave));
 	slave.struct_size = sizeof(slave);
-	slave.api_major = CW_EC_API_VERSION_MAJOR + 1;
+	slave.api_major = ELC_API_VERSION_MAJOR + 1;
 	errno = 0;
 	failures += expect_errno("wrong API major",
-				 ioctl(fd, CW_EC_IOC_GET_SLAVE_INFO, &slave),
+				 ioctl(fd, ELC_IOC_GET_SLAVE_INFO, &slave),
 				 EPROTONOSUPPORT);
 
 	memset(&slave, 0, sizeof(slave));
 	slave.struct_size = sizeof(slave);
-	slave.api_major = CW_EC_API_VERSION_MAJOR;
+	slave.api_major = ELC_API_VERSION_MAJOR;
 	slave.position = UINT16_MAX;
 	errno = 0;
 	failures += expect_errno("invalid slave position",
-				 ioctl(fd, CW_EC_IOC_GET_SLAVE_INFO, &slave),
+				 ioctl(fd, ELC_IOC_GET_SLAVE_INFO, &slave),
 				 ENOENT);
 
 	errno = 0;
 	failures += expect_errno("setup add before begin",
-				 ioctl(fd, CW_EC_IOC_SETUP_ADD_SDO,
+				 ioctl(fd, ELC_IOC_SETUP_ADD_SDO,
 				       &setup_sdo),
 				 EINVAL);
 
 	begin.reserved = 1;
 	errno = 0;
 	failures += expect_errno("setup begin reserved field",
-				 ioctl(fd, CW_EC_IOC_SETUP_BEGIN, &begin),
+				 ioctl(fd, ELC_IOC_SETUP_BEGIN, &begin),
 				 EINVAL);
 	begin.reserved = 0;
-	if (ioctl(fd, CW_EC_IOC_SETUP_BEGIN, &begin) < 0) {
+	if (ioctl(fd, ELC_IOC_SETUP_BEGIN, &begin) < 0) {
 		fprintf(stderr, "FAIL: setup begin: %s\n", strerror(errno));
 		failures++;
 	}
@@ -413,29 +413,29 @@ int main(int argc, char **argv)
 	setup_sdo.data_len = 2;
 	errno = 0;
 	failures += expect_errno("setup scalar length mismatch",
-				 ioctl(fd, CW_EC_IOC_SETUP_ADD_SDO,
+				 ioctl(fd, ELC_IOC_SETUP_ADD_SDO,
 				       &setup_sdo),
 				 EINVAL);
 	setup_sdo.data_len = 1;
 
-	if (ioctl(fd, CW_EC_IOC_SETUP_ADD_SDO, &setup_sdo) < 0) {
+	if (ioctl(fd, ELC_IOC_SETUP_ADD_SDO, &setup_sdo) < 0) {
 		fprintf(stderr, "FAIL: valid setup add: %s\n", strerror(errno));
 		failures++;
 	}
 
 	errno = 0;
 	failures += expect_errno("duplicate setup sequence",
-				 ioctl(fd, CW_EC_IOC_SETUP_ADD_SDO,
+				 ioctl(fd, ELC_IOC_SETUP_ADD_SDO,
 				       &setup_sdo),
 				 EEXIST);
 
 	begin.reserved = 1;
 	errno = 0;
 	failures += expect_errno("setup reset reserved field",
-				 ioctl(fd, CW_EC_IOC_SETUP_RESET, &begin),
+				 ioctl(fd, ELC_IOC_SETUP_RESET, &begin),
 				 EINVAL);
 	begin.reserved = 0;
-	if (ioctl(fd, CW_EC_IOC_SETUP_RESET, &begin) < 0) {
+	if (ioctl(fd, ELC_IOC_SETUP_RESET, &begin) < 0) {
 		fprintf(stderr, "FAIL: setup reset: %s\n", strerror(errno));
 		failures++;
 	}
@@ -443,242 +443,242 @@ int main(int argc, char **argv)
 	apply.reserved0[0] = 1;
 	errno = 0;
 	failures += expect_errno("setup apply reserved field",
-				 ioctl(fd, CW_EC_IOC_SETUP_APPLY, &apply),
+				 ioctl(fd, ELC_IOC_SETUP_APPLY, &apply),
 				 EINVAL);
 	apply.reserved0[0] = 0;
 	errno = 0;
 	failures += expect_errno("apply empty setup batch",
-				 ioctl(fd, CW_EC_IOC_SETUP_APPLY, &apply),
+				 ioctl(fd, ELC_IOC_SETUP_APPLY, &apply),
 				 EINVAL);
 
 	upload.reserved0 = 1;
 	errno = 0;
 	failures += expect_errno("SDO upload reserved field",
-				 ioctl(fd, CW_EC_IOC_SDO_UPLOAD, &upload),
+				 ioctl(fd, ELC_IOC_SDO_UPLOAD, &upload),
 				 EINVAL);
 	upload.reserved0 = 0;
 	errno = 0;
 	failures += expect_errno("zero-length SDO upload",
-				 ioctl(fd, CW_EC_IOC_SDO_UPLOAD, &upload),
+				 ioctl(fd, ELC_IOC_SDO_UPLOAD, &upload),
 				 EINVAL);
 
 	upload.requested_len = 1;
 	upload.index = 0;
 	errno = 0;
 	failures += expect_errno("zero-index SDO upload",
-				 ioctl(fd, CW_EC_IOC_SDO_UPLOAD, &upload),
+				 ioctl(fd, ELC_IOC_SDO_UPLOAD, &upload),
 				 EINVAL);
 
 	errno = 0;
 	failures += expect_errno("config add before begin",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_SLAVE,
 				       &config_slave),
 				 EINVAL);
 	errno = 0;
 	failures += expect_errno("DC add before begin",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_DC,
 				       &config_dc),
 				 EINVAL);
 	errno = 0;
 	failures += expect_errno("domain add before begin",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_DOMAIN,
 				       &config_domain),
 				 EINVAL);
 	errno = 0;
 	failures += expect_errno("domain assignment before begin",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+				 ioctl(fd, ELC_IOC_CONFIG_ASSIGN_DOMAIN,
 				       &domain_assignment),
 				 EINVAL);
 
 	config_begin.reserved = 1;
 	errno = 0;
 	failures += expect_errno("config begin reserved field",
-				 ioctl(fd, CW_EC_IOC_CONFIG_BEGIN,
+				 ioctl(fd, ELC_IOC_CONFIG_BEGIN,
 				       &config_begin),
 				 EINVAL);
 	config_begin.reserved = 0;
-	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0) {
+	if (ioctl(fd, ELC_IOC_CONFIG_BEGIN, &config_begin) < 0) {
 		fprintf(stderr, "FAIL: config begin: %s\n", strerror(errno));
 		failures++;
 	}
 	config_domain.struct_size--;
 	errno = 0;
 	failures += expect_errno("short domain structure",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_DOMAIN,
 				       &config_domain),
 				 EINVAL);
 	config_domain.struct_size = sizeof(config_domain);
 	config_domain.api_major++;
 	errno = 0;
 	failures += expect_errno("wrong domain API major",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_DOMAIN,
 				       &config_domain),
 				 EPROTONOSUPPORT);
-	config_domain.api_major = CW_EC_API_VERSION_MAJOR;
+	config_domain.api_major = ELC_API_VERSION_MAJOR;
 	config_domain.config_id = 0;
 	errno = 0;
 	failures += expect_errno("domain with zero config ID",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_DOMAIN,
 				       &config_domain),
 				 EINVAL);
 	config_domain.config_id = 10;
 	config_domain.reserved = 1;
 	errno = 0;
 	failures += expect_errno("domain with nonzero reserved field",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_DOMAIN,
 				       &config_domain),
 				 EINVAL);
 	config_domain.reserved = 0;
 	domain_assignment.config_id = 0;
 	errno = 0;
 	failures += expect_errno("assignment with zero config ID",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+				 ioctl(fd, ELC_IOC_CONFIG_ASSIGN_DOMAIN,
 				       &domain_assignment),
 				 EINVAL);
 	domain_assignment.config_id = 11;
 	domain_assignment.slave_config_id = 0;
 	errno = 0;
 	failures += expect_errno("assignment with zero slave ID",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+				 ioctl(fd, ELC_IOC_CONFIG_ASSIGN_DOMAIN,
 				       &domain_assignment),
 				 EINVAL);
 	domain_assignment.slave_config_id = 1;
 	domain_assignment.domain_config_id = 0;
 	errno = 0;
 	failures += expect_errno("assignment with zero domain ID",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+				 ioctl(fd, ELC_IOC_CONFIG_ASSIGN_DOMAIN,
 				       &domain_assignment),
 				 EINVAL);
 	domain_assignment.domain_config_id = 10;
 	config_padding.index = 1;
 	errno = 0;
 	failures += expect_errno("padding with nonzero object index",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_ENTRY,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_ENTRY,
 				       &config_padding),
 				 EINVAL);
 	config_padding.index = 0;
 	config_padding.entry_id = 1;
 	errno = 0;
 	failures += expect_errno("zero object with registered entry ID",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_ENTRY,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_ENTRY,
 				       &config_padding),
 				 EINVAL);
 	config_padding.entry_id = 0;
 	config_slave.revision_number = 1;
 	errno = 0;
 	failures += expect_errno("unsupported revision constraint",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_SLAVE,
 				       &config_slave),
 				 EINVAL);
 	config_slave.revision_number = 0;
 	config_slave.flags = 1;
 	errno = 0;
 	failures += expect_errno("config slave unsupported flags",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_SLAVE,
 				       &config_slave),
 				 EINVAL);
 	config_slave.flags = 0;
-	if (ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0) {
+	if (ioctl(fd, ELC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0) {
 		fprintf(stderr, "FAIL: valid config slave: %s\n",
 			strerror(errno));
 		failures++;
 	}
 	errno = 0;
 	failures += expect_errno("duplicate config slave ID",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_SLAVE,
 				       &config_slave),
 				 EEXIST);
 	config_dc.assign_activate = 0;
 	errno = 0;
 	failures += expect_errno("zero DC AssignActivate",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_DC,
 				       &config_dc),
 				 EINVAL);
 	config_dc.assign_activate = 0x0300;
 	config_dc.sync0_cycle_ns = 0;
 	errno = 0;
 	failures += expect_errno("zero DC SYNC0 cycle",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_DC,
 				       &config_dc),
 				 EINVAL);
 	config_dc.sync0_cycle_ns = 1000000;
 	dc_policy.reference_slave_config_id = 0;
 	errno = 0;
 	failures += expect_errno("explicit DC reference without slave",
-				 ioctl(fd, CW_EC_IOC_CONFIG_SET_DC_POLICY,
+				 ioctl(fd, ELC_IOC_CONFIG_SET_DC_POLICY,
 				       &dc_policy),
 				 EINVAL);
 	dc_policy.reference_slave_config_id = 1;
 	config_sync.reserved = 1;
 	errno = 0;
 	failures += expect_errno("config sync reserved field",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_SYNC,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_SYNC,
 				       &config_sync),
 				 EINVAL);
 	config_sync.reserved = 0;
 	config_pdo.reserved = 1;
 	errno = 0;
 	failures += expect_errno("config PDO reserved field",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_PDO,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_PDO,
 				       &config_pdo),
 				 EINVAL);
 	config_pdo.reserved = 0;
 	config_dc.reserved0 = 1;
 	errno = 0;
 	failures += expect_errno("config DC reserved field",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_DC,
 				       &config_dc),
 				 EINVAL);
 	config_dc.reserved0 = 0;
 	config_dc.flags = 1;
 	errno = 0;
 	failures += expect_errno("config DC unsupported flags",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_DC,
 				       &config_dc),
 				 EINVAL);
 	config_dc.flags = 0;
 	dc_policy.reserved0[0] = 1;
 	errno = 0;
 	failures += expect_errno("DC policy reserved field",
-				 ioctl(fd, CW_EC_IOC_CONFIG_SET_DC_POLICY,
+				 ioctl(fd, ELC_IOC_CONFIG_SET_DC_POLICY,
 				       &dc_policy),
 				 EINVAL);
 	dc_policy.reserved0[0] = 0;
 	dc_policy.flags = 1;
 	errno = 0;
 	failures += expect_errno("DC policy unsupported flags",
-				 ioctl(fd, CW_EC_IOC_CONFIG_SET_DC_POLICY,
+				 ioctl(fd, ELC_IOC_CONFIG_SET_DC_POLICY,
 				       &dc_policy),
 				 EINVAL);
 	dc_policy.flags = 0;
 
 	config_sync.slave_config_id = 99;
-	if (ioctl(fd, CW_EC_IOC_CONFIG_ADD_SYNC, &config_sync) < 0) {
+	if (ioctl(fd, ELC_IOC_CONFIG_ADD_SYNC, &config_sync) < 0) {
 		fprintf(stderr, "FAIL: add orphan config sync: %s\n",
 			strerror(errno));
 		failures++;
 	}
 	errno = 0;
 	failures += expect_errno("validate orphan config sync",
-				 ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE,
+				 ioctl(fd, ELC_IOC_CONFIG_VALIDATE,
 				       &config_validate),
 				 ENOENT);
 
-	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0) {
+	if (ioctl(fd, ELC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0) {
 		fprintf(stderr, "FAIL: restart DC config transaction: %s\n",
 			strerror(errno));
 		failures++;
 	}
 	config_dc.slave_config_id = 99;
-	if (ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC, &config_dc) < 0) {
+	if (ioctl(fd, ELC_IOC_CONFIG_ADD_DC, &config_dc) < 0) {
 		fprintf(stderr, "FAIL: add orphan DC record: %s\n",
 			strerror(errno));
 		failures++;
 	}
 	errno = 0;
 	failures += expect_errno("validate orphan DC record",
-				 ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE,
+				 ioctl(fd, ELC_IOC_CONFIG_VALIDATE,
 				       &config_validate),
 				 ENOENT);
 	config_dc.slave_config_id = config_slave.config_id;
@@ -686,52 +686,52 @@ int main(int argc, char **argv)
 	config_domain.flags = 1;
 	errno = 0;
 	failures += expect_errno("domain with unsupported flags",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_DOMAIN,
 				       &config_domain),
 				 EINVAL);
 	config_domain.flags = 0;
 	domain_assignment.flags = 1;
 	errno = 0;
 	failures += expect_errno("domain assignment with unsupported flags",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+				 ioctl(fd, ELC_IOC_CONFIG_ASSIGN_DOMAIN,
 				       &domain_assignment),
 				 EINVAL);
 	domain_assignment.flags = 0;
 
-	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0) {
+	if (ioctl(fd, ELC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0) {
 		fprintf(stderr, "FAIL: start duplicate domain config: %s\n",
 			strerror(errno));
 		failures++;
 	}
 	errno = 0;
 	failures += expect_errno("duplicate domain config ID",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_DOMAIN,
 				       &config_domain),
 				 EEXIST);
 
-	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0) {
+	if (ioctl(fd, ELC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0) {
 		fprintf(stderr, "FAIL: start unassigned domain config: %s\n",
 			strerror(errno));
 		failures++;
 	}
 	errno = 0;
 	failures += expect_errno("explicit domain without assignment",
-				 ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE,
+				 ioctl(fd, ELC_IOC_CONFIG_VALIDATE,
 				       &config_validate),
 				 EINVAL);
 
-	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0) {
+	if (ioctl(fd, ELC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0) {
 		fprintf(stderr, "FAIL: start unknown domain assignment: %s\n",
 			strerror(errno));
 		failures++;
 	}
 	domain_assignment.domain_config_id = 99;
-	if (ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+	if (ioctl(fd, ELC_IOC_CONFIG_ASSIGN_DOMAIN,
 		  &domain_assignment) < 0) {
 		fprintf(stderr, "FAIL: add unknown domain assignment: %s\n",
 			strerror(errno));
@@ -739,20 +739,20 @@ int main(int argc, char **argv)
 	}
 	errno = 0;
 	failures += expect_errno("assignment to unknown domain",
-				 ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE,
+				 ioctl(fd, ELC_IOC_CONFIG_VALIDATE,
 				       &config_validate),
 				 ENOENT);
 	domain_assignment.domain_config_id = config_domain.config_id;
 
-	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0) {
+	if (ioctl(fd, ELC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0) {
 		fprintf(stderr, "FAIL: start unknown slave assignment: %s\n",
 			strerror(errno));
 		failures++;
 	}
 	domain_assignment.slave_config_id = 99;
-	if (ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+	if (ioctl(fd, ELC_IOC_CONFIG_ASSIGN_DOMAIN,
 		  &domain_assignment) < 0) {
 		fprintf(stderr, "FAIL: add unknown slave assignment: %s\n",
 			strerror(errno));
@@ -760,17 +760,17 @@ int main(int argc, char **argv)
 	}
 	errno = 0;
 	failures += expect_errno("assignment for unknown slave",
-				 ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE,
+				 ioctl(fd, ELC_IOC_CONFIG_VALIDATE,
 				       &config_validate),
 				 ENOENT);
 	domain_assignment.slave_config_id = config_slave.config_id;
 
-	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE,
+	if (ioctl(fd, ELC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_SLAVE,
 		  &second_config_slave) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ASSIGN_DOMAIN,
 		  &domain_assignment) < 0) {
 		fprintf(stderr, "FAIL: start missing slave assignment: %s\n",
 			strerror(errno));
@@ -778,21 +778,21 @@ int main(int argc, char **argv)
 	}
 	errno = 0;
 	failures += expect_errno("configured slave without assignment",
-				 ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE,
+				 ioctl(fd, ELC_IOC_CONFIG_VALIDATE,
 				       &config_validate),
 				 ENOENT);
 
-	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+	if (ioctl(fd, ELC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_DOMAIN, &config_domain) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ASSIGN_DOMAIN,
 		  &domain_assignment) < 0) {
 		fprintf(stderr, "FAIL: start duplicate assignment config: %s\n",
 			strerror(errno));
 		failures++;
 	}
 	domain_assignment.config_id++;
-	if (ioctl(fd, CW_EC_IOC_CONFIG_ASSIGN_DOMAIN,
+	if (ioctl(fd, ELC_IOC_CONFIG_ASSIGN_DOMAIN,
 		  &domain_assignment) < 0) {
 		fprintf(stderr, "FAIL: add duplicate slave assignment: %s\n",
 			strerror(errno));
@@ -800,39 +800,39 @@ int main(int argc, char **argv)
 	}
 	errno = 0;
 	failures += expect_errno("duplicate slave domain assignment",
-				 ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE,
+				 ioctl(fd, ELC_IOC_CONFIG_VALIDATE,
 				       &config_validate),
 				 EEXIST);
 	domain_assignment.config_id--;
 
-	if (ioctl(fd, CW_EC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0) {
+	if (ioctl(fd, ELC_IOC_CONFIG_BEGIN, &config_begin) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_SLAVE, &config_slave) < 0) {
 		fprintf(stderr, "FAIL: restart config transaction: %s\n",
 			strerror(errno));
 		failures++;
 	}
 	config_sync.slave_config_id = config_slave.config_id;
-	if (ioctl(fd, CW_EC_IOC_CONFIG_ADD_SYNC, &config_sync) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_PDO, &config_pdo) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_ENTRY, &config_padding) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_ENTRY, &config_entry) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_ADD_DC, &config_dc) < 0 ||
-	    ioctl(fd, CW_EC_IOC_CONFIG_SET_DC_POLICY, &dc_policy) < 0) {
+	if (ioctl(fd, ELC_IOC_CONFIG_ADD_SYNC, &config_sync) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_PDO, &config_pdo) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_ENTRY, &config_padding) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_ENTRY, &config_entry) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_ADD_DC, &config_dc) < 0 ||
+	    ioctl(fd, ELC_IOC_CONFIG_SET_DC_POLICY, &dc_policy) < 0) {
 		fprintf(stderr, "FAIL: add valid config hierarchy: %s\n",
 			strerror(errno));
 		failures++;
 	}
 	memset(&config_validate, 0, sizeof(config_validate));
 	config_validate.struct_size = sizeof(config_validate);
-	config_validate.api_major = CW_EC_API_VERSION_MAJOR;
+	config_validate.api_major = ELC_API_VERSION_MAJOR;
 	config_validate.reserved = 1;
 	errno = 0;
 	failures += expect_errno("config validate reserved field",
-				 ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE,
+				 ioctl(fd, ELC_IOC_CONFIG_VALIDATE,
 				       &config_validate),
 				 EINVAL);
 	config_validate.reserved = 0;
-	if (ioctl(fd, CW_EC_IOC_CONFIG_VALIDATE, &config_validate) < 0) {
+	if (ioctl(fd, ELC_IOC_CONFIG_VALIDATE, &config_validate) < 0) {
 		fprintf(stderr, "FAIL: validate config hierarchy: %s\n",
 			strerror(errno));
 		failures++;
@@ -847,18 +847,18 @@ int main(int argc, char **argv)
 	}
 	errno = 0;
 	failures += expect_errno("config mutation after validation",
-				 ioctl(fd, CW_EC_IOC_CONFIG_ADD_ENTRY,
+				 ioctl(fd, ELC_IOC_CONFIG_ADD_ENTRY,
 				       &config_entry),
 				 EINVAL);
 
 	config_apply.reserved0[0] = 1;
 	errno = 0;
 	failures += expect_errno("config apply reserved field",
-				 ioctl(fd, CW_EC_IOC_CONFIG_APPLY,
+				 ioctl(fd, ELC_IOC_CONFIG_APPLY,
 				       &config_apply),
 				 EINVAL);
 	config_apply.reserved0[0] = 0;
-	if (ioctl(fd, CW_EC_IOC_CONFIG_APPLY, &config_apply) < 0) {
+	if (ioctl(fd, ELC_IOC_CONFIG_APPLY, &config_apply) < 0) {
 		fprintf(stderr,
 			"FAIL: apply config hierarchy: %s; kind=%u id=%" PRIu32
 			"\n",
@@ -870,23 +870,23 @@ int main(int argc, char **argv)
 	}
 	errno = 0;
 	failures += expect_errno("duplicate config apply",
-				 ioctl(fd, CW_EC_IOC_CONFIG_APPLY,
+				 ioctl(fd, ELC_IOC_CONFIG_APPLY,
 				       &config_apply),
 				 EINVAL);
 	errno = 0;
 	failures += expect_errno("config begin after apply",
-				 ioctl(fd, CW_EC_IOC_CONFIG_BEGIN,
+				 ioctl(fd, ELC_IOC_CONFIG_BEGIN,
 				       &config_begin),
 				 EBUSY);
 
 	domain_create.reserved = 1;
 	errno = 0;
 	failures += expect_errno("domain create reserved field",
-				 ioctl(fd, CW_EC_IOC_DOMAIN_CREATE,
+				 ioctl(fd, ELC_IOC_DOMAIN_CREATE,
 				       &domain_create),
 				 EINVAL);
 	domain_create.reserved = 0;
-	if (ioctl(fd, CW_EC_IOC_DOMAIN_CREATE, &domain_create) < 0) {
+	if (ioctl(fd, ELC_IOC_DOMAIN_CREATE, &domain_create) < 0) {
 		fprintf(stderr,
 			"FAIL: create domain: %s; config id=%" PRIu32 "\n",
 			strerror(errno), domain_create.failed_config_id);
@@ -900,11 +900,11 @@ int main(int argc, char **argv)
 	entry_offset.reserved[0] = 1;
 	errno = 0;
 	failures += expect_errno("entry offset reserved field",
-				 ioctl(fd, CW_EC_IOC_GET_ENTRY_OFFSET,
+				 ioctl(fd, ELC_IOC_GET_ENTRY_OFFSET,
 				       &entry_offset),
 				 EINVAL);
 	entry_offset.reserved[0] = 0;
-	if (ioctl(fd, CW_EC_IOC_GET_ENTRY_OFFSET, &entry_offset) < 0) {
+	if (ioctl(fd, ELC_IOC_GET_ENTRY_OFFSET, &entry_offset) < 0) {
 		fprintf(stderr, "FAIL: get entry offset: %s\n", strerror(errno));
 		failures++;
 	} else if (entry_offset.global_offset != 1 ||
@@ -922,23 +922,23 @@ int main(int argc, char **argv)
 	entry_offset.entry_id = 9999;
 	errno = 0;
 	failures += expect_errno("unknown entry ID",
-				 ioctl(fd, CW_EC_IOC_GET_ENTRY_OFFSET,
+				 ioctl(fd, ELC_IOC_GET_ENTRY_OFFSET,
 				       &entry_offset),
 				 ENOENT);
 	errno = 0;
 	failures += expect_errno("duplicate domain create",
-				 ioctl(fd, CW_EC_IOC_DOMAIN_CREATE,
+				 ioctl(fd, ELC_IOC_DOMAIN_CREATE,
 				       &domain_create),
 				 EINVAL);
 
 	cycle_status.reserved0[0] = 1;
 	errno = 0;
 	failures += expect_errno("cycle status reserved field",
-				 ioctl(fd, CW_EC_IOC_CYCLE_GET_STATUS,
+				 ioctl(fd, ELC_IOC_CYCLE_GET_STATUS,
 				       &cycle_status),
 				 EINVAL);
 	cycle_status.reserved0[0] = 0;
-	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_STATUS, &cycle_status) < 0) {
+	if (ioctl(fd, ELC_IOC_CYCLE_GET_STATUS, &cycle_status) < 0) {
 		fprintf(stderr, "FAIL: get inactive cycle status: %s\n",
 			strerror(errno));
 		failures++;
@@ -951,23 +951,23 @@ int main(int argc, char **argv)
 	cycle_deactivate.reserved = 1;
 	errno = 0;
 	failures += expect_errno("cycle deactivate reserved field",
-				 ioctl(fd, CW_EC_IOC_CYCLE_DEACTIVATE,
+				 ioctl(fd, ELC_IOC_CYCLE_DEACTIVATE,
 				       &cycle_deactivate),
 				 EINVAL);
 	cycle_deactivate.reserved = 0;
 	errno = 0;
 	failures += expect_errno("deactivate inactive cycle",
-				 ioctl(fd, CW_EC_IOC_CYCLE_DEACTIVATE,
+				 ioctl(fd, ELC_IOC_CYCLE_DEACTIVATE,
 				       &cycle_deactivate),
 				 EINVAL);
 	dc_status.reserved0 = 1;
 	errno = 0;
 	failures += expect_errno("DC status reserved field",
-				 ioctl(fd, CW_EC_IOC_CYCLE_GET_DC_STATUS,
+				 ioctl(fd, ELC_IOC_CYCLE_GET_DC_STATUS,
 				       &dc_status),
 				 EINVAL);
 	dc_status.reserved0 = 0;
-	if (ioctl(fd, CW_EC_IOC_CYCLE_GET_DC_STATUS, &dc_status) < 0) {
+	if (ioctl(fd, ELC_IOC_CYCLE_GET_DC_STATUS, &dc_status) < 0) {
 		fprintf(stderr, "FAIL: get inactive DC status: %s\n",
 			strerror(errno));
 		failures++;
@@ -983,11 +983,11 @@ int main(int argc, char **argv)
 	io_status.reserved0 = 1;
 	errno = 0;
 	failures += expect_errno("IO status reserved field",
-				 ioctl(fd, CW_EC_IOC_GET_IO_STATUS,
+				 ioctl(fd, ELC_IOC_GET_IO_STATUS,
 				       &io_status),
 				 EINVAL);
 	io_status.reserved0 = 0;
-	if (ioctl(fd, CW_EC_IOC_GET_IO_STATUS, &io_status) < 0) {
+	if (ioctl(fd, ELC_IOC_GET_IO_STATUS, &io_status) < 0) {
 		fprintf(stderr, "FAIL: get inactive IO status: %s\n",
 			strerror(errno));
 		failures++;
@@ -1005,15 +1005,15 @@ int main(int argc, char **argv)
 	errno = 0;
 	failures += expect_errno("input history config flags",
 				 ioctl(fd,
-				       CW_EC_IOC_CONFIGURE_INPUT_HISTORY,
+				       ELC_IOC_CONFIGURE_INPUT_HISTORY,
 				       &history_config),
 				 EINVAL);
 	history_config.flags = 0;
-	history_config.depth = CW_EC_INPUT_HISTORY_DEPTH_MAX + 1U;
+	history_config.depth = ELC_INPUT_HISTORY_DEPTH_MAX + 1U;
 	errno = 0;
 	failures += expect_errno("input history depth limit",
 				 ioctl(fd,
-				       CW_EC_IOC_CONFIGURE_INPUT_HISTORY,
+				       ELC_IOC_CONFIGURE_INPUT_HISTORY,
 				       &history_config),
 				 EINVAL);
 	history_config.depth = 1;
@@ -1021,7 +1021,7 @@ int main(int argc, char **argv)
 	errno = 0;
 	failures += expect_errno("input history output field",
 				 ioctl(fd,
-				       CW_EC_IOC_CONFIGURE_INPUT_HISTORY,
+				       ELC_IOC_CONFIGURE_INPUT_HISTORY,
 				       &history_config),
 				 EINVAL);
 	history_config.configured_depth = 0;
@@ -1029,11 +1029,11 @@ int main(int argc, char **argv)
 	errno = 0;
 	failures += expect_errno("stale input history configuration",
 				 ioctl(fd,
-				       CW_EC_IOC_CONFIGURE_INPUT_HISTORY,
+				       ELC_IOC_CONFIGURE_INPUT_HISTORY,
 				       &history_config),
 				 ESTALE);
 	history_config.config_generation = io_status.config_generation;
-	if (ioctl(fd, CW_EC_IOC_CONFIGURE_INPUT_HISTORY,
+	if (ioctl(fd, ELC_IOC_CONFIGURE_INPUT_HISTORY,
 		  &history_config) < 0 ||
 	    history_config.configured_depth != 1) {
 		fprintf(stderr, "FAIL: configure inactive input history: %s\n",
@@ -1047,7 +1047,7 @@ int main(int argc, char **argv)
 	errno = 0;
 	failures += expect_errno("input history batch flags",
 				 ioctl(fd,
-				       CW_EC_IOC_GET_INPUT_HISTORY_BATCH,
+				       ELC_IOC_GET_INPUT_HISTORY_BATCH,
 				       &history_batch),
 				 EINVAL);
 	history_batch.flags = 0;
@@ -1055,14 +1055,14 @@ int main(int argc, char **argv)
 	errno = 0;
 	failures += expect_errno("input history zero batch",
 				 ioctl(fd,
-				       CW_EC_IOC_GET_INPUT_HISTORY_BATCH,
+				       ELC_IOC_GET_INPUT_HISTORY_BATCH,
 				       &history_batch),
 				 EINVAL);
 	history_batch.max_records = 1;
 	errno = 0;
 	failures += expect_errno("input history batch while inactive",
 				 ioctl(fd,
-				       CW_EC_IOC_GET_INPUT_HISTORY_BATCH,
+				       ELC_IOC_GET_INPUT_HISTORY_BATCH,
 				       &history_batch),
 				 EINVAL);
 	lease_config.config_generation = io_status.config_generation;
@@ -1070,15 +1070,15 @@ int main(int argc, char **argv)
 	errno = 0;
 	failures += expect_errno("output lease config flags",
 				 ioctl(fd,
-				       CW_EC_IOC_CONFIGURE_OUTPUT_LEASE,
+				       ELC_IOC_CONFIGURE_OUTPUT_LEASE,
 				       &lease_config),
 				 EINVAL);
 	lease_config.flags = 0;
-	lease_config.cycle_budget = CW_EC_OUTPUT_LEASE_CYCLES_MAX + 1U;
+	lease_config.cycle_budget = ELC_OUTPUT_LEASE_CYCLES_MAX + 1U;
 	errno = 0;
 	failures += expect_errno("output lease cycle limit",
 				 ioctl(fd,
-				       CW_EC_IOC_CONFIGURE_OUTPUT_LEASE,
+				       ELC_IOC_CONFIGURE_OUTPUT_LEASE,
 				       &lease_config),
 				 EINVAL);
 	lease_config.cycle_budget = 3;
@@ -1086,11 +1086,11 @@ int main(int argc, char **argv)
 	errno = 0;
 	failures += expect_errno("stale output lease configuration",
 				 ioctl(fd,
-				       CW_EC_IOC_CONFIGURE_OUTPUT_LEASE,
+				       ELC_IOC_CONFIGURE_OUTPUT_LEASE,
 				       &lease_config),
 				 ESTALE);
 	lease_config.config_generation = io_status.config_generation;
-	if (ioctl(fd, CW_EC_IOC_CONFIGURE_OUTPUT_LEASE,
+	if (ioctl(fd, ELC_IOC_CONFIGURE_OUTPUT_LEASE,
 		  &lease_config) < 0) {
 		fprintf(stderr, "FAIL: configure inactive output lease: %s\n",
 			strerror(errno));
@@ -1103,11 +1103,11 @@ int main(int argc, char **argv)
 	errno = 0;
 	failures += expect_errno("output lease status flags",
 				 ioctl(fd,
-				       CW_EC_IOC_GET_OUTPUT_LEASE_STATUS,
+				       ELC_IOC_GET_OUTPUT_LEASE_STATUS,
 				       &lease_status),
 				 EINVAL);
 	lease_status.flags = 0;
-	if (ioctl(fd, CW_EC_IOC_GET_OUTPUT_LEASE_STATUS,
+	if (ioctl(fd, ELC_IOC_GET_OUTPUT_LEASE_STATUS,
 		  &lease_status) < 0) {
 		fprintf(stderr, "FAIL: inactive output lease status: %s\n",
 			strerror(errno));
@@ -1126,14 +1126,14 @@ int main(int argc, char **argv)
 	errno = 0;
 	failures += expect_errno("output lease renewal while inactive",
 				 ioctl(fd,
-				       CW_EC_IOC_RENEW_OUTPUT_LEASE,
+				       ELC_IOC_RENEW_OUTPUT_LEASE,
 				       &lease_renew),
 				 EINVAL);
 	slave_status.reserved0[0] = 1;
 	errno = 0;
 	failures += expect_errno("configured-slave status reserved field",
 				 ioctl(fd,
-				       CW_EC_IOC_GET_CONFIG_SLAVE_STATUS,
+				       ELC_IOC_GET_CONFIG_SLAVE_STATUS,
 				       &slave_status),
 				 EINVAL);
 	slave_status.reserved0[0] = 0;
@@ -1141,7 +1141,7 @@ int main(int argc, char **argv)
 	errno = 0;
 	failures += expect_errno("stale configured-slave status generation",
 				 ioctl(fd,
-				       CW_EC_IOC_GET_CONFIG_SLAVE_STATUS,
+				       ELC_IOC_GET_CONFIG_SLAVE_STATUS,
 				       &slave_status),
 				 ESTALE);
 	slave_status.config_generation = io_status.config_generation;
@@ -1149,31 +1149,31 @@ int main(int argc, char **argv)
 	errno = 0;
 	failures += expect_errno("unknown configured-slave status ID",
 				 ioctl(fd,
-				       CW_EC_IOC_GET_CONFIG_SLAVE_STATUS,
+				       ELC_IOC_GET_CONFIG_SLAVE_STATUS,
 				       &slave_status),
 				 ENOENT);
 	domain_status.reserved0[0] = 1;
 	errno = 0;
 	failures += expect_errno("domain status reserved field",
-				 ioctl(fd, CW_EC_IOC_GET_DOMAIN_STATUS,
+				 ioctl(fd, ELC_IOC_GET_DOMAIN_STATUS,
 				       &domain_status),
 				 EINVAL);
 	domain_status.reserved0[0] = 0;
 	domain_status.config_generation = io_status.config_generation + 1;
 	errno = 0;
 	failures += expect_errno("stale domain status generation",
-				 ioctl(fd, CW_EC_IOC_GET_DOMAIN_STATUS,
+				 ioctl(fd, ELC_IOC_GET_DOMAIN_STATUS,
 				       &domain_status),
 				 ESTALE);
 	domain_status.config_generation = io_status.config_generation;
 	domain_status.domain_config_id = 99;
 	errno = 0;
 	failures += expect_errno("unknown domain status ID",
-				 ioctl(fd, CW_EC_IOC_GET_DOMAIN_STATUS,
+				 ioctl(fd, ELC_IOC_GET_DOMAIN_STATUS,
 				       &domain_status),
 				 ENOENT);
 	domain_status.domain_config_id = UINT32_MAX;
-	if (ioctl(fd, CW_EC_IOC_GET_DOMAIN_STATUS, &domain_status) < 0) {
+	if (ioctl(fd, ELC_IOC_GET_DOMAIN_STATUS, &domain_status) < 0) {
 		fprintf(stderr, "FAIL: implicit domain inactive status: %s\n",
 			strerror(errno));
 		failures++;
@@ -1185,7 +1185,7 @@ int main(int argc, char **argv)
 		printf("PASS: implicit domain inactive status is clean\n");
 	}
 	slave_status.config_id = 1;
-	if (ioctl(fd, CW_EC_IOC_GET_CONFIG_SLAVE_STATUS,
+	if (ioctl(fd, ELC_IOC_GET_CONFIG_SLAVE_STATUS,
 		  &slave_status) < 0) {
 		fprintf(stderr,
 			"FAIL: configured-slave inactive status failed: %s\n",
@@ -1203,68 +1203,68 @@ int main(int argc, char **argv)
 	snapshot.flags = 1;
 	errno = 0;
 	failures += expect_errno("unsupported input snapshot flags",
-				 ioctl(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT,
+				 ioctl(fd, ELC_IOC_GET_INPUT_SNAPSHOT,
 				       &snapshot),
 				 EINVAL);
 	snapshot.flags = 0;
 	errno = 0;
 	failures += expect_errno("input snapshot while inactive",
-				 ioctl(fd, CW_EC_IOC_GET_INPUT_SNAPSHOT,
+				 ioctl(fd, ELC_IOC_GET_INPUT_SNAPSHOT,
 				       &snapshot),
 				 EINVAL);
 	output.flags = 1;
 	errno = 0;
 	failures += expect_errno("unsupported output publish flags",
-				 ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output),
+				 ioctl(fd, ELC_IOC_PUBLISH_OUTPUT, &output),
 				 EINVAL);
 	output.flags = 0;
 	output.reserved = 1;
 	errno = 0;
 	failures += expect_errno("output publish reserved field",
-				 ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output),
+				 ioctl(fd, ELC_IOC_PUBLISH_OUTPUT, &output),
 				 EINVAL);
 	output.reserved = 0;
 	errno = 0;
 	failures += expect_errno("output publish while inactive",
-				 ioctl(fd, CW_EC_IOC_PUBLISH_OUTPUT, &output),
+				 ioctl(fd, ELC_IOC_PUBLISH_OUTPUT, &output),
 				 EINVAL);
 	arm.flags = 1;
 	errno = 0;
 	failures += expect_errno("unsupported output arm flags",
-				 ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm),
+				 ioctl(fd, ELC_IOC_ARM_OUTPUTS, &arm),
 				 EINVAL);
 	arm.flags = 0;
 	errno = 0;
 	failures += expect_errno("output arm while inactive",
-				 ioctl(fd, CW_EC_IOC_ARM_OUTPUTS, &arm),
+				 ioctl(fd, ELC_IOC_ARM_OUTPUTS, &arm),
 				 EINVAL);
 	disarm.flags = 1;
 	errno = 0;
 	failures += expect_errno("unsupported output disarm flags",
-				 ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm),
+				 ioctl(fd, ELC_IOC_DISARM_OUTPUTS, &disarm),
 				 EINVAL);
 	disarm.flags = 0;
 	errno = 0;
 	failures += expect_errno("output disarm while inactive",
-				 ioctl(fd, CW_EC_IOC_DISARM_OUTPUTS, &disarm),
+				 ioctl(fd, ELC_IOC_DISARM_OUTPUTS, &disarm),
 				 EINVAL);
-	cycle_activate.cycle_period_ns = CW_EC_CYCLE_PERIOD_MIN_NS - 1;
+	cycle_activate.cycle_period_ns = ELC_CYCLE_PERIOD_MIN_NS - 1;
 	errno = 0;
 	failures += expect_errno("cycle period below minimum",
-				 ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE,
+				 ioctl(fd, ELC_IOC_CYCLE_ACTIVATE,
 				       &cycle_activate),
 				 EINVAL);
-	cycle_activate.cycle_period_ns = CW_EC_CYCLE_PERIOD_MAX_NS + 1U;
+	cycle_activate.cycle_period_ns = ELC_CYCLE_PERIOD_MAX_NS + 1U;
 	errno = 0;
 	failures += expect_errno("cycle period above maximum",
-				 ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE,
+				 ioctl(fd, ELC_IOC_CYCLE_ACTIVATE,
 				       &cycle_activate),
 				 EINVAL);
 	cycle_activate.cycle_period_ns = 1000000;
 	cycle_activate.flags = 1;
 	errno = 0;
 	failures += expect_errno("unsupported cycle flags",
-				 ioctl(fd, CW_EC_IOC_CYCLE_ACTIVATE,
+				 ioctl(fd, ELC_IOC_CYCLE_ACTIVATE,
 				       &cycle_activate),
 				 EINVAL);
 

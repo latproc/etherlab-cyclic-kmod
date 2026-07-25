@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "cw_ethercat.h"
+#include "elc_ethercat.h"
 
 static const char *al_state_name(unsigned int state)
 {
@@ -28,12 +28,12 @@ static const char *al_state_name(unsigned int state)
 
 int main(int argc, char **argv)
 {
-	const char *device = "/dev/cw_ethercat0";
-	cw_ec_handle *h = NULL;
-	struct cw_ec_api_version version;
-	struct cw_ec_capabilities capabilities;
-	struct cw_ec_master_info master;
-	cw_ec_slave_summary *slaves = NULL;
+	const char *device = "/dev/elc_ethercat0";
+	elc_handle *h = NULL;
+	struct elc_api_version version;
+	struct elc_capabilities capabilities;
+	struct elc_master_info master;
+	elc_slave_summary *slaves = NULL;
 	size_t slave_count = 0;
 	size_t i;
 	int ret;
@@ -45,7 +45,7 @@ int main(int argc, char **argv)
 	if (argc == 2)
 		device = argv[1];
 
-	ret = cw_ec_open(device, &h);
+	ret = elc_open(device, &h);
 	if (ret) {
 		fprintf(stderr, "elc_bus: cannot open %s: %s\n", device,
 			strerror(-ret));
@@ -55,44 +55,44 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	ret = cw_ec_require_api(h, CW_EC_API_VERSION_MAJOR,
-				CW_EC_API_VERSION_MINOR);
+	ret = elc_require_api(h, ELC_API_VERSION_MAJOR,
+				ELC_API_VERSION_MINOR);
 	if (ret) {
-		if (cw_ec_get_api_version(h, &version) == 0) {
+		if (elc_get_api_version(h, &version) == 0) {
 			fprintf(stderr,
 				"elc_bus: incompatible API: kernel %u.%u, tool %u.%u\n",
 				version.major, version.minor,
-				CW_EC_API_VERSION_MAJOR,
-				CW_EC_API_VERSION_MINOR);
+				ELC_API_VERSION_MAJOR,
+				ELC_API_VERSION_MINOR);
 		} else {
 			fprintf(stderr, "elc_bus: require API: %s\n",
 				strerror(-ret));
 		}
-		cw_ec_close(h);
+		elc_close(h);
 		return 1;
 	}
 
-	ret = cw_ec_get_api_version(h, &version);
+	ret = elc_get_api_version(h, &version);
 	if (ret) {
 		fprintf(stderr, "elc_bus: GET_API_VERSION: %s\n",
 			strerror(-ret));
-		cw_ec_close(h);
+		elc_close(h);
 		return 1;
 	}
 
-	ret = cw_ec_get_capabilities(h, &capabilities);
+	ret = elc_get_capabilities(h, &capabilities);
 	if (ret) {
 		fprintf(stderr, "elc_bus: GET_CAPABILITIES: %s\n",
 			strerror(-ret));
-		cw_ec_close(h);
+		elc_close(h);
 		return 1;
 	}
 
-	ret = cw_ec_get_master_info(h, &master);
+	ret = elc_get_master_info(h, &master);
 	if (ret) {
 		fprintf(stderr, "elc_bus: GET_MASTER_INFO: %s\n",
 			strerror(-ret));
-		cw_ec_close(h);
+		elc_close(h);
 		return 1;
 	}
 
@@ -109,16 +109,16 @@ int main(int argc, char **argv)
 		slaves = calloc(master.slave_count, sizeof(*slaves));
 		if (!slaves) {
 			fprintf(stderr, "elc_bus: out of memory\n");
-			cw_ec_close(h);
+			elc_close(h);
 			return 1;
 		}
-		ret = cw_ec_list_slaves(h, slaves, master.slave_count,
+		ret = elc_list_slaves(h, slaves, master.slave_count,
 					&slave_count);
 		if (ret) {
 			fprintf(stderr, "elc_bus: list slaves: %s\n",
 				strerror(-ret));
 			free(slaves);
-			cw_ec_close(h);
+			elc_close(h);
 			return 1;
 		}
 	}
@@ -133,6 +133,6 @@ int main(int argc, char **argv)
 	}
 
 	free(slaves);
-	cw_ec_close(h);
+	elc_close(h);
 	return 0;
 }

@@ -163,11 +163,11 @@ used when device-node access or kernel module operations are required.
 On 2026-07-24, the probe passed ten consecutive iterations of:
 
 ```text
-insmod cw_ethercat_probe.ko
+insmod elc_ethercat_probe.ko
   -> API magic matched: 0x106
   -> acquired master 0
   -> released master 0
-rmmod cw_ethercat_probe
+rmmod elc_ethercat_probe
 ```
 
 The kernel log contained the expected acquire/release/unload messages for each
@@ -223,7 +223,7 @@ Build and inspect the probe:
 
 ```sh
 make
-modinfo kernel/cw_ethercat_probe.ko
+modinfo kernel/elc_ethercat_probe.ko
 ```
 
 The privileged lifecycle test is:

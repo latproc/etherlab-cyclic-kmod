@@ -8,10 +8,10 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-module_path=${ELC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
-module_name=cw_ethercat
+module_path=${ELC_MODULE:-"$project_dir/kernel/elc_ethercat.ko"}
+module_name=elc_ethercat
 config=${ELC_CONFIG:-"$project_dir/tools/configs/all34_captured_topology.conf"}
-device=${ELC_DEVICE:-/dev/cw_ethercat0}
+device=${ELC_DEVICE:-/dev/elc_ethercat0}
 period=${ELC_TEST_PERIOD_NS:-1000000}
 start_period=${ELC_TEST_START_PERIOD_NS:-$period}
 duration=${ELC_TEST_DURATION:-30}

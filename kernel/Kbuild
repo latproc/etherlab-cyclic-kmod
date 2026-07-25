@@ -1,6 +1,6 @@
-obj-m += cw_ethercat_probe.o
-obj-m += cw_ethercat.o
-cw_ethercat-y := cw_ethercat_main.o
+obj-m += elc_ethercat_probe.o
+obj-m += elc_ethercat.o
+elc_ethercat-y := elc_ethercat_main.o
 
 ccflags-y += -I$(ETHERLAB_INCLUDE)
 ccflags-y += -I$(src)/../include

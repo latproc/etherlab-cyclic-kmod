@@ -83,7 +83,7 @@ running the legacy recipe with motion safely inhibited.
 
 ## Kernel upload validation
 
-The new bounded `CW_EC_IOC_SDO_UPLOAD` path read position 29 object
+The new bounded `ELC_IOC_SDO_UPLOAD` path read position 29 object
 `0x6060:00` as byte `03`. The standard EtherLab CLI returned `0x03` for the
 same object. The module then released master 0 cleanly.
 

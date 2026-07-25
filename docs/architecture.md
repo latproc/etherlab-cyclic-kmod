@@ -7,11 +7,11 @@ standalone controller
     |
     | fixed-width versioned ioctls
     v
-/dev/cw_ethercat0
+/dev/elc_ethercat0
     |
     | one exclusive control open
     v
-cw_ethercat.ko
+elc_ethercat.ko
     |
     | validated configuration, domains, cyclic/DC thread,
     | copied images, health and output gate
@@ -19,7 +19,7 @@ cw_ethercat.ko
 EtherLab master 0
 ```
 
-Loading `cw_ethercat.ko` registers the misc character device but does not claim
+Loading `elc_ethercat.ko` registers the misc character device but does not claim
 the EtherLab master. Opening the device claims master 0. Closing the controller
 file releases it. This preserves EtherLab CLI and direct-IOD access whenever no
 kernel-transport controller is attached.
@@ -31,7 +31,7 @@ the cyclic thread, and its wait queues.
 
 ## Ownership
 
-The per-open `cw_ec_file` object owns the acquired `ec_master_t` reference.
+The per-open `elc_file` object owns the acquired `ec_master_t` reference.
 Construction begins:
 
 ```text
@@ -167,7 +167,7 @@ discovery reports only the timing and wait features that are implemented.
 
 ## API 0.14 output-authority lease
 
-Output state is owned by a `cw_ec_output_authority` associated with configured
+Output state is owned by a `elc_output_authority` associated with configured
 domains. API 0.14 exposes the existing all-domain compatibility authority; the
 same internal boundary is intended for future delegated domain fds.
 

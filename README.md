@@ -62,7 +62,7 @@ timeline. This delegation is planned, not part of API 0.14.
                               |
                     versioned ioctl UAPI
                               |
-                     /dev/cw_ethercat0
+                     /dev/elc_ethercat0
                               |
        validation / domains / output gates / cyclic task
                               |
@@ -133,8 +133,8 @@ make -j6
 sudo make install
 ```
 
-`make install` installs `cw_ethercat.ko` and the minimal acquisition probe
-under `/lib/modules/$(uname -r)/extra/cw_ethercat/` and runs `depmod`.
+`make install` installs `elc_ethercat.ko` and the minimal acquisition probe
+under `/lib/modules/$(uname -r)/extra/elc_ethercat/` and runs `depmod`.
 User-space tools remain in `tools/`.
 
 For a manually built EtherLab tree, provide the matching artifacts explicitly:
@@ -214,7 +214,7 @@ Start with the [developer guide](docs/developer-guide.md). It explains:
 
 The normative ABI description is [docs/uapi.md](docs/uapi.md), and the shared
 fixed-width definitions are in
-[`include/cw_ethercat_uapi.h`](include/cw_ethercat_uapi.h). The most useful
+[`include/elc_ethercat_uapi.h`](include/elc_ethercat_uapi.h). The most useful
 reference implementations are the generic **`elc_*` tools** (EtherLab Cyclic;
 not Clockwork-specific):
 
@@ -226,8 +226,8 @@ not Clockwork-specific):
   hostile-input expectations.
 
 Harness environment variables use the same `ELC_` prefix (for example
-`ELC_MOTION_INHIBITED`). Kernel UAPI symbols and `/dev/cw_ethercat0` still use
-the historical `cw_ec` / `cw_ethercat` names for ABI stability.
+`ELC_MOTION_INHIBITED`). The kernel module is `elc_ethercat`, the control
+device is `/dev/elc_ethercat0`, and the userspace library is `libelcethercat`.
 
 Applications should parse ESI XML and implement device/machine policy outside
 the kernel. They must use returned entry offsets and explicit generations,
@@ -240,7 +240,7 @@ layout is stable across a changed configuration.
   cycle timeline.
 - [UAPI](docs/uapi.md) — ioctl structures, validation, and exact semantics.
 - [Developer guide](docs/developer-guide.md) — implementing a new controller.
-- [libcwethercat](docs/libcwethercat.md) — generic userspace library API
+- [libelcethercat](docs/libelcethercat.md) — generic userspace library API
   (`make lib` / `make install-lib`) and optional consumer integration notes.
 - [Operator guide](docs/operator-guide.md) — safe build and test sequence.
 - [Testing](docs/testing.md) — test matrix and recorded evidence.

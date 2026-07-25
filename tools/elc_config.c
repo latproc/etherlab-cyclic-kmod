@@ -13,9 +13,9 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "cw_ethercat.h"
+#include "elc_ethercat.h"
 
-/* Map libcwethercat -errno returns to ioctl-style (-1 + errno). */
+/* Map libelcethercat -errno returns to ioctl-style (-1 + errno). */
 static int lib_ret(int ret)
 {
 	if (ret == 0)
@@ -24,9 +24,9 @@ static int lib_ret(int ret)
 	return -1;
 }
 
-static int open_handle(const char *device, cw_ec_handle **out)
+static int open_handle(const char *device, elc_handle **out)
 {
-	int ret = cw_ec_open(device, out);
+	int ret = elc_open(device, out);
 
 	if (ret) {
 		errno = -ret;
@@ -136,14 +136,14 @@ enum record_kind {
 struct record {
 	enum record_kind kind;
 	union {
-		struct cw_ec_config_slave slave;
-		struct cw_ec_config_sync sync;
-		struct cw_ec_config_pdo pdo;
-		struct cw_ec_config_entry entry;
-		struct cw_ec_config_dc dc;
-		struct cw_ec_config_dc_policy dc_policy;
-		struct cw_ec_config_domain domain;
-		struct cw_ec_config_domain_assignment domain_assignment;
+		struct elc_config_slave slave;
+		struct elc_config_sync sync;
+		struct elc_config_pdo pdo;
+		struct elc_config_entry entry;
+		struct elc_config_dc dc;
+		struct elc_config_dc_policy dc_policy;
+		struct elc_config_domain domain;
+		struct elc_config_domain_assignment domain_assignment;
 	};
 };
 
@@ -158,14 +158,14 @@ struct counts {
 };
 
 struct io_entry {
-	struct cw_ec_config_entry cfg;
-	struct cw_ec_entry_offset offset;
+	struct elc_config_entry cfg;
+	struct elc_entry_offset offset;
 	uint8_t direction;
 };
 
 struct io_metadata {
-	struct cw_ec_config_sync *syncs;
-	struct cw_ec_config_pdo *pdos;
+	struct elc_config_sync *syncs;
+	struct elc_config_pdo *pdos;
 	struct io_entry *entries;
 	uint32_t sync_count;
 	uint32_t pdo_count;
@@ -196,10 +196,10 @@ static void usage(const char *program)
 		program, program, program, program, program, program, program);
 }
 
-static int expect_ioctl_errno(cw_ec_handle *h, unsigned long request,
+static int expect_ioctl_errno(elc_handle *h, unsigned long request,
 			      void *argument, int expected, const char *name)
 {
-	int fd = cw_ec_fd(h);
+	int fd = elc_fd(h);
 
 	if (fd < 0) {
 		fprintf(stderr, "elc_config: active %s: bad handle\n", name);
@@ -266,9 +266,9 @@ static int split_line(char *line, char *tokens[TOKEN_MAX])
 static int parse_direction(const char *text, uint8_t *direction)
 {
 	if (!strcmp(text, "output"))
-		*direction = CW_EC_DIR_OUTPUT;
+		*direction = ELC_DIR_OUTPUT;
 	else if (!strcmp(text, "input"))
-		*direction = CW_EC_DIR_INPUT;
+		*direction = ELC_DIR_INPUT;
 	else
 		return -1;
 	return 0;
@@ -277,11 +277,11 @@ static int parse_direction(const char *text, uint8_t *direction)
 static int parse_watchdog(const char *text, uint8_t *watchdog)
 {
 	if (!strcmp(text, "default"))
-		*watchdog = CW_EC_WD_DEFAULT;
+		*watchdog = ELC_WD_DEFAULT;
 	else if (!strcmp(text, "enable"))
-		*watchdog = CW_EC_WD_ENABLE;
+		*watchdog = ELC_WD_ENABLE;
 	else if (!strcmp(text, "disable"))
-		*watchdog = CW_EC_WD_DISABLE;
+		*watchdog = ELC_WD_DISABLE;
 	else
 		return -1;
 	return 0;
@@ -301,7 +301,7 @@ static int parse_record(char *line, struct record *record)
 	if (!strcmp(tokens[0], "slave") && count == 7) {
 		record->kind = RECORD_SLAVE;
 		record->slave.struct_size = sizeof(record->slave);
-		record->slave.api_major = CW_EC_API_VERSION_MAJOR;
+		record->slave.api_major = ELC_API_VERSION_MAJOR;
 		if (parse_u64(tokens[1], UINT32_MAX, &value))
 			return -1;
 		record->slave.config_id = value;
@@ -326,7 +326,7 @@ static int parse_record(char *line, struct record *record)
 	if (!strcmp(tokens[0], "domain") && count == 2) {
 		record->kind = RECORD_DOMAIN;
 		record->domain.struct_size = sizeof(record->domain);
-		record->domain.api_major = CW_EC_API_VERSION_MAJOR;
+		record->domain.api_major = ELC_API_VERSION_MAJOR;
 		if (parse_u64(tokens[1], UINT32_MAX, &value))
 			return -1;
 		record->domain.config_id = value;
@@ -338,7 +338,7 @@ static int parse_record(char *line, struct record *record)
 		record->domain_assignment.struct_size =
 			sizeof(record->domain_assignment);
 		record->domain_assignment.api_major =
-			CW_EC_API_VERSION_MAJOR;
+			ELC_API_VERSION_MAJOR;
 		if (parse_u64(tokens[1], UINT32_MAX, &value))
 			return -1;
 		record->domain_assignment.config_id = value;
@@ -354,7 +354,7 @@ static int parse_record(char *line, struct record *record)
 	if (!strcmp(tokens[0], "sync") && count == 6) {
 		record->kind = RECORD_SYNC;
 		record->sync.struct_size = sizeof(record->sync);
-		record->sync.api_major = CW_EC_API_VERSION_MAJOR;
+		record->sync.api_major = ELC_API_VERSION_MAJOR;
 		if (parse_u64(tokens[1], UINT32_MAX, &value))
 			return -1;
 		record->sync.config_id = value;
@@ -373,7 +373,7 @@ static int parse_record(char *line, struct record *record)
 	if (!strcmp(tokens[0], "pdo") && count == 4) {
 		record->kind = RECORD_PDO;
 		record->pdo.struct_size = sizeof(record->pdo);
-		record->pdo.api_major = CW_EC_API_VERSION_MAJOR;
+		record->pdo.api_major = ELC_API_VERSION_MAJOR;
 		if (parse_u64(tokens[1], UINT32_MAX, &value))
 			return -1;
 		record->pdo.config_id = value;
@@ -389,7 +389,7 @@ static int parse_record(char *line, struct record *record)
 	if (!strcmp(tokens[0], "entry") && count == 7) {
 		record->kind = RECORD_ENTRY;
 		record->entry.struct_size = sizeof(record->entry);
-		record->entry.api_major = CW_EC_API_VERSION_MAJOR;
+		record->entry.api_major = ELC_API_VERSION_MAJOR;
 		if (parse_u64(tokens[1], UINT32_MAX, &value))
 			return -1;
 		record->entry.config_id = value;
@@ -414,7 +414,7 @@ static int parse_record(char *line, struct record *record)
 	if (!strcmp(tokens[0], "dc") && count == 8) {
 		record->kind = RECORD_DC;
 		record->dc.struct_size = sizeof(record->dc);
-		record->dc.api_major = CW_EC_API_VERSION_MAJOR;
+		record->dc.api_major = ELC_API_VERSION_MAJOR;
 		if (parse_u64(tokens[1], UINT32_MAX, &value))
 			return -1;
 		record->dc.config_id = value;
@@ -440,16 +440,16 @@ static int parse_record(char *line, struct record *record)
 	if (!strcmp(tokens[0], "dc_policy") && count == 3) {
 		record->kind = RECORD_DC_POLICY;
 		record->dc_policy.struct_size = sizeof(record->dc_policy);
-		record->dc_policy.api_major = CW_EC_API_VERSION_MAJOR;
+		record->dc_policy.api_major = ELC_API_VERSION_MAJOR;
 		if (!strcmp(tokens[1], "disabled"))
 			record->dc_policy.reference_mode =
-				CW_EC_DC_REFERENCE_DISABLED;
+				ELC_DC_REFERENCE_DISABLED;
 		else if (!strcmp(tokens[1], "auto"))
 			record->dc_policy.reference_mode =
-				CW_EC_DC_REFERENCE_AUTO;
+				ELC_DC_REFERENCE_AUTO;
 		else if (!strcmp(tokens[1], "explicit"))
 			record->dc_policy.reference_mode =
-				CW_EC_DC_REFERENCE_EXPLICIT;
+				ELC_DC_REFERENCE_EXPLICIT;
 		else
 			return -1;
 		if (parse_u64(tokens[2], UINT32_MAX, &value))
@@ -530,13 +530,13 @@ static int scan_config(const char *path, struct counts *counts)
 	}
 	fclose(file);
 	if (!counts->slaves || !counts->entries ||
-	    counts->slaves > CW_EC_CONFIG_SLAVE_MAX ||
-	    counts->syncs > CW_EC_CONFIG_SYNC_MAX ||
-	    counts->pdos > CW_EC_CONFIG_PDO_MAX ||
-	    counts->entries > CW_EC_CONFIG_ENTRY_MAX ||
-	    counts->dcs > CW_EC_CONFIG_DC_MAX ||
-	    counts->domains > CW_EC_CONFIG_DOMAIN_MAX ||
-	    counts->domain_assignments > CW_EC_CONFIG_SLAVE_MAX) {
+	    counts->slaves > ELC_CONFIG_SLAVE_MAX ||
+	    counts->syncs > ELC_CONFIG_SYNC_MAX ||
+	    counts->pdos > ELC_CONFIG_PDO_MAX ||
+	    counts->entries > ELC_CONFIG_ENTRY_MAX ||
+	    counts->dcs > ELC_CONFIG_DC_MAX ||
+	    counts->domains > ELC_CONFIG_DOMAIN_MAX ||
+	    counts->domain_assignments > ELC_CONFIG_SLAVE_MAX) {
 		fprintf(stderr, "elc_config: invalid or excessive object counts\n");
 		return -1;
 	}
@@ -596,8 +596,8 @@ static int load_io_metadata(const char *path, const struct counts *counts,
 	}
 	fclose(file);
 	for (i = 0; i < metadata->entry_count; i++) {
-		struct cw_ec_config_pdo *pdo = NULL;
-		struct cw_ec_config_sync *sync = NULL;
+		struct elc_config_pdo *pdo = NULL;
+		struct elc_config_sync *sync = NULL;
 		uint32_t j;
 
 		for (j = 0; j < metadata->pdo_count; j++) {
@@ -639,7 +639,7 @@ static struct io_entry *find_io_entry(struct io_metadata *metadata,
 }
 
 static uint64_t image_get_value(const uint8_t *image,
-				const struct cw_ec_entry_offset *offset)
+				const struct elc_entry_offset *offset)
 {
 	uint64_t value = 0;
 	uint32_t first_bit = offset->global_offset * 8U +
@@ -654,7 +654,7 @@ static uint64_t image_get_value(const uint8_t *image,
 }
 
 static void image_set_value(uint8_t *image, uint8_t *mask,
-			    const struct cw_ec_entry_offset *offset,
+			    const struct elc_entry_offset *offset,
 			    uint64_t value)
 {
 	uint32_t first_bit = offset->global_offset * 8U +
@@ -673,32 +673,32 @@ static void image_set_value(uint8_t *image, uint8_t *mask,
 	}
 }
 
-static int submit_record(cw_ec_handle *h, const struct record *record)
+static int submit_record(elc_handle *h, const struct record *record)
 {
 	switch (record->kind) {
 	case RECORD_SLAVE:
-		return lib_ret(cw_ec_config_add_slave(h, &record->slave));
+		return lib_ret(elc_config_add_slave(h, &record->slave));
 	case RECORD_SYNC:
-		return lib_ret(cw_ec_config_add_sync(h, &record->sync));
+		return lib_ret(elc_config_add_sync(h, &record->sync));
 	case RECORD_PDO:
-		return lib_ret(cw_ec_config_add_pdo(h, &record->pdo));
+		return lib_ret(elc_config_add_pdo(h, &record->pdo));
 	case RECORD_ENTRY:
-		return lib_ret(cw_ec_config_add_entry(h, &record->entry));
+		return lib_ret(elc_config_add_entry(h, &record->entry));
 	case RECORD_DC:
-		return lib_ret(cw_ec_config_add_dc(h, &record->dc));
+		return lib_ret(elc_config_add_dc(h, &record->dc));
 	case RECORD_DC_POLICY:
-		return lib_ret(cw_ec_config_add_dc_policy(h, &record->dc_policy));
+		return lib_ret(elc_config_add_dc_policy(h, &record->dc_policy));
 	case RECORD_DOMAIN:
-		return lib_ret(cw_ec_config_add_domain(h, &record->domain));
+		return lib_ret(elc_config_add_domain(h, &record->domain));
 	case RECORD_DOMAIN_ASSIGNMENT:
-		return lib_ret(cw_ec_config_add_domain_assignment(
+		return lib_ret(elc_config_add_domain_assignment(
 			h, &record->domain_assignment));
 	default:
 		return 0;
 	}
 }
 
-static int submit_config(cw_ec_handle *h, const char *path)
+static int submit_config(elc_handle *h, const char *path)
 {
 	char line[LINE_MAX_BYTES];
 	unsigned int line_number = 0;
@@ -723,7 +723,7 @@ static int submit_config(cw_ec_handle *h, const char *path)
 	return 0;
 }
 
-static int print_offsets(cw_ec_handle *h, const char *path)
+static int print_offsets(elc_handle *h, const char *path)
 {
 	char line[LINE_MAX_BYTES];
 	struct record record;
@@ -732,16 +732,16 @@ static int print_offsets(cw_ec_handle *h, const char *path)
 	if (!file)
 		return -1;
 	while (fgets(line, sizeof(line), file)) {
-		struct cw_ec_entry_offset offset;
+		struct elc_entry_offset offset;
 
 		if (parse_record(line, &record) <= 0 ||
 		    record.kind != RECORD_ENTRY || !record.entry.entry_id)
 			continue;
 		memset(&offset, 0, sizeof(offset));
 		offset.struct_size = sizeof(offset);
-		offset.api_major = CW_EC_API_VERSION_MAJOR;
+		offset.api_major = ELC_API_VERSION_MAJOR;
 		offset.entry_id = record.entry.entry_id;
-		if (lib_ret(cw_ec_get_entry_offset(h, &offset)) < 0) {
+		if (lib_ret(elc_get_entry_offset(h, &offset)) < 0) {
 			fprintf(stderr, "entry %" PRIu32 ": offset lookup: %s\n",
 				offset.entry_id, strerror(errno));
 			fclose(file);
@@ -758,34 +758,34 @@ static int print_offsets(cw_ec_handle *h, const char *path)
 	return 0;
 }
 
-static int configure_handle(cw_ec_handle *h, const char *path,
-			struct cw_ec_config_validate *validated)
+static int configure_handle(elc_handle *h, const char *path,
+			struct elc_config_validate *validated)
 {
-	struct cw_ec_config_begin begin = {
+	struct elc_config_begin begin = {
 		.struct_size = sizeof(begin),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_config_validate validate = {
+	struct elc_config_validate validate = {
 		.struct_size = sizeof(validate),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_config_apply apply = {
+	struct elc_config_apply apply = {
 		.struct_size = sizeof(apply),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_domain_create domain = {
+	struct elc_domain_create domain = {
 		.struct_size = sizeof(domain),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	if (lib_ret(cw_ec_config_begin(h)) < 0 ||
+	if (lib_ret(elc_config_begin(h)) < 0 ||
 	    submit_config(h, path) < 0)
 		return -1;
-	if (lib_ret(cw_ec_config_validate(h, &validate)) < 0) {
+	if (lib_ret(elc_config_validate(h, &validate)) < 0) {
 		fprintf(stderr, "elc_config: validation failed: %s\n",
 			strerror(errno));
 		return -1;
 	}
-	if (lib_ret(cw_ec_config_apply(h, &apply)) < 0) {
+	if (lib_ret(elc_config_apply(h, &apply)) < 0) {
 		fprintf(stderr,
 			"elc_config: apply failed: %s; kind=%u id=%" PRIu32
 			"\n",
@@ -793,7 +793,7 @@ static int configure_handle(cw_ec_handle *h, const char *path,
 			apply.failed_config_id);
 		return -1;
 	}
-	if (lib_ret(cw_ec_domain_create(h, &domain)) < 0) {
+	if (lib_ret(elc_domain_create(h, &domain)) < 0) {
 		fprintf(stderr,
 			"elc_config: domain registration failed: %s; id=%"
 			PRIu32 "\n",
@@ -856,7 +856,7 @@ static int entry_is_single_bit_output(const char *path, uint32_t entry_id)
 		if (record.kind == RECORD_SYNC &&
 		    record.sync.config_id == sync_id) {
 			if (result ||
-			    record.sync.direction != CW_EC_DIR_OUTPUT)
+			    record.sync.direction != ELC_DIR_OUTPUT)
 				goto out;
 			result = 1;
 		}
@@ -873,43 +873,43 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 		       uint32_t entry_id, uint32_t pulse_ms,
 		       const char *device)
 {
-	struct cw_ec_config_validate validate;
-	struct cw_ec_cycle_activate activate = {
+	struct elc_config_validate validate;
+	struct elc_cycle_activate activate = {
 		.struct_size = sizeof(activate),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.cycle_period_ns = period_ns,
 	};
-	struct cw_ec_entry_offset offset = {
+	struct elc_entry_offset offset = {
 		.struct_size = sizeof(offset),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.entry_id = entry_id,
 	};
-	struct cw_ec_io_status io_status = {
+	struct elc_io_status io_status = {
 		.struct_size = sizeof(io_status),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_output_publish output = {
+	struct elc_output_publish output = {
 		.struct_size = sizeof(output),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_output_arm arm = {
+	struct elc_output_arm arm = {
 		.struct_size = sizeof(arm),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_output_disarm disarm = {
+	struct elc_output_disarm disarm = {
 		.struct_size = sizeof(disarm),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_cycle_deactivate deactivate = {
+	struct elc_cycle_deactivate deactivate = {
 		.struct_size = sizeof(deactivate),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
 	uint8_t *data = NULL;
 	uint8_t *mask = NULL;
 	bool active = false;
 	bool armed = false;
 	unsigned int attempts;
-	cw_ec_handle *h = NULL;
+	elc_handle *h = NULL;
 	int ret = 1;
 
 	if (!getenv("ELC_NONZERO_OUTPUT_AUTHORIZED") ||
@@ -932,7 +932,7 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 	}
 	if (configure_handle(h, path, &validate))
 		goto out;
-	if (lib_ret(cw_ec_get_entry_offset(h, &offset)) < 0) {
+	if (lib_ret(elc_get_entry_offset(h, &offset)) < 0) {
 		fprintf(stderr, "elc_config: entry %" PRIu32
 			" offset lookup failed: %s\n", entry_id,
 			strerror(errno));
@@ -946,7 +946,7 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 		fprintf(stderr, "elc_config: invalid pulse bit position\n");
 		goto out;
 	}
-	if (lib_ret(cw_ec_cycle_activate(h, activate.cycle_period_ns, activate.flags, &activate)) < 0) {
+	if (lib_ret(elc_cycle_activate(h, activate.cycle_period_ns, activate.flags, &activate)) < 0) {
 		fprintf(stderr, "elc_config: activation failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -954,8 +954,8 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 	active = true;
 	for (attempts = 0; attempts < 100; attempts++) {
 		io_status.struct_size = sizeof(io_status);
-		io_status.api_major = CW_EC_API_VERSION_MAJOR;
-		if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
+		io_status.api_major = ELC_API_VERSION_MAJOR;
+		if (lib_ret(elc_get_io_status(h, &io_status)) < 0) {
 			fprintf(stderr, "elc_config: IO status failed: %s\n",
 				strerror(errno));
 			goto out;
@@ -991,22 +991,22 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 	output.mask_ptr = (uintptr_t)mask;
 	output.data_size = activate.domain_size;
 	output.config_generation = io_status.config_generation;
-	if (lib_ret(cw_ec_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
+	if (lib_ret(elc_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
 		fprintf(stderr, "elc_config: pulse publication failed: %s\n",
 			strerror(errno));
 		goto out;
 	}
 	arm.config_generation = output.config_generation;
 	arm.output_sequence = output.output_sequence;
-	if (lib_ret(cw_ec_arm_output(h, &arm)) < 0) {
+	if (lib_ret(elc_arm_output(h, &arm)) < 0) {
 		fprintf(stderr, "elc_config: pulse arm failed: %s\n",
 			strerror(errno));
 		goto out;
 	}
 	armed = true;
 	io_status.struct_size = sizeof(io_status);
-	io_status.api_major = CW_EC_API_VERSION_MAJOR;
-	if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0 ||
+	io_status.api_major = ELC_API_VERSION_MAJOR;
+	if (lib_ret(elc_get_io_status(h, &io_status)) < 0 ||
 	    !io_status.outputs_armed) {
 		fprintf(stderr,
 			"elc_config: pulse was not reported armed\n");
@@ -1018,22 +1018,22 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 	fflush(stdout);
 	usleep((useconds_t)pulse_ms * 1000U);
 	disarm.config_generation = output.config_generation;
-	if (lib_ret(cw_ec_disarm_output(h, &disarm)) < 0) {
+	if (lib_ret(elc_disarm_output(h, &disarm)) < 0) {
 		fprintf(stderr, "elc_config: pulse disarm failed: %s\n",
 			strerror(errno));
 		goto out;
 	}
 	armed = false;
 	io_status.struct_size = sizeof(io_status);
-	io_status.api_major = CW_EC_API_VERSION_MAJOR;
-	if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0 ||
+	io_status.api_major = ELC_API_VERSION_MAJOR;
+	if (lib_ret(elc_get_io_status(h, &io_status)) < 0 ||
 	    io_status.outputs_armed || !io_status.rearm_required) {
 		fprintf(stderr,
 			"elc_config: pulse disarm state was not latched\n");
 		goto out;
 	}
 	printf("PULSE: synchronously disarmed; output returned to zero\n");
-	if (lib_ret(cw_ec_cycle_deactivate(h, &deactivate)) < 0) {
+	if (lib_ret(elc_cycle_deactivate(h, &deactivate)) < 0) {
 		fprintf(stderr, "elc_config: deactivation failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -1043,7 +1043,7 @@ static int pulse_entry(const char *path, uint32_t period_ns,
 out:
 	if (armed) {
 		disarm.config_generation = output.config_generation;
-		if (lib_ret(cw_ec_disarm_output(h, &disarm)) < 0)
+		if (lib_ret(elc_disarm_output(h, &disarm)) < 0)
 			fprintf(stderr,
 				"elc_config: cleanup disarm failed: %s\n",
 				strerror(errno));
@@ -1052,11 +1052,11 @@ out:
 		fprintf(stderr, "elc_config: closing active pulse session for cleanup\n");
 	free(mask);
 	free(data);
-	cw_ec_close(h);
+	elc_close(h);
 	return ret;
 }
 
-static int print_slave_statuses(cw_ec_handle *h, const char *path,
+static int print_slave_statuses(elc_handle *h, const char *path,
 				uint64_t generation)
 {
 	FILE *stream;
@@ -1072,9 +1072,9 @@ static int print_slave_statuses(cw_ec_handle *h, const char *path,
 		return -1;
 	}
 	while (getline(&line, &capacity, stream) >= 0) {
-		struct cw_ec_config_slave_status status = {
+		struct elc_config_slave_status status = {
 			.struct_size = sizeof(status),
-			.api_major = CW_EC_API_VERSION_MAJOR,
+			.api_major = ELC_API_VERSION_MAJOR,
 			.config_generation = generation,
 		};
 		struct record record;
@@ -1088,7 +1088,7 @@ static int print_slave_statuses(cw_ec_handle *h, const char *path,
 		if (record.kind != RECORD_SLAVE)
 			continue;
 		status.config_id = record.slave.config_id;
-		if (lib_ret(cw_ec_get_config_slave_status(h, &status)) < 0) {
+		if (lib_ret(elc_get_config_slave_status(h, &status)) < 0) {
 			fprintf(stderr,
 				"elc_config: slave status %" PRIu32
 				" failed: %s\n",
@@ -1115,7 +1115,7 @@ out:
 	return ret;
 }
 
-static int print_domain_statuses(cw_ec_handle *h, const char *path,
+static int print_domain_statuses(elc_handle *h, const char *path,
 				 uint64_t generation)
 {
 	FILE *stream;
@@ -1127,9 +1127,9 @@ static int print_domain_statuses(cw_ec_handle *h, const char *path,
 	if (!stream)
 		return -1;
 	while (getline(&line, &capacity, stream) >= 0) {
-		struct cw_ec_domain_status status = {
+		struct elc_domain_status status = {
 			.struct_size = sizeof(status),
-			.api_major = CW_EC_API_VERSION_MAJOR,
+			.api_major = ELC_API_VERSION_MAJOR,
 			.config_generation = generation,
 		};
 		struct record record;
@@ -1139,7 +1139,7 @@ static int print_domain_statuses(cw_ec_handle *h, const char *path,
 		if (record.kind != RECORD_DOMAIN)
 			continue;
 		status.domain_config_id = record.domain.config_id;
-		if (lib_ret(cw_ec_get_domain_status(h, &status)) < 0) {
+		if (lib_ret(elc_get_domain_status(h, &status)) < 0) {
 			fprintf(stderr,
 				"elc_config: domain status %" PRIu32
 				" failed: %s\n",
@@ -1193,8 +1193,8 @@ static int first_domain_id(const char *path, uint32_t *domain_id)
 
 static int prepare(const char *path, const char *device)
 {
-	struct cw_ec_config_validate validate;
-	cw_ec_handle *h = NULL;
+	struct elc_config_validate validate;
+	elc_handle *h = NULL;
 	int ret = 1;
 
 	if (open_handle(device, &h) < 0) {
@@ -1210,7 +1210,7 @@ static int prepare(const char *path, const char *device)
 	       validate.entry_count);
 	ret = 0;
 out:
-	cw_ec_close(h);
+	elc_close(h);
 	return ret;
 }
 
@@ -1221,74 +1221,74 @@ static int cycle(const char *path, uint32_t period_ns,
 		 bool exchange_each_wake, uint32_t history_depth,
 		 const char *device)
 {
-	struct cw_ec_config_validate validate;
-	struct cw_ec_cycle_activate activate = {
+	struct elc_config_validate validate;
+	struct elc_cycle_activate activate = {
 		.struct_size = sizeof(activate),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.cycle_period_ns = period_ns,
 	};
-	struct cw_ec_cycle_status status = {
+	struct elc_cycle_status status = {
 		.struct_size = sizeof(status),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_cycle_info cycle_info = {
+	struct elc_cycle_info cycle_info = {
 		.struct_size = sizeof(cycle_info),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_cycle_wait cycle_wait = {
+	struct elc_cycle_wait cycle_wait = {
 		.struct_size = sizeof(cycle_wait),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.timeout_ms = 1000,
 	};
-	struct cw_ec_dc_status dc_status = {
+	struct elc_dc_status dc_status = {
 		.struct_size = sizeof(dc_status),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_io_status io_status = {
+	struct elc_io_status io_status = {
 		.struct_size = sizeof(io_status),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_input_snapshot snapshot = {
+	struct elc_input_snapshot snapshot = {
 		.struct_size = sizeof(snapshot),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_output_publish output = {
+	struct elc_output_publish output = {
 		.struct_size = sizeof(output),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_output_arm arm = {
+	struct elc_output_arm arm = {
 		.struct_size = sizeof(arm),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_output_disarm disarm = {
+	struct elc_output_disarm disarm = {
 		.struct_size = sizeof(disarm),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_output_lease_config lease_config = {
+	struct elc_output_lease_config lease_config = {
 		.struct_size = sizeof(lease_config),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.cycle_budget = 100,
 	};
-	struct cw_ec_output_lease_renew lease_renew = {
+	struct elc_output_lease_renew lease_renew = {
 		.struct_size = sizeof(lease_renew),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_output_lease_status lease_status = {
+	struct elc_output_lease_status lease_status = {
 		.struct_size = sizeof(lease_status),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_input_history_config history_config = {
+	struct elc_input_history_config history_config = {
 		.struct_size = sizeof(history_config),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
 	uint8_t *snapshot_data = NULL;
 	uint8_t *output_data = NULL;
 	uint8_t *output_mask = NULL;
-	struct cw_ec_cycle_deactivate deactivate = {
+	struct elc_cycle_deactivate deactivate = {
 		.struct_size = sizeof(deactivate),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	cw_ec_handle *h = NULL;
+	elc_handle *h = NULL;
 	bool active = false;
 	bool held_armed = false;
 	int ret = 1;
@@ -1302,8 +1302,8 @@ static int cycle(const char *path, uint32_t period_ns,
 		goto out;
 	if (history_depth) {
 		io_status.struct_size = sizeof(io_status);
-		io_status.api_major = CW_EC_API_VERSION_MAJOR;
-		if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
+		io_status.api_major = ELC_API_VERSION_MAJOR;
+		if (lib_ret(elc_get_io_status(h, &io_status)) < 0) {
 			fprintf(stderr,
 				"elc_config: pre-activation history status failed: %s\n",
 				strerror(errno));
@@ -1312,7 +1312,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		history_config.config_generation =
 			io_status.config_generation;
 		history_config.depth = history_depth;
-		if (lib_ret(cw_ec_configure_input_history(h, &history_config)) < 0) {
+		if (lib_ret(elc_configure_input_history(h, &history_config)) < 0) {
 			fprintf(stderr,
 				"elc_config: input history configuration failed: %s\n",
 				strerror(errno));
@@ -1321,8 +1321,8 @@ static int cycle(const char *path, uint32_t period_ns,
 	}
 	if (lease_zero) {
 		io_status.struct_size = sizeof(io_status);
-		io_status.api_major = CW_EC_API_VERSION_MAJOR;
-		if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
+		io_status.api_major = ELC_API_VERSION_MAJOR;
+		if (lib_ret(elc_get_io_status(h, &io_status)) < 0) {
 			fprintf(stderr,
 				"elc_config: pre-activation IO status failed: %s\n",
 				strerror(errno));
@@ -1330,14 +1330,14 @@ static int cycle(const char *path, uint32_t period_ns,
 		}
 		lease_config.config_generation =
 			io_status.config_generation;
-		if (lib_ret(cw_ec_configure_output_lease(h, &lease_config)) < 0) {
+		if (lib_ret(elc_configure_output_lease(h, &lease_config)) < 0) {
 			fprintf(stderr,
 				"elc_config: output lease configuration failed: %s\n",
 				strerror(errno));
 			goto out;
 		}
 	}
-	if (lib_ret(cw_ec_cycle_activate(h, activate.cycle_period_ns, activate.flags, &activate)) < 0) {
+	if (lib_ret(elc_cycle_activate(h, activate.cycle_period_ns, activate.flags, &activate)) < 0) {
 		fprintf(stderr, "elc_config: activation failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -1346,19 +1346,19 @@ static int cycle(const char *path, uint32_t period_ns,
 	printf("activated zero-output domain: size=%" PRIu32
 	       " period=%" PRIu32 " ns for %u second(s)\n",
 	       activate.domain_size, period_ns, duration_seconds);
-	if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
+	if (lib_ret(elc_get_io_status(h, &io_status)) < 0) {
 		fprintf(stderr, "elc_config: initial IO status failed: %s\n",
 			strerror(errno));
 		goto out;
 	}
-	if (lib_ret(cw_ec_cycle_info(h, &cycle_info)) < 0) {
+	if (lib_ret(elc_cycle_info(h, &cycle_info)) < 0) {
 		fprintf(stderr, "elc_config: initial cycle info failed: %s\n",
 			strerror(errno));
 		goto out;
 	}
 	cycle_wait.config_generation = io_status.config_generation;
 	cycle_wait.after_cycle_index = cycle_info.cycle_index;
-	if (lib_ret(cw_ec_cycle_wait(h, &cycle_wait)) < 0) {
+	if (lib_ret(elc_cycle_wait(h, &cycle_wait)) < 0) {
 		fprintf(stderr, "elc_config: wait for cycle failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -1394,8 +1394,8 @@ static int cycle(const char *path, uint32_t period_ns,
 
 		for (attempts = 0; attempts < 100; attempts++) {
 			io_status.struct_size = sizeof(io_status);
-			io_status.api_major = CW_EC_API_VERSION_MAJOR;
-			if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
+			io_status.api_major = ELC_API_VERSION_MAJOR;
+			if (lib_ret(elc_get_io_status(h, &io_status)) < 0) {
 				fprintf(stderr,
 					"elc_config: IO status failed: %s\n",
 					strerror(errno));
@@ -1416,14 +1416,14 @@ static int cycle(const char *path, uint32_t period_ns,
 		}
 	}
 	if (target_period_ns) {
-		struct cw_ec_cycle_period_update update = {
+		struct elc_cycle_period_update update = {
 			.struct_size = sizeof(update),
-			.api_major = CW_EC_API_VERSION_MAJOR,
+			.api_major = ELC_API_VERSION_MAJOR,
 			.config_generation = io_status.config_generation,
 			.cycle_period_ns = target_period_ns,
 		};
 
-		if (lib_ret(cw_ec_cycle_set_period(h, &update)) < 0) {
+		if (lib_ret(elc_cycle_set_period(h, &update)) < 0) {
 			fprintf(stderr,
 				"elc_config: cycle period update failed: %s\n",
 				strerror(errno));
@@ -1459,7 +1459,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		output.mask_ptr = (uintptr_t)output_mask;
 		output.data_size = activate.domain_size;
 		output.config_generation = io_status.config_generation;
-		if (lib_ret(cw_ec_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
+		if (lib_ret(elc_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
 			fprintf(stderr,
 				"elc_config: zero hold publication failed: %s\n",
 				strerror(errno));
@@ -1467,7 +1467,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		}
 		arm.config_generation = output.config_generation;
 		arm.output_sequence = output.output_sequence;
-		if (lib_ret(cw_ec_arm_output(h, &arm)) < 0) {
+		if (lib_ret(elc_arm_output(h, &arm)) < 0) {
 			fprintf(stderr,
 				"elc_config: zero hold arm failed: %s\n",
 				strerror(errno));
@@ -1483,52 +1483,52 @@ static int cycle(const char *path, uint32_t period_ns,
 	if (active_abi) {
 		uint8_t byte = 0;
 		uint32_t domain_id;
-		struct cw_ec_input_snapshot invalid_snapshot = {
+		struct elc_input_snapshot invalid_snapshot = {
 			.struct_size = sizeof(invalid_snapshot),
-			.api_major = CW_EC_API_VERSION_MAJOR,
+			.api_major = ELC_API_VERSION_MAJOR,
 			.data_ptr = (uintptr_t)&byte,
 			.data_capacity = activate.domain_size - 1U,
 		};
-		struct cw_ec_output_publish invalid_output = {
+		struct elc_output_publish invalid_output = {
 			.struct_size = sizeof(invalid_output),
-			.api_major = CW_EC_API_VERSION_MAJOR,
+			.api_major = ELC_API_VERSION_MAJOR,
 			.data_ptr = (uintptr_t)&byte,
 			.mask_ptr = (uintptr_t)&byte,
 			.data_size = activate.domain_size,
 			.config_generation = io_status.config_generation - 1U,
 		};
-		struct cw_ec_output_arm invalid_arm = {
+		struct elc_output_arm invalid_arm = {
 			.struct_size = sizeof(invalid_arm),
-			.api_major = CW_EC_API_VERSION_MAJOR,
+			.api_major = ELC_API_VERSION_MAJOR,
 			.config_generation = io_status.config_generation - 1U,
 			.output_sequence = 1,
 		};
-		struct cw_ec_output_disarm invalid_disarm = {
+		struct elc_output_disarm invalid_disarm = {
 			.struct_size = sizeof(invalid_disarm),
-			.api_major = CW_EC_API_VERSION_MAJOR,
+			.api_major = ELC_API_VERSION_MAJOR,
 			.config_generation = io_status.config_generation - 1U,
 		};
-		struct cw_ec_cycle_activate duplicate_activate = activate;
-		struct cw_ec_domain_status invalid_domain = {
+		struct elc_cycle_activate duplicate_activate = activate;
+		struct elc_domain_status invalid_domain = {
 			.struct_size = sizeof(invalid_domain),
-			.api_major = CW_EC_API_VERSION_MAJOR,
+			.api_major = ELC_API_VERSION_MAJOR,
 			.config_generation = io_status.config_generation - 1U,
 		};
-		struct cw_ec_cycle_info invalid_cycle_info = {
+		struct elc_cycle_info invalid_cycle_info = {
 			.struct_size = sizeof(invalid_cycle_info),
-			.api_major = CW_EC_API_VERSION_MAJOR,
+			.api_major = ELC_API_VERSION_MAJOR,
 			.reserved1 = 1,
 		};
-		struct cw_ec_cycle_wait invalid_cycle_wait = {
+		struct elc_cycle_wait invalid_cycle_wait = {
 			.struct_size = sizeof(invalid_cycle_wait),
-			.api_major = CW_EC_API_VERSION_MAJOR,
+			.api_major = ELC_API_VERSION_MAJOR,
 			.config_generation =
 				io_status.config_generation - 1U,
 			.timeout_ms = 100,
 		};
-		struct cw_ec_cycle_period_update invalid_period_update = {
+		struct elc_cycle_period_update invalid_period_update = {
 			.struct_size = sizeof(invalid_period_update),
-			.api_major = CW_EC_API_VERSION_MAJOR,
+			.api_major = ELC_API_VERSION_MAJOR,
 			.config_generation =
 				io_status.config_generation - 1U,
 			.cycle_period_ns = period_ns,
@@ -1538,83 +1538,83 @@ static int cycle(const char *path, uint32_t period_ns,
 			goto out;
 		invalid_domain.domain_config_id = domain_id;
 
-		if (expect_ioctl_errno(h, CW_EC_IOC_GET_INPUT_SNAPSHOT,
+		if (expect_ioctl_errno(h, ELC_IOC_GET_INPUT_SNAPSHOT,
 				       &invalid_snapshot, ENOSPC,
 				       "undersized snapshot") ||
 		    invalid_snapshot.data_size != activate.domain_size)
 			goto out;
 		invalid_snapshot.flags = 1;
 		invalid_snapshot.data_capacity = activate.domain_size;
-		if (expect_ioctl_errno(h, CW_EC_IOC_GET_INPUT_SNAPSHOT,
+		if (expect_ioctl_errno(h, ELC_IOC_GET_INPUT_SNAPSHOT,
 				       &invalid_snapshot, EINVAL,
 				       "snapshot flags"))
 			goto out;
-		if (expect_ioctl_errno(h, CW_EC_IOC_PUBLISH_OUTPUT,
+		if (expect_ioctl_errno(h, ELC_IOC_PUBLISH_OUTPUT,
 				       &invalid_output, ESTALE,
 				       "stale output generation"))
 			goto out;
 		invalid_output.config_generation =
 			io_status.config_generation;
 		invalid_output.data_size = activate.domain_size - 1U;
-		if (expect_ioctl_errno(h, CW_EC_IOC_PUBLISH_OUTPUT,
+		if (expect_ioctl_errno(h, ELC_IOC_PUBLISH_OUTPUT,
 				       &invalid_output, EMSGSIZE,
 				       "wrong output size"))
 			goto out;
-		if (expect_ioctl_errno(h, CW_EC_IOC_ARM_OUTPUTS,
+		if (expect_ioctl_errno(h, ELC_IOC_ARM_OUTPUTS,
 				       &invalid_arm, ESTALE,
 				       "stale arm generation"))
 			goto out;
 		invalid_arm.config_generation = io_status.config_generation;
-		if (expect_ioctl_errno(h, CW_EC_IOC_ARM_OUTPUTS,
+		if (expect_ioctl_errno(h, ELC_IOC_ARM_OUTPUTS,
 				       &invalid_arm, ESTALE,
 				       "unknown output sequence"))
 			goto out;
-		if (expect_ioctl_errno(h, CW_EC_IOC_DISARM_OUTPUTS,
+		if (expect_ioctl_errno(h, ELC_IOC_DISARM_OUTPUTS,
 				       &invalid_disarm, ESTALE,
 				       "stale disarm generation"))
 			goto out;
-		if (expect_ioctl_errno(h, CW_EC_IOC_CYCLE_ACTIVATE,
+		if (expect_ioctl_errno(h, ELC_IOC_CYCLE_ACTIVATE,
 				       &duplicate_activate, EBUSY,
 				       "duplicate activation"))
 			goto out;
-		if (expect_ioctl_errno(h, CW_EC_IOC_CYCLE_GET_INFO,
+		if (expect_ioctl_errno(h, ELC_IOC_CYCLE_GET_INFO,
 				       &invalid_cycle_info, EINVAL,
 				       "cycle info reserved fields"))
 			goto out;
-		if (expect_ioctl_errno(h, CW_EC_IOC_CYCLE_WAIT,
+		if (expect_ioctl_errno(h, ELC_IOC_CYCLE_WAIT,
 				       &invalid_cycle_wait, ESTALE,
 				       "stale cycle wait generation"))
 			goto out;
-		if (expect_ioctl_errno(h, CW_EC_IOC_CYCLE_SET_PERIOD,
+		if (expect_ioctl_errno(h, ELC_IOC_CYCLE_SET_PERIOD,
 				       &invalid_period_update, ESTALE,
 				       "stale period-update generation"))
 			goto out;
 		invalid_cycle_wait.config_generation =
 			io_status.config_generation;
 		invalid_cycle_wait.after_cycle_index = UINT64_MAX;
-		if (expect_ioctl_errno(h, CW_EC_IOC_CYCLE_WAIT,
+		if (expect_ioctl_errno(h, ELC_IOC_CYCLE_WAIT,
 				       &invalid_cycle_wait, EINVAL,
 				       "future cycle wait index"))
 			goto out;
-		if (expect_ioctl_errno(h, CW_EC_IOC_GET_DOMAIN_STATUS,
+		if (expect_ioctl_errno(h, ELC_IOC_GET_DOMAIN_STATUS,
 				       &invalid_domain, ESTALE,
 				       "stale domain generation"))
 			goto out;
 		invalid_domain.config_generation =
 			io_status.config_generation;
 		invalid_domain.domain_config_id = 0;
-		if (expect_ioctl_errno(h, CW_EC_IOC_GET_DOMAIN_STATUS,
+		if (expect_ioctl_errno(h, ELC_IOC_GET_DOMAIN_STATUS,
 				       &invalid_domain, ENOENT,
 				       "unknown domain ID"))
 			goto out;
 		invalid_domain.domain_config_id = domain_id;
 		invalid_domain.reserved0[0] = 1;
-		if (expect_ioctl_errno(h, CW_EC_IOC_GET_DOMAIN_STATUS,
+		if (expect_ioctl_errno(h, ELC_IOC_GET_DOMAIN_STATUS,
 				       &invalid_domain, EINVAL,
 				       "domain status reserved fields"))
 			goto out;
 		invalid_domain.reserved0[0] = 0;
-		if (lib_ret(cw_ec_get_domain_status(h, &invalid_domain)) < 0 ||
+		if (lib_ret(elc_get_domain_status(h, &invalid_domain)) < 0 ||
 		    !invalid_domain.active || !invalid_domain.data_valid) {
 			fprintf(stderr,
 				"elc_config: active domain status validation failed: %s\n",
@@ -1624,8 +1624,8 @@ static int cycle(const char *path, uint32_t period_ns,
 		printf("PASS: active hostile-ABI checks left outputs disarmed\n");
 	}
 	if (history_depth) {
-		struct cw_ec_input_history_record *records;
-		struct cw_ec_input_history_batch batch;
+		struct elc_input_history_record *records;
+		struct elc_input_history_batch batch;
 		struct timespec now;
 		uint8_t *history_data;
 		uint64_t cursor = 0;
@@ -1633,9 +1633,9 @@ static int cycle(const char *path, uint32_t period_ns,
 		uint64_t total_dropped = 0;
 		uint64_t end_ns;
 		uint32_t max_records =
-			history_depth < CW_EC_INPUT_HISTORY_BATCH_MAX ?
+			history_depth < ELC_INPUT_HISTORY_BATCH_MAX ?
 				history_depth :
-				CW_EC_INPUT_HISTORY_BATCH_MAX;
+				ELC_INPUT_HISTORY_BATCH_MAX;
 
 		records = calloc(max_records, sizeof(*records));
 		history_data = calloc((size_t)max_records,
@@ -1650,14 +1650,14 @@ static int cycle(const char *path, uint32_t period_ns,
 		}
 		memset(&batch, 0, sizeof(batch));
 		batch.struct_size = sizeof(batch);
-		batch.api_major = CW_EC_API_VERSION_MAJOR;
+		batch.api_major = ELC_API_VERSION_MAJOR;
 		batch.config_generation = io_status.config_generation;
 		batch.records_ptr = (uintptr_t)records;
 		batch.data_ptr = (uintptr_t)history_data;
 		batch.max_records = max_records;
 		batch.data_capacity =
 			max_records * activate.domain_size;
-		if (lib_ret(cw_ec_get_input_history_batch(h, &batch)) < 0) {
+		if (lib_ret(elc_get_input_history_batch(h, &batch)) < 0) {
 			fprintf(stderr,
 				"elc_config: initial history cursor failed: %s\n",
 				strerror(errno));
@@ -1684,7 +1684,7 @@ static int cycle(const char *path, uint32_t period_ns,
 				memset(&batch, 0, sizeof(batch));
 				batch.struct_size = sizeof(batch);
 				batch.api_major =
-					CW_EC_API_VERSION_MAJOR;
+					ELC_API_VERSION_MAJOR;
 				batch.config_generation =
 					io_status.config_generation;
 				batch.after_cycle_index = cursor;
@@ -1695,7 +1695,7 @@ static int cycle(const char *path, uint32_t period_ns,
 				batch.max_records = max_records;
 				batch.data_capacity =
 					max_records * activate.domain_size;
-				if (lib_ret(cw_ec_get_input_history_batch(h, &batch)) < 0) {
+				if (lib_ret(elc_get_input_history_batch(h, &batch)) < 0) {
 					fprintf(stderr,
 						"elc_config: history batch failed: %s\n",
 						strerror(errno));
@@ -1775,8 +1775,8 @@ static int cycle(const char *path, uint32_t period_ns,
 		output.config_generation = io_status.config_generation;
 		memset(&cycle_info, 0, sizeof(cycle_info));
 		cycle_info.struct_size = sizeof(cycle_info);
-		cycle_info.api_major = CW_EC_API_VERSION_MAJOR;
-		if (lib_ret(cw_ec_cycle_info(h, &cycle_info)) < 0) {
+		cycle_info.api_major = ELC_API_VERSION_MAJOR;
+		if (lib_ret(elc_cycle_info(h, &cycle_info)) < 0) {
 			fprintf(stderr,
 				"elc_config: exchange initial cycle info failed: %s\n",
 				strerror(errno));
@@ -1799,7 +1799,7 @@ static int cycle(const char *path, uint32_t period_ns,
 			uint64_t observation_ns;
 			uint64_t now_ns;
 
-			if (lib_ret(cw_ec_cycle_wait(h, &cycle_wait)) < 0) {
+			if (lib_ret(elc_cycle_wait(h, &cycle_wait)) < 0) {
 				fprintf(stderr,
 					"elc_config: exchange cycle wait failed: %s\n",
 					strerror(errno));
@@ -1842,13 +1842,13 @@ static int cycle(const char *path, uint32_t period_ns,
 					   previous_cycle - 1U;
 			previous_cycle = cycle_wait.cycle.cycle_index;
 			cycle_wait.after_cycle_index = previous_cycle;
-			if (lib_ret(cw_ec_get_input_snapshot(h, &snapshot, (void *)(uintptr_t)snapshot.data_ptr, snapshot.data_capacity)) < 0) {
+			if (lib_ret(elc_get_input_snapshot(h, &snapshot, (void *)(uintptr_t)snapshot.data_ptr, snapshot.data_capacity)) < 0) {
 				fprintf(stderr,
 					"elc_config: exchange input snapshot failed: %s\n",
 					strerror(errno));
 				goto out;
 			}
-			if (lib_ret(cw_ec_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
+			if (lib_ret(elc_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
 				fprintf(stderr,
 					"elc_config: disarmed exchange publication failed: %s\n",
 					strerror(errno));
@@ -1898,15 +1898,15 @@ static int cycle(const char *path, uint32_t period_ns,
 		}
 	} else if (monitor) {
 		unsigned int samples = duration_seconds * 4U;
-		struct cw_ec_io_status previous = { 0 };
+		struct elc_io_status previous = { 0 };
 		bool have_previous = false;
 
 		printf("READY: disarmed per-slave monitoring started\n");
 		fflush(stdout);
 		while (samples--) {
 			io_status.struct_size = sizeof(io_status);
-			io_status.api_major = CW_EC_API_VERSION_MAJOR;
-			if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
+			io_status.api_major = ELC_API_VERSION_MAJOR;
+			if (lib_ret(elc_get_io_status(h, &io_status)) < 0) {
 				fprintf(stderr,
 					"elc_config: monitored IO status failed: %s\n",
 					strerror(errno));
@@ -1949,7 +1949,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		while (duration_seconds)
 			duration_seconds = sleep(duration_seconds);
 	}
-	if (lib_ret(cw_ec_cycle_status(h, &status)) < 0) {
+	if (lib_ret(elc_cycle_status(h, &status)) < 0) {
 		fprintf(stderr, "elc_config: status failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -1966,11 +1966,11 @@ static int cycle(const char *path, uint32_t period_ns,
 	       status.working_counter, status.working_counter_state,
 	       status.last_cycle_result);
 	cycle_info.struct_size = sizeof(cycle_info);
-	cycle_info.api_major = CW_EC_API_VERSION_MAJOR;
+	cycle_info.api_major = ELC_API_VERSION_MAJOR;
 	cycle_info.flags = 0;
 	cycle_info.reserved0 = 0;
 	cycle_info.reserved1 = 0;
-	if (lib_ret(cw_ec_cycle_info(h, &cycle_info)) < 0) {
+	if (lib_ret(elc_cycle_info(h, &cycle_info)) < 0) {
 		fprintf(stderr, "elc_config: cycle info failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -1993,7 +1993,7 @@ static int cycle(const char *path, uint32_t period_ns,
 	       cycle_info.working_counter, cycle_info.working_counter_state,
 	       cycle_info.outputs_armed, cycle_info.bus_healthy,
 	       cycle_info.cycle_result);
-	if (lib_ret(cw_ec_get_dc_status(h, &dc_status)) < 0) {
+	if (lib_ret(elc_get_dc_status(h, &dc_status)) < 0) {
 		fprintf(stderr, "elc_config: DC status failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -2018,7 +2018,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		       (uint64_t)dc_status.monitor_success_count,
 		       (uint64_t)dc_status.monitor_timeout_count);
 	}
-	if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
+	if (lib_ret(elc_get_io_status(h, &io_status)) < 0) {
 		fprintf(stderr, "elc_config: IO status failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -2044,7 +2044,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		goto out;
 	if (held_armed) {
 		disarm.config_generation = output.config_generation;
-		if (lib_ret(cw_ec_disarm_output(h, &disarm)) < 0) {
+		if (lib_ret(elc_disarm_output(h, &disarm)) < 0) {
 			fprintf(stderr,
 				"elc_config: held-output disarm failed: %s\n",
 				strerror(errno));
@@ -2067,7 +2067,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		output.mask_ptr = (uintptr_t)output_mask;
 		output.data_size = activate.domain_size;
 		output.config_generation = io_status.config_generation;
-		if (lib_ret(cw_ec_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
+		if (lib_ret(elc_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
 			fprintf(stderr, "elc_config: output publish failed: %s\n",
 				strerror(errno));
 			goto out;
@@ -2084,13 +2084,13 @@ static int cycle(const char *path, uint32_t period_ns,
 
 			arm.config_generation = output.config_generation;
 			arm.output_sequence = output.output_sequence;
-			if (expect_ioctl_errno(h, CW_EC_IOC_ARM_OUTPUTS,
+			if (expect_ioctl_errno(h, ELC_IOC_ARM_OUTPUTS,
 					       &arm, EAGAIN,
 					       "arm without lease renewal"))
 				goto out;
 			lease_renew.config_generation =
 				output.config_generation;
-			if (lib_ret(cw_ec_renew_output_lease(h, &lease_renew)) < 0 ||
+			if (lib_ret(elc_renew_output_lease(h, &lease_renew)) < 0 ||
 			    lease_renew.remaining_cycles != 100 ||
 			    lease_renew.renewal_count != 1) {
 				fprintf(stderr,
@@ -2098,7 +2098,7 @@ static int cycle(const char *path, uint32_t period_ns,
 					errno ? strerror(errno) : "invalid result");
 				goto out;
 			}
-			if (lib_ret(cw_ec_arm_output(h, &arm)) < 0) {
+			if (lib_ret(elc_arm_output(h, &arm)) < 0) {
 				fprintf(stderr,
 					"elc_config: leased zero arm failed: %s\n",
 					strerror(errno));
@@ -2106,12 +2106,12 @@ static int cycle(const char *path, uint32_t period_ns,
 			}
 			usleep((useconds_t)(period_ns / 1000U) * 150U);
 			io_status.struct_size = sizeof(io_status);
-			io_status.api_major = CW_EC_API_VERSION_MAJOR;
-			if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0 ||
+			io_status.api_major = ELC_API_VERSION_MAJOR;
+			if (lib_ret(elc_get_io_status(h, &io_status)) < 0 ||
 			    io_status.outputs_armed ||
 			    !io_status.rearm_required ||
 			    !(io_status.current_faults &
-			      CW_EC_IO_FAULT_CONTROLLER_STALE) ||
+			      ELC_IO_FAULT_CONTROLLER_STALE) ||
 			    io_status.input_sequence <= input_before) {
 				fprintf(stderr,
 					"elc_config: lease expiry did not gate outputs while inputs continued\n");
@@ -2119,7 +2119,7 @@ static int cycle(const char *path, uint32_t period_ns,
 			}
 			lease_status.config_generation =
 				output.config_generation;
-			if (lib_ret(cw_ec_get_output_lease_status(h, &lease_status)) < 0 ||
+			if (lib_ret(elc_get_output_lease_status(h, &lease_status)) < 0 ||
 			    lease_status.valid ||
 			    lease_status.remaining_cycles ||
 			    lease_status.expiry_count != 1) {
@@ -2131,21 +2131,21 @@ static int cycle(const char *path, uint32_t period_ns,
 			printf("PASS: lease expiry zero-gated outputs and cyclic inputs continued\n");
 			memset(&lease_renew, 0, sizeof(lease_renew));
 			lease_renew.struct_size = sizeof(lease_renew);
-			lease_renew.api_major = CW_EC_API_VERSION_MAJOR;
+			lease_renew.api_major = ELC_API_VERSION_MAJOR;
 			lease_renew.config_generation =
 				output.config_generation;
-			if (lib_ret(cw_ec_renew_output_lease(h, &lease_renew)) < 0)
+			if (lib_ret(elc_renew_output_lease(h, &lease_renew)) < 0)
 				goto out;
-			if (expect_ioctl_errno(h, CW_EC_IOC_ARM_OUTPUTS,
+			if (expect_ioctl_errno(h, ELC_IOC_ARM_OUTPUTS,
 					       &arm, EAGAIN,
 					       "stale publication after lease expiry"))
 				goto out;
-			if (lib_ret(cw_ec_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0)
+			if (lib_ret(elc_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0)
 				goto out;
 			arm.output_sequence = output.output_sequence;
 			disarm.config_generation = output.config_generation;
-			if (lib_ret(cw_ec_arm_output(h, &arm)) < 0 ||
-			    lib_ret(cw_ec_disarm_output(h, &disarm)) < 0) {
+			if (lib_ret(elc_arm_output(h, &arm)) < 0 ||
+			    lib_ret(elc_disarm_output(h, &disarm)) < 0) {
 				fprintf(stderr,
 					"elc_config: lease recovery arm/disarm failed: %s\n",
 					strerror(errno));
@@ -2155,7 +2155,7 @@ static int cycle(const char *path, uint32_t period_ns,
 		} else if (arm_zero) {
 			arm.config_generation = output.config_generation;
 			arm.output_sequence = output.output_sequence;
-			if (lib_ret(cw_ec_arm_output(h, &arm)) < 0) {
+			if (lib_ret(elc_arm_output(h, &arm)) < 0) {
 				fprintf(stderr,
 					"elc_config: zero-output arm failed: %s\n",
 					strerror(errno));
@@ -2163,16 +2163,16 @@ static int cycle(const char *path, uint32_t period_ns,
 			}
 			usleep((useconds_t)(period_ns / 1000U) * 10U);
 			io_status.struct_size = sizeof(io_status);
-			io_status.api_major = CW_EC_API_VERSION_MAJOR;
-			if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0 ||
+			io_status.api_major = ELC_API_VERSION_MAJOR;
+			if (lib_ret(elc_get_io_status(h, &io_status)) < 0 ||
 			    !io_status.outputs_armed) {
 				fprintf(stderr,
 					"elc_config: zero-output arm was not reported active\n");
 				goto out;
 			}
 			cycle_info.struct_size = sizeof(cycle_info);
-			cycle_info.api_major = CW_EC_API_VERSION_MAJOR;
-			if (lib_ret(cw_ec_cycle_info(h, &cycle_info)) < 0 ||
+			cycle_info.api_major = ELC_API_VERSION_MAJOR;
+			if (lib_ret(elc_cycle_info(h, &cycle_info)) < 0 ||
 			    cycle_info.output_sequence_consumed !=
 				    output.output_sequence ||
 			    !cycle_info.stale_output_cycles) {
@@ -2188,15 +2188,15 @@ static int cycle(const char *path, uint32_t period_ns,
 				       cycle_info.output_sequence_consumed,
 			       (uint64_t)cycle_info.stale_output_cycles);
 			disarm.config_generation = output.config_generation;
-			if (lib_ret(cw_ec_disarm_output(h, &disarm)) < 0) {
+			if (lib_ret(elc_disarm_output(h, &disarm)) < 0) {
 				fprintf(stderr,
 					"elc_config: synchronous disarm failed: %s\n",
 					strerror(errno));
 				goto out;
 			}
 			io_status.struct_size = sizeof(io_status);
-			io_status.api_major = CW_EC_API_VERSION_MAJOR;
-			if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0 ||
+			io_status.api_major = ELC_API_VERSION_MAJOR;
+			if (lib_ret(elc_get_io_status(h, &io_status)) < 0 ||
 			    io_status.outputs_armed ||
 			    !io_status.rearm_required) {
 				fprintf(stderr,
@@ -2205,21 +2205,21 @@ static int cycle(const char *path, uint32_t period_ns,
 			}
 			printf("zero-output shadow synchronously disarmed; fresh publication required\n");
 			errno = 0;
-			if (lib_ret(cw_ec_arm_output(h, &arm)) == 0 ||
+			if (lib_ret(elc_arm_output(h, &arm)) == 0 ||
 			    errno != EAGAIN) {
 				fprintf(stderr,
 					"elc_config: stale arm was not rejected with EAGAIN\n");
 				goto out;
 			}
 			printf("stale output sequence correctly rejected after disarm\n");
-			if (lib_ret(cw_ec_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
+			if (lib_ret(elc_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
 				fprintf(stderr,
 					"elc_config: fresh zero publication failed: %s\n",
 					strerror(errno));
 				goto out;
 			}
 			arm.output_sequence = output.output_sequence;
-			if (lib_ret(cw_ec_arm_output(h, &arm)) < 0) {
+			if (lib_ret(elc_arm_output(h, &arm)) < 0) {
 				fprintf(stderr,
 					"elc_config: fresh zero arm failed: %s\n",
 					strerror(errno));
@@ -2228,7 +2228,7 @@ static int cycle(const char *path, uint32_t period_ns,
 			printf("fresh zero-output sequence=%" PRIu64
 			       " accepted after disarm\n",
 			       (uint64_t)output.output_sequence);
-			if (lib_ret(cw_ec_disarm_output(h, &disarm)) < 0) {
+			if (lib_ret(elc_disarm_output(h, &disarm)) < 0) {
 				fprintf(stderr,
 					"elc_config: final synchronous disarm failed: %s\n",
 					strerror(errno));
@@ -2246,7 +2246,7 @@ static int cycle(const char *path, uint32_t period_ns,
 	}
 	snapshot.data_ptr = (uintptr_t)snapshot_data;
 	snapshot.data_capacity = activate.domain_size;
-	if (lib_ret(cw_ec_get_input_snapshot(h, &snapshot, (void *)(uintptr_t)snapshot.data_ptr, snapshot.data_capacity)) < 0) {
+	if (lib_ret(elc_get_input_snapshot(h, &snapshot, (void *)(uintptr_t)snapshot.data_ptr, snapshot.data_capacity)) < 0) {
 		fprintf(stderr, "elc_config: input snapshot failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -2262,7 +2262,7 @@ static int cycle(const char *path, uint32_t period_ns,
 	if (snapshot.data_size > 64)
 		printf("...");
 	printf("\n");
-	if (lib_ret(cw_ec_cycle_deactivate(h, &deactivate)) < 0) {
+	if (lib_ret(elc_cycle_deactivate(h, &deactivate)) < 0) {
 		fprintf(stderr, "elc_config: deactivation failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -2279,7 +2279,7 @@ out:
 	free(output_data);
 	free(output_mask);
 	free(snapshot_data);
-	cw_ec_close(h);
+	elc_close(h);
 	return ret;
 }
 
@@ -2299,12 +2299,12 @@ static void io_print_help(void)
 	       "  quit                         disarm, deactivate, and exit\n");
 }
 
-static int io_read_entry(cw_ec_handle *h, uint32_t domain_size, uint8_t *snapshot_data,
+static int io_read_entry(elc_handle *h, uint32_t domain_size, uint8_t *snapshot_data,
 			 struct io_entry *entry)
 {
-	struct cw_ec_input_snapshot snapshot = {
+	struct elc_input_snapshot snapshot = {
 		.struct_size = sizeof(snapshot),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.data_ptr = (uintptr_t)snapshot_data,
 		.data_capacity = domain_size,
 	};
@@ -2316,7 +2316,7 @@ static int io_read_entry(cw_ec_handle *h, uint32_t domain_size, uint8_t *snapsho
 			entry->offset.bit_length);
 		return -1;
 	}
-	if (lib_ret(cw_ec_get_input_snapshot(h, &snapshot, (void *)(uintptr_t)snapshot.data_ptr, snapshot.data_capacity)) < 0) {
+	if (lib_ret(elc_get_input_snapshot(h, &snapshot, (void *)(uintptr_t)snapshot.data_ptr, snapshot.data_capacity)) < 0) {
 		fprintf(stderr, "elc_io: input snapshot failed: %s\n",
 			strerror(errno));
 		return -1;
@@ -2326,25 +2326,25 @@ static int io_read_entry(cw_ec_handle *h, uint32_t domain_size, uint8_t *snapsho
 	       " direction=%s value=%" PRIu64 " (0x%" PRIx64
 	       ") cycle=%" PRIu64 " sequence=%" PRIu64 "\n",
 	       entry->cfg.entry_id, entry->cfg.index, entry->cfg.subindex,
-	       entry->direction == CW_EC_DIR_INPUT ? "input" : "output",
+	       entry->direction == ELC_DIR_INPUT ? "input" : "output",
 	       value, value, (uint64_t)snapshot.cycle_count,
 	       (uint64_t)snapshot.input_sequence);
 	return 0;
 }
 
-static void io_print_status(cw_ec_handle *h)
+static void io_print_status(elc_handle *h)
 {
-	struct cw_ec_io_status status = {
+	struct elc_io_status status = {
 		.struct_size = sizeof(status),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_cycle_status cycle = {
+	struct elc_cycle_status cycle = {
 		.struct_size = sizeof(cycle),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
 
-	if (lib_ret(cw_ec_get_io_status(h, &status)) < 0 ||
-	    lib_ret(cw_ec_cycle_status(h, &cycle)) < 0) {
+	if (lib_ret(elc_get_io_status(h, &status)) < 0 ||
+	    lib_ret(elc_cycle_status(h, &cycle)) < 0) {
 		fprintf(stderr, "elc_io: status failed: %s\n",
 			strerror(errno));
 		return;
@@ -2365,31 +2365,31 @@ static void io_print_status(cw_ec_handle *h)
 static int interactive_io(const char *path, uint32_t period_ns,
 			  const char *device)
 {
-	struct cw_ec_config_validate validate;
-	struct cw_ec_cycle_activate activate = {
+	struct elc_config_validate validate;
+	struct elc_cycle_activate activate = {
 		.struct_size = sizeof(activate),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 		.cycle_period_ns = period_ns,
 	};
-	struct cw_ec_cycle_deactivate deactivate = {
+	struct elc_cycle_deactivate deactivate = {
 		.struct_size = sizeof(deactivate),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_output_publish output = {
+	struct elc_output_publish output = {
 		.struct_size = sizeof(output),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_output_arm arm = {
+	struct elc_output_arm arm = {
 		.struct_size = sizeof(arm),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_output_disarm disarm = {
+	struct elc_output_disarm disarm = {
 		.struct_size = sizeof(disarm),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
-	struct cw_ec_io_status io_status = {
+	struct elc_io_status io_status = {
 		.struct_size = sizeof(io_status),
-		.api_major = CW_EC_API_VERSION_MAJOR,
+		.api_major = ELC_API_VERSION_MAJOR,
 	};
 	struct io_metadata metadata;
 	struct counts counts;
@@ -2401,7 +2401,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 	bool armed = false;
 	bool staged = false;
 	bool published = false;
-	cw_ec_handle *h = NULL;
+	elc_handle *h = NULL;
 	int ret = 1;
 	uint32_t i;
 
@@ -2422,10 +2422,10 @@ static int interactive_io(const char *path, uint32_t period_ns,
 		metadata.entries[i].offset.struct_size =
 			sizeof(metadata.entries[i].offset);
 		metadata.entries[i].offset.api_major =
-			CW_EC_API_VERSION_MAJOR;
+			ELC_API_VERSION_MAJOR;
 		metadata.entries[i].offset.entry_id =
 			metadata.entries[i].cfg.entry_id;
-		if (lib_ret(cw_ec_get_entry_offset(h, &metadata.entries[i].offset)) < 0) {
+		if (lib_ret(elc_get_entry_offset(h, &metadata.entries[i].offset)) < 0) {
 			fprintf(stderr,
 				"elc_io: offset lookup for entry %" PRIu32
 				" failed: %s\n",
@@ -2434,7 +2434,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 			goto out;
 		}
 	}
-	if (lib_ret(cw_ec_cycle_activate(h, activate.cycle_period_ns, activate.flags, &activate)) < 0) {
+	if (lib_ret(elc_cycle_activate(h, activate.cycle_period_ns, activate.flags, &activate)) < 0) {
 		fprintf(stderr, "elc_io: activation failed: %s\n",
 			strerror(errno));
 		goto out;
@@ -2450,8 +2450,8 @@ static int interactive_io(const char *path, uint32_t period_ns,
 	}
 	for (i = 0; i < 100; i++) {
 		io_status.struct_size = sizeof(io_status);
-		io_status.api_major = CW_EC_API_VERSION_MAJOR;
-		if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0)
+		io_status.api_major = ELC_API_VERSION_MAJOR;
+		if (lib_ret(elc_get_io_status(h, &io_status)) < 0)
 			goto out;
 		if (io_status.bus_healthy)
 			break;
@@ -2501,7 +2501,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 				       metadata.entries[i].cfg.index,
 				       metadata.entries[i].cfg.subindex,
 				       metadata.entries[i].direction ==
-						       CW_EC_DIR_INPUT ?
+						       ELC_DIR_INPUT ?
 					       "input" : "output",
 				       metadata.entries[i].offset.bit_length,
 				       metadata.entries[i].offset.global_offset,
@@ -2556,7 +2556,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 				continue;
 			}
 			entry = find_io_entry(&metadata, entry_id);
-			if (!entry || entry->direction != CW_EC_DIR_OUTPUT) {
+			if (!entry || entry->direction != ELC_DIR_OUTPUT) {
 				printf("entry is not a configured output\n");
 				continue;
 			}
@@ -2585,7 +2585,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 			memset(output_mask, 0, activate.domain_size);
 			for (i = 0; i < metadata.entry_count; i++)
 				if (metadata.entries[i].direction ==
-				    CW_EC_DIR_OUTPUT)
+				    ELC_DIR_OUTPUT)
 					image_set_value(
 						output_data, output_mask,
 						&metadata.entries[i].offset, 0);
@@ -2604,8 +2604,8 @@ static int interactive_io(const char *path, uint32_t period_ns,
 				continue;
 			}
 			io_status.struct_size = sizeof(io_status);
-			io_status.api_major = CW_EC_API_VERSION_MAJOR;
-			if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0) {
+			io_status.api_major = ELC_API_VERSION_MAJOR;
+			if (lib_ret(elc_get_io_status(h, &io_status)) < 0) {
 				printf("status failed: %s\n", strerror(errno));
 				continue;
 			}
@@ -2614,7 +2614,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 			output.data_size = activate.domain_size;
 			output.config_generation =
 				io_status.config_generation;
-			if (lib_ret(cw_ec_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
+			if (lib_ret(elc_publish_output(h, (const void *)(uintptr_t)output.data_ptr, (const void *)(uintptr_t)output.mask_ptr, output.data_size, &output)) < 0) {
 				printf("publish failed: %s\n", strerror(errno));
 				continue;
 			}
@@ -2638,7 +2638,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 			}
 			arm.config_generation = output.config_generation;
 			arm.output_sequence = output.output_sequence;
-			if (lib_ret(cw_ec_arm_output(h, &arm)) < 0) {
+			if (lib_ret(elc_arm_output(h, &arm)) < 0) {
 				printf("arm failed: %s\n", strerror(errno));
 				continue;
 			}
@@ -2649,8 +2649,8 @@ static int interactive_io(const char *path, uint32_t period_ns,
 		}
 		if (!strcmp(name, "disarm")) {
 			io_status.struct_size = sizeof(io_status);
-			io_status.api_major = CW_EC_API_VERSION_MAJOR;
-			if (lib_ret(cw_ec_get_io_status(h, &io_status)) < 0)
+			io_status.api_major = ELC_API_VERSION_MAJOR;
+			if (lib_ret(elc_get_io_status(h, &io_status)) < 0)
 				continue;
 			if (!io_status.outputs_armed) {
 				armed = false;
@@ -2659,7 +2659,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 			}
 			disarm.config_generation =
 				io_status.config_generation;
-			if (lib_ret(cw_ec_disarm_output(h, &disarm)) < 0) {
+			if (lib_ret(elc_disarm_output(h, &disarm)) < 0) {
 				printf("disarm failed: %s\n", strerror(errno));
 				continue;
 			}
@@ -2676,22 +2676,22 @@ static int interactive_io(const char *path, uint32_t period_ns,
 out:
 	if (h && active) {
 		io_status.struct_size = sizeof(io_status);
-		io_status.api_major = CW_EC_API_VERSION_MAJOR;
-		if (lib_ret(cw_ec_get_io_status(h, &io_status)) == 0 &&
+		io_status.api_major = ELC_API_VERSION_MAJOR;
+		if (lib_ret(elc_get_io_status(h, &io_status)) == 0 &&
 		    io_status.outputs_armed) {
 			disarm.config_generation =
 				io_status.config_generation;
-			if (lib_ret(cw_ec_disarm_output(h, &disarm)) < 0)
+			if (lib_ret(elc_disarm_output(h, &disarm)) < 0)
 				fprintf(stderr,
 					"elc_io: cleanup disarm failed: %s\n",
 					strerror(errno));
 		}
-		if (lib_ret(cw_ec_cycle_deactivate(h, &deactivate)) < 0)
+		if (lib_ret(elc_cycle_deactivate(h, &deactivate)) < 0)
 			fprintf(stderr,
 				"elc_io: cleanup deactivation failed: %s\n",
 				strerror(errno));
 	}
-	cw_ec_close(h);
+	elc_close(h);
 	free(snapshot_data);
 	free(output_data);
 	free(output_mask);
@@ -2702,7 +2702,7 @@ out:
 
 int main(int argc, char **argv)
 {
-	const char *device = "/dev/cw_ethercat0";
+	const char *device = "/dev/elc_ethercat0";
 	struct counts counts;
 	uint64_t duration;
 	uint64_t entry_id;
@@ -2733,8 +2733,8 @@ int main(int argc, char **argv)
 		return prepare(argv[2], device);
 	}
 	if (!strcmp(argv[1], "io") && (argc == 4 || argc == 5)) {
-		if (parse_u64(argv[3], CW_EC_CYCLE_PERIOD_MAX_NS, &period) ||
-		    period < CW_EC_CYCLE_PERIOD_MIN_NS) {
+		if (parse_u64(argv[3], ELC_CYCLE_PERIOD_MAX_NS, &period) ||
+		    period < ELC_CYCLE_PERIOD_MIN_NS) {
 			fprintf(stderr, "elc_io: invalid cycle period\n");
 			return 2;
 		}
@@ -2744,8 +2744,8 @@ int main(int argc, char **argv)
 	}
 	if (!strcmp(argv[1], "pulse-entry") &&
 	    (argc == 6 || argc == 7)) {
-		if (parse_u64(argv[3], CW_EC_CYCLE_PERIOD_MAX_NS, &period) ||
-		    period < CW_EC_CYCLE_PERIOD_MIN_NS ||
+		if (parse_u64(argv[3], ELC_CYCLE_PERIOD_MAX_NS, &period) ||
+		    period < ELC_CYCLE_PERIOD_MIN_NS ||
 		    parse_u64(argv[4], UINT32_MAX, &entry_id) || !entry_id ||
 		    parse_u64(argv[5], 5000, &duration) || !duration) {
 			fprintf(stderr,
@@ -2760,11 +2760,11 @@ int main(int argc, char **argv)
 	if ((!strcmp(argv[1], "cycle-rate") ||
 	     !strcmp(argv[1], "cycle-exchange-rate")) &&
 	    (argc == 6 || argc == 7)) {
-		if (parse_u64(argv[3], CW_EC_CYCLE_PERIOD_MAX_NS, &period) ||
-		    period < CW_EC_CYCLE_PERIOD_MIN_NS ||
-		    parse_u64(argv[4], CW_EC_CYCLE_PERIOD_MAX_NS,
+		if (parse_u64(argv[3], ELC_CYCLE_PERIOD_MAX_NS, &period) ||
+		    period < ELC_CYCLE_PERIOD_MIN_NS ||
+		    parse_u64(argv[4], ELC_CYCLE_PERIOD_MAX_NS,
 			      &target_period) ||
-		    target_period < CW_EC_CYCLE_PERIOD_MIN_NS ||
+		    target_period < ELC_CYCLE_PERIOD_MIN_NS ||
 		    parse_u64(argv[5], 3600, &duration) || !duration) {
 			fprintf(stderr,
 				"elc_config: invalid start period, target period, or duration\n");
@@ -2779,9 +2779,9 @@ int main(int argc, char **argv)
 	}
 	if (!strcmp(argv[1], "cycle-history") &&
 	    (argc == 6 || argc == 7)) {
-		if (parse_u64(argv[3], CW_EC_CYCLE_PERIOD_MAX_NS, &period) ||
-		    period < CW_EC_CYCLE_PERIOD_MIN_NS ||
-		    parse_u64(argv[4], CW_EC_INPUT_HISTORY_DEPTH_MAX,
+		if (parse_u64(argv[3], ELC_CYCLE_PERIOD_MAX_NS, &period) ||
+		    period < ELC_CYCLE_PERIOD_MIN_NS ||
+		    parse_u64(argv[4], ELC_INPUT_HISTORY_DEPTH_MAX,
 			      &history_depth) ||
 		    !history_depth ||
 		    parse_u64(argv[5], 3600, &duration) || !duration) {
@@ -2803,8 +2803,8 @@ int main(int argc, char **argv)
 	     !strcmp(argv[1], "cycle-monitor") ||
 	     !strcmp(argv[1], "cycle-abi")) &&
 	    (argc == 5 || argc == 6)) {
-		if (parse_u64(argv[3], CW_EC_CYCLE_PERIOD_MAX_NS, &period) ||
-		    period < CW_EC_CYCLE_PERIOD_MIN_NS ||
+		if (parse_u64(argv[3], ELC_CYCLE_PERIOD_MAX_NS, &period) ||
+		    period < ELC_CYCLE_PERIOD_MIN_NS ||
 		    parse_u64(argv[4], 3600, &duration) || !duration) {
 			fprintf(stderr, "elc_config: invalid period or duration\n");
 			return 2;

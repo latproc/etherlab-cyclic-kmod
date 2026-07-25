@@ -468,7 +468,7 @@ testing, safety, and build documents.
   34-slave 1 kHz run drained 5,003 290-byte images in 10 ms batches with zero
   gaps, capture drops, cycle errors, or overruns; all slaves and domains
   remained valid.
-- `cw_ec_entry_offset.global_offset` is now the preferred name for the global
+- `elc_entry_offset.global_offset` is now the preferred name for the global
   concatenated-image byte offset. The old `domain_offset` member remains an
   ABI-neutral deprecated union alias.
 - Timing trials now use a strict-health mode: every configured slave/domain
@@ -493,14 +493,13 @@ testing, safety, and build documents.
   claiming that EtherLab's operation-FSM interval was changed.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.
-- Phase 7 `libcwethercat` is implemented under `lib/` with public header
-  `include/cw_ethercat.h` (GPL-2.0-only, SONAME major tracks UAPI major).
+- Phase 7 `libelcethercat` is implemented under `lib/` with public header
+  `include/elc_ethercat.h` (GPL-2.0-only, SONAME major tracks UAPI major).
   Build/install: `make lib`, `make install-lib PREFIX=...`, pkg-config
-  `cwethercat`. Feature tools use the generic `elc_*` prefix (EtherLab
+  `elcethercat`. Feature tools use the generic `elc_*` prefix (EtherLab
   Cyclic): `elc_bus`, `elc_sdo`, `elc_config`, `elc_config_stress`; harness
   env vars use `ELC_*`. `elc_abi_test` keeps raw ioctls for hostile kernel
-  UAPI checks. Kernel device/UAPI symbols remain `cw_ethercat` / `cw_ec_*`
-  for ABI stability. Contract: `docs/libcwethercat.md`. This project is a
+  UAPI checks. Contract: `docs/libelcethercat.md`. This project is a
   generic transport; the library and UAPI must not embed Clockwork or any
   other control-system policy. External runtimes are optional consumers via
-  installable headers and `libcwethercat`.
+  installable headers and `libelcethercat`.

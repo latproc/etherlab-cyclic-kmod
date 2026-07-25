@@ -36,7 +36,7 @@ sudo tools/elc_test_bus.sh
 The script:
 
 1. snapshots `ethercat slaves -v`;
-2. loads `cw_ethercat.ko`;
+2. loads `elc_ethercat.ko`;
 3. runs malformed ABI and exclusive-open checks;
 4. retrieves topology through `elc_bus`;
 5. closes and unloads the module;
@@ -349,7 +349,7 @@ current faults=0x00000000 latched faults=0x00000020 fault_count=1
 link=1 responding=34 configured=1 online=1 operational=1
 ```
 
-`0x20` is `CW_EC_IO_FAULT_DOMAIN_INCOMPLETE`, the first unhealthy condition
+`0x20` is `ELC_IO_FAULT_DOMAIN_INCOMPLETE`, the first unhealthy condition
 observed. The drive recovered to OP and complete WC without restarting the
 transport, but the re-arm requirement remained sticky. The cycle/DC error
 counters captured the unavailable/reconfiguration interval. The final snapshot
@@ -519,7 +519,7 @@ scheduling. The task is created stopped; requested affinity and policy are
 applied before its first cycle.
 
 A disarmed position-29 run loaded with CPU 1 and FIFO priority 70. Live process
-inspection reported `cw_ec_cycle` as class `FF`, RT priority 70, on CPU 1:
+inspection reported `elc_cycle` as class `FF`, RT priority 70, on CPU 1:
 
 ```text
 cycles=31109 errors=0 overruns=0 maximum_lateness=51293 ns
@@ -699,7 +699,7 @@ all-zero output shadow is explicitly armed, then sends `SIGKILL` to the
 controller. It verifies kernel file-release teardown rather than allowing the
 tool to issue its normal disarm/deactivate calls.
 
-Before the kill, it attempts normal `rmmod cw_ethercat` and requires failure
+Before the kill, it attempts normal `rmmod elc_ethercat` and requires failure
 while the control fd, cyclic task, and master ownership are live. The
 controller must remain running and the module must remain loaded. The target
 test passed:
@@ -802,7 +802,7 @@ PASS: all six process-image and cyclic-task construction failures unwound;
       success boundary passed; topology unchanged
 ```
 
-Use `CW_EC_PRE_IMAGE_ALLOCATIONS` when exercising another fixture; it is the
+Use `ELC_PRE_IMAGE_ALLOCATIONS` when exercising another fixture; it is the
 number of module-owned allocations through the last pending configuration
 record, before activation allocates copied process images.
 
@@ -849,8 +849,8 @@ checked separately through runtime status where the test requires it.
 The install created:
 
 ```text
-lib/modules/6.1.0-49-rt-amd64/extra/cw_ethercat/cw_ethercat.ko
-lib/modules/6.1.0-49-rt-amd64/extra/cw_ethercat/cw_ethercat_probe.ko
+lib/modules/6.1.0-49-rt-amd64/extra/elc_ethercat/elc_ethercat.ko
+lib/modules/6.1.0-49-rt-amd64/extra/elc_ethercat/elc_ethercat_probe.ko
 ```
 
 Both files had mode 0644. The matching staged uninstall removed both files.
@@ -859,7 +859,7 @@ live `depmod` behavior was not exercised.
 
 ## Phase 2 contention
 
-On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device
+On 2026-07-24, with IOD owning master 0, `elc_ethercat.ko` registered its device
 without claiming the master. `elc_bus` then failed to open the device with
 `EBUSY` and reported that master 0 was already owned. After module unload, IOD
 still held master 0 in active Operation phase with 29 slaves and link up.
@@ -1091,7 +1091,7 @@ open EtherLab deactivation boundary.
 ## Domain-scoped output-authority refactor
 
 The first delegated-domain prerequisite moved all compatibility output state
-behind one internal `cw_ec_output_authority` without changing API 0.13. Each
+behind one internal `elc_output_authority` without changing API 0.13. Each
 configured domain explicitly points to that authority. It owns the copied
 publication buffers and mask, generation, arm/re-arm state, fault publication
 epoch, gate request/acknowledgement, and stale-generation accounting. Bus

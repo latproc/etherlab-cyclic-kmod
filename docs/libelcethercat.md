@@ -1,7 +1,7 @@
-# libcwethercat — Generic User-Space Library API
+# libelcethercat — Generic User-Space Library API
 
 **Status:** Phase 7 library landed for API 0.16. Sources live under `lib/`
-and `include/cw_ethercat.h`. This document remains the public contract;
+and `include/elc_ethercat.h`. This document remains the public contract;
 keep it aligned when the API changes.
 
 This project is a **generic** EtherCAT cyclic transport. It is not a
@@ -22,8 +22,8 @@ an **appendix**, not part of the library design.
 
 ## 1. Purpose
 
-`libcwethercat` is a thin, **policy-free** C library that wraps
-`/dev/cw_ethercat0` and `include/cw_ethercat_uapi.h`. It exists so that:
+`libelcethercat` is a thin, **policy-free** C library that wraps
+`/dev/elc_ethercat0` and `include/elc_ethercat_uapi.h`. It exists so that:
 
 1. every userspace client shares one ABI client instead of open-coding
    ioctl layouts;
@@ -38,7 +38,7 @@ setup recipes, process-data meaning, and arm/recovery policy.
 and small conveniences that do not encode product or machine semantics.
 
 ```text
-  any controller / tool              libcwethercat           kernel module
+  any controller / tool              libelcethercat           kernel module
   ---------------------              -------------           -------------
   topology + recipes          --->   C API              ---> ioctl UAPI
   stable entry IDs            --->   config / offsets   ---> domains / cycle
@@ -56,11 +56,11 @@ The library lives in **this repository**, next to the UAPI and tools:
 ```text
 etherlab-cyclic-kmod/
 ├── include/
-│   ├── cw_ethercat_uapi.h      # wire ABI (kernel + userspace)
-│   └── cw_ethercat.h           # public library API
+│   ├── elc_ethercat_uapi.h      # wire ABI (kernel + userspace)
+│   └── elc_ethercat.h           # public library API
 ├── lib/
-│   ├── cw_ethercat.c           # implementation
-│   └── cwethercat.pc.in
+│   ├── elc_ethercat.c           # implementation
+│   └── elcethercat.pc.in
 ├── kernel/
 ├── tools/                      # migrate onto the library over time
 └── docs/
@@ -76,11 +76,11 @@ Install headers and the library under a single prefix (default
 `/usr/local`, site override as needed):
 
 ```text
-$(PREFIX)/include/cw_ethercat_uapi.h
-$(PREFIX)/include/cw_ethercat.h
-$(PREFIX)/lib/libcwethercat.so
-$(PREFIX)/lib/libcwethercat.a          # optional static archive
-$(PREFIX)/lib/pkgconfig/cwethercat.pc  # recommended
+$(PREFIX)/include/elc_ethercat_uapi.h
+$(PREFIX)/include/elc_ethercat.h
+$(PREFIX)/lib/libelcethercat.so
+$(PREFIX)/lib/libelcethercat.a          # optional static archive
+$(PREFIX)/lib/pkgconfig/elcethercat.pc  # recommended
 ```
 
 Suggested Make targets (to implement with the library):
@@ -93,24 +93,24 @@ make install-lib PREFIX=/usr/local
 Downstream builds should locate the package without hard-coding paths:
 
 ```cmake
-find_path(CW_EC_INCLUDE_DIR cw_ethercat.h
+find_path(ELC_INCLUDE_DIR elc_ethercat.h
   HINTS $ENV{CW_ETHERCAT_PREFIX}/include)
-find_library(CW_EC_LIBRARY cwethercat
+find_library(ELC_LIBRARY elcethercat
   HINTS $ENV{CW_ETHERCAT_PREFIX}/lib)
 ```
 
 Or via pkg-config:
 
 ```text
-pkg-config --cflags --libs cwethercat
+pkg-config --cflags --libs elcethercat
 ```
 
 ### 2.3 Versioning
 
 | Layer | Versioning rule |
 |-------|-----------------|
-| Kernel UAPI | `CW_EC_API_VERSION_MAJOR` / `MINOR` in `cw_ethercat_uapi.h` |
-| Library SONAME | Track UAPI major (e.g. `libcwethercat.so.0`) |
+| Kernel UAPI | `ELC_API_VERSION_MAJOR` / `MINOR` in `elc_ethercat_uapi.h` |
+| Library SONAME | Track UAPI major (e.g. `libelcethercat.so.0`) |
 | Library package | Require matching major; refuse open if module major mismatches |
 
 Minor UAPI bumps are additive. Callers must still negotiate capabilities
@@ -118,7 +118,7 @@ before using optional features.
 
 ### 2.4 Licensing
 
-The kernel module is GPL-2.0-only. The initial `libcwethercat` sources and
+The kernel module is GPL-2.0-only. The initial `libelcethercat` sources and
 public headers use **GPL-2.0-only** to match the repository default. A
 different userspace license (for example LGPL) requires an explicit
 documented decision before broader proprietary linking is claimed.
@@ -130,7 +130,7 @@ documented decision before broader proprietary linking is claimed.
 1. **C API only** for the shared object. Language bindings or C++ facades
    belong in the consumer, not in this library’s ABI.
 2. **No hidden global state** beyond one open control fd per handle.
-   One `cw_ec_handle` maps to one exclusive `/dev/cw_ethercat*` owner.
+   One `elc_handle` maps to one exclusive `/dev/elc_ethercat*` owner.
 3. **UAPI types may appear in public headers** for structure-sized
    results; prefer library helpers for lifecycle.
 4. **Errors:** return `0` on success and `-errno` on failure (or an
@@ -152,14 +152,14 @@ documented decision before broader proprietary linking is claimed.
 
 This is the intended public surface. Names are stable for documentation;
 implementation may add internal helpers. All functions take
-`cw_ec_handle *` unless noted.
+`elc_handle *` unless noted.
 
 ### 4.1 Types
 
 ```c
-/* include/cw_ethercat.h (design) */
+/* include/elc_ethercat.h (design) */
 
-#include "cw_ethercat_uapi.h"
+#include "elc_ethercat_uapi.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -167,9 +167,9 @@ implementation may add internal helpers. All functions take
 extern "C" {
 #endif
 
-typedef struct cw_ec_handle cw_ec_handle;
+typedef struct elc_handle elc_handle;
 
-typedef struct cw_ec_slave_summary {
+typedef struct elc_slave_summary {
 	uint16_t position;
 	uint16_t alias;
 	uint32_t vendor_id;
@@ -178,11 +178,11 @@ typedef struct cw_ec_slave_summary {
 	uint32_t serial_number;
 	uint8_t al_state;
 	uint8_t error_flag;
-	char name[CW_EC_SLAVE_NAME_LEN];
-} cw_ec_slave_summary;
+	char name[ELC_SLAVE_NAME_LEN];
+} elc_slave_summary;
 
 /* Stable for one applied configuration generation. */
-typedef uint32_t cw_ec_entry_id;
+typedef uint32_t elc_entry_id;
 
 #ifdef __cplusplus
 }
@@ -193,12 +193,12 @@ typedef uint32_t cw_ec_entry_id;
 
 | Function | Behaviour |
 |----------|-----------|
-| `cw_ec_open(const char *device_path, cw_ec_handle **out)` | Open `O_RDWR\|O_CLOEXEC`. Default path `/dev/cw_ethercat0`. Claims EtherLab master 0. `EBUSY` if another owner holds the master. |
-| `cw_ec_close(cw_ec_handle *h)` | Close fd; kernel gates outputs, stops cyclic work, releases master. Safe if `h` is NULL. |
-| `cw_ec_get_api_version(h, struct cw_ec_api_version *v)` | `CW_EC_IOC_GET_API_VERSION`. |
-| `cw_ec_get_capabilities(h, struct cw_ec_capabilities *c)` | `CW_EC_IOC_GET_CAPABILITIES`. |
-| `cw_ec_require_api(h, uint16_t major, uint16_t min_minor)` | Fail if major mismatch or minor too old. |
-| `cw_ec_fd(const cw_ec_handle *h)` | Underlying fd for poll/tests only. |
+| `elc_open(const char *device_path, elc_handle **out)` | Open `O_RDWR\|O_CLOEXEC`. Default path `/dev/elc_ethercat0`. Claims EtherLab master 0. `EBUSY` if another owner holds the master. |
+| `elc_close(elc_handle *h)` | Close fd; kernel gates outputs, stops cyclic work, releases master. Safe if `h` is NULL. |
+| `elc_get_api_version(h, struct elc_api_version *v)` | `ELC_IOC_GET_API_VERSION`. |
+| `elc_get_capabilities(h, struct elc_capabilities *c)` | `ELC_IOC_GET_CAPABILITIES`. |
+| `elc_require_api(h, uint16_t major, uint16_t min_minor)` | Fail if major mismatch or minor too old. |
+| `elc_fd(const elc_handle *h)` | Underlying fd for poll/tests only. |
 
 **Exclusivity:** opening this device is mutually exclusive with any other
 EtherLab application that has requested master 0 (including direct
@@ -208,9 +208,9 @@ EtherLab application that has requested master 0 (including direct
 
 | Function | Behaviour |
 |----------|-----------|
-| `cw_ec_get_master_info(h, struct cw_ec_master_info *info)` | Link, scan busy, slave count. |
-| `cw_ec_get_slave_info(h, uint16_t position, struct cw_ec_slave_info *info)` | One position. |
-| `cw_ec_list_slaves(h, cw_ec_slave_summary *buf, size_t cap, size_t *count)` | Convenience: fill summaries for `0..slave_count-1`. Caller chooses whether to wait while `scan_busy`. |
+| `elc_get_master_info(h, struct elc_master_info *info)` | Link, scan busy, slave count. |
+| `elc_get_slave_info(h, uint16_t position, struct elc_slave_info *info)` | One position. |
+| `elc_list_slaves(h, elc_slave_summary *buf, size_t cap, size_t *count)` | Convenience: fill summaries for `0..slave_count-1`. Caller chooses whether to wait while `scan_busy`. |
 
 Discovery returns raw bus identity. Matching policy (required topology,
 revision rules, alias use) is entirely the controller’s responsibility.
@@ -219,11 +219,11 @@ revision rules, alias use) is entirely the controller’s responsibility.
 
 | Function | Behaviour |
 |----------|-----------|
-| `cw_ec_setup_begin(h)` | Start setup transaction. |
-| `cw_ec_setup_add_sdo(h, const struct cw_ec_setup_sdo *sdo)` | Ordered typed write. |
-| `cw_ec_setup_apply(h, struct cw_ec_setup_apply *result)` | Execute batch; report first failure. |
-| `cw_ec_setup_reset(h)` | Drop pending setup. |
-| `cw_ec_sdo_upload(h, struct cw_ec_sdo_upload *req)` | Bounded diagnostic upload. |
+| `elc_setup_begin(h)` | Start setup transaction. |
+| `elc_setup_add_sdo(h, const struct elc_setup_sdo *sdo)` | Ordered typed write. |
+| `elc_setup_apply(h, struct elc_setup_apply *result)` | Execute batch; report first failure. |
+| `elc_setup_reset(h)` | Drop pending setup. |
+| `elc_sdo_upload(h, struct elc_sdo_upload *req)` | Bounded diagnostic upload. |
 
 Use for commissioning and pre-activation parameter/PDO setup owned by the
 controller. Runtime mailbox SDO policy during OP is a separate concern.
@@ -232,17 +232,17 @@ controller. Runtime mailbox SDO policy during OP is a separate concern.
 
 | Function | Behaviour |
 |----------|-----------|
-| `cw_ec_config_begin(h)` | Start pending configuration. |
-| `cw_ec_config_add_slave(h, const struct cw_ec_config_slave *)` | |
-| `cw_ec_config_add_sync(h, const struct cw_ec_config_sync *)` | |
-| `cw_ec_config_add_pdo(h, const struct cw_ec_config_pdo *)` | |
-| `cw_ec_config_add_entry(h, const struct cw_ec_config_entry *)` | Application entries need nonzero `entry_id`. Padding uses `0x0000:00` and `entry_id=0`. |
-| `cw_ec_config_add_dc(h, const struct cw_ec_config_dc *)` | Optional. |
-| `cw_ec_config_add_dc_policy(h, const struct cw_ec_config_dc_policy *)` | Optional. |
-| `cw_ec_config_add_domain(h, const struct cw_ec_config_domain *)` | Explicit domains. |
-| `cw_ec_config_add_domain_assignment(h, const struct cw_ec_config_domain_assignment *)` | Exactly one assignment per configured slave when domains are explicit. |
-| `cw_ec_config_validate(h, struct cw_ec_config_validate *result)` | |
-| `cw_ec_config_apply(h, struct cw_ec_config_apply *result)` | Config immutable until deactivate/close. |
+| `elc_config_begin(h)` | Start pending configuration. |
+| `elc_config_add_slave(h, const struct elc_config_slave *)` | |
+| `elc_config_add_sync(h, const struct elc_config_sync *)` | |
+| `elc_config_add_pdo(h, const struct elc_config_pdo *)` | |
+| `elc_config_add_entry(h, const struct elc_config_entry *)` | Application entries need nonzero `entry_id`. Padding uses `0x0000:00` and `entry_id=0`. |
+| `elc_config_add_dc(h, const struct elc_config_dc *)` | Optional. |
+| `elc_config_add_dc_policy(h, const struct elc_config_dc_policy *)` | Optional. |
+| `elc_config_add_domain(h, const struct elc_config_domain *)` | Explicit domains. |
+| `elc_config_add_domain_assignment(h, const struct elc_config_domain_assignment *)` | Exactly one assignment per configured slave when domains are explicit. |
+| `elc_config_validate(h, struct elc_config_validate *result)` | |
+| `elc_config_apply(h, struct elc_config_apply *result)` | Config immutable until deactivate/close. |
 
 If no domain records are submitted, the kernel creates one **implicit**
 compatibility domain (single concatenated image).
@@ -251,8 +251,8 @@ compatibility domain (single concatenated image).
 
 | Function | Behaviour |
 |----------|-----------|
-| `cw_ec_domain_create(h, struct cw_ec_domain_create *req)` | Materialise domain(s) after apply. |
-| `cw_ec_get_entry_offset(h, struct cw_ec_entry_offset *io)` | Resolve `entry_id` → `global_offset`, bit position, bit length for the active generation. |
+| `elc_domain_create(h, struct elc_domain_create *req)` | Materialise domain(s) after apply. |
+| `elc_get_entry_offset(h, struct elc_entry_offset *io)` | Resolve `entry_id` → `global_offset`, bit position, bit length for the active generation. |
 
 Controllers should choose **stable entry IDs** when submitting entries,
 then resolve offsets after domain creation. Offsets are valid only for
@@ -262,12 +262,12 @@ the active configuration generation.
 
 | Function | Behaviour |
 |----------|-----------|
-| `cw_ec_cycle_activate(h, uint32_t period_ns, uint32_t flags)` | Start cyclic receive/process/queue/send. Period in `[CW_EC_CYCLE_PERIOD_MIN_NS, CW_EC_CYCLE_PERIOD_MAX_NS]` (100 µs … 1 s). |
-| `cw_ec_cycle_deactivate(h)` | Synchronous gate + join cyclic task. |
-| `cw_ec_cycle_status(h, struct cw_ec_cycle_status *st)` | |
-| `cw_ec_cycle_wait(h, struct cw_ec_cycle_wait *wait)` | Interruptible wait for a newer cycle record. |
-| `cw_ec_cycle_info(h, struct cw_ec_cycle_info *info)` | Coherent timing/generation record without waiting. |
-| `cw_ec_cycle_set_period(h, struct cw_ec_cycle_period_update *upd)` | Disarmed, non-DC acknowledged period change (API 0.15). |
+| `elc_cycle_activate(h, uint32_t period_ns, uint32_t flags)` | Start cyclic receive/process/queue/send. Period in `[ELC_CYCLE_PERIOD_MIN_NS, ELC_CYCLE_PERIOD_MAX_NS]` (100 µs … 1 s). |
+| `elc_cycle_deactivate(h)` | Synchronous gate + join cyclic task. |
+| `elc_cycle_status(h, struct elc_cycle_status *st)` | |
+| `elc_cycle_wait(h, struct elc_cycle_wait *wait)` | Interruptible wait for a newer cycle record. |
+| `elc_cycle_info(h, struct elc_cycle_info *info)` | Coherent timing/generation record without waiting. |
+| `elc_cycle_set_period(h, struct elc_cycle_period_update *upd)` | Disarmed, non-DC acknowledged period change (API 0.15). |
 
 The kernel owns the bus timeline. Application loop rate may be lower than
 the EtherCAT cycle rate; clients must use cycle identity and may skip
@@ -277,27 +277,27 @@ intermediate notifications.
 
 | Function | Behaviour |
 |----------|-----------|
-| `cw_ec_get_input_snapshot(h, struct cw_ec_input_snapshot *snap, void *buf, size_t len)` | Coherent global input image. |
-| `cw_ec_publish_output(h, const void *image, const void *mask, size_t len, struct cw_ec_output_publish *pub)` | Publish full image + update mask. Does **not** arm. |
-| `cw_ec_arm_output(h, struct cw_ec_output_arm *arm)` | Arm exact generation + latest publication sequence. |
-| `cw_ec_disarm_output(h, struct cw_ec_output_disarm *disarm)` | Synchronous disarm / zero gate. |
-| `cw_ec_get_io_status(h, struct cw_ec_io_status *st)` | Health, arm, re-arm required, faults. |
+| `elc_get_input_snapshot(h, struct elc_input_snapshot *snap, void *buf, size_t len)` | Coherent global input image. |
+| `elc_publish_output(h, const void *image, const void *mask, size_t len, struct elc_output_publish *pub)` | Publish full image + update mask. Does **not** arm. |
+| `elc_arm_output(h, struct elc_output_arm *arm)` | Arm exact generation + latest publication sequence. |
+| `elc_disarm_output(h, struct elc_output_disarm *disarm)` | Synchronous disarm / zero gate. |
+| `elc_get_io_status(h, struct elc_io_status *st)` | Health, arm, re-arm required, faults. |
 
 Optional lease (API 0.14):
 
 | Function | Behaviour |
 |----------|-----------|
-| `cw_ec_configure_output_lease(h, …)` | Armed-cycle budget when supported. |
-| `cw_ec_renew_output_lease(h, …)` | Does not re-arm by itself. |
-| `cw_ec_get_output_lease_status(h, …)` | |
+| `elc_configure_output_lease(h, …)` | Armed-cycle budget when supported. |
+| `elc_renew_output_lease(h, …)` | Does not re-arm by itself. |
+| `elc_get_output_lease_status(h, …)` | |
 
 ### 4.9 Status helpers
 
 | Function | Behaviour |
 |----------|-----------|
-| `cw_ec_get_config_slave_status(h, …)` | Per configured slave ID. |
-| `cw_ec_get_domain_status(h, …)` | Per domain WC/validity. |
-| `cw_ec_get_dc_status(h, …)` | DC diagnostics when configured. |
+| `elc_get_config_slave_status(h, …)` | Per configured slave ID. |
+| `elc_get_domain_status(h, …)` | Per domain WC/validity. |
+| `elc_get_dc_status(h, …)` | DC diagnostics when configured. |
 
 ### 4.10 Convenience builders (optional)
 
@@ -305,10 +305,10 @@ Policy-free helpers only:
 
 ```c
 /* Example pure ID scheme — callers may use any stable scheme. */
-cw_ec_entry_id cw_ec_make_entry_id(uint32_t slave_config_id,
+elc_entry_id elc_make_entry_id(uint32_t slave_config_id,
                                    uint16_t local_index);
 
-int cw_ec_fill_config_slave(struct cw_ec_config_slave *out,
+int elc_fill_config_slave(struct elc_config_slave *out,
                             uint32_t config_id,
                             uint16_t position,
                             uint16_t alias,
@@ -333,7 +333,7 @@ helpers.
 | Cycle | `CYCLE_ACTIVATE`, `CYCLE_DEACTIVATE`, `CYCLE_STATUS`, `CYCLE_WAIT`, `CYCLE_INFO`, `CYCLE_SET_PERIOD` |
 | Images | `GET_INPUT_SNAPSHOT`, `PUBLISH_OUTPUT`, `ARM`, `DISARM` |
 | Status | `GET_IO_STATUS`, `GET_CONFIG_SLAVE_STATUS`, `GET_DOMAIN_STATUS`, `GET_DC_STATUS` |
-| Lease / history | as in `cw_ethercat_uapi.h` for API 0.14–0.16 |
+| Lease / history | as in `elc_ethercat_uapi.h` for API 0.14–0.16 |
 
 Normative field semantics remain in [`uapi.md`](uapi.md). The library
 must zero structures and set `struct_size` / `api_major` correctly.
@@ -372,7 +372,7 @@ back from a failed object selector to a flat position index.
 ## 6. Controller lifecycle (generic)
 
 ```text
-cw_ec_open
+elc_open
   → negotiate API / capabilities
   → discover and match required topology
   → optional ordered setup SDOs
@@ -381,7 +381,7 @@ cw_ec_open
   → cycle_activate(period_ns)
   → loop: wait or poll → input snapshot → publish (+ mask)
   → optional arm under site safety policy
-  → disarm → cycle_deactivate → cw_ec_close
+  → disarm → cycle_deactivate → elc_close
 ```
 
 Close of the control fd is the hard ownership boundary: outputs gated,
@@ -393,14 +393,14 @@ Full behavioural detail: [`developer-guide.md`](developer-guide.md).
 
 ## 7. In-tree tools as first clients
 
-Migrate tools onto `libcwethercat` so the library is proven before external
+Migrate tools onto `libelcethercat` so the library is proven before external
 integrations:
 
 | Tool | Library? | Coverage |
 |------|----------|----------|
 | `elc_bus` | yes | open, negotiate, discovery |
 | `elc_sdo` | yes | setup / upload / recipes |
-| `elc_config` | yes | full config, cycle, images, timing; hostile active checks still use raw ioctl via `cw_ec_fd` so wrong `struct_size` is not papered over |
+| `elc_config` | yes | full config, cycle, images, timing; hostile active checks still use raw ioctl via `elc_fd` so wrong `struct_size` is not papered over |
 | `elc_config_stress` | yes | maximum pending create/reset limits |
 | `elc_abi_test` | **no** (intentional) | raw ioctl hostile ABI suite against the kernel UAPI |
 
@@ -411,7 +411,7 @@ ioctl glue.
 
 ## 8. Implementation checklist (this repository)
 
-- [x] Add `include/cw_ethercat.h` matching §4
+- [x] Add `include/elc_ethercat.h` matching §4
 - [x] Implement `lib/` sources
 - [x] `make lib` / `make install-lib` / pkg-config
 - [x] Migrate `tools/elc_bus` to the library
@@ -438,7 +438,7 @@ ioctl glue.
 |----------|--------|
 | What is this project? | Generic kernel EtherCAT cyclic transport + UAPI + tools + library |
 | Who is the library for? | Any userspace controller or tool |
-| Where does it live? | `lib/` in this repository; installable headers + `libcwethercat` |
+| Where does it live? | `lib/` in this repository; installable headers + `libelcethercat` |
 | API language? | C wrapping UAPI 0.16 |
 | What stays out of the library? | Device recipes, ESI parsing, machine semantics, arm policy meaning |
 | Hard exclusivity rule? | One master-0 application owner: this control fd **or** another EtherLab client |
@@ -501,14 +501,14 @@ optional PDO) when building IDs; never silently fall back to flat `pos`.
 
 **Phase 9 — Configuration**
 
-- Convert `ECModule` / XML result to `cw_ec_config_*`; skip ecrt
+- Convert `ECModule` / XML result to `elc_config_*`; skip ecrt
   configure/register when backend is kernel; fill offsets from
-  `cw_ec_get_entry_offset`.
+  `elc_get_entry_offset`.
 - Accept: same XML matching; disarmed OP on a fixed fixture.
 
 **Phase 10 — Setup SDOs**
 
-- Map prep recipes to `cw_ec_setup_*`; keep external scripts as recovery.
+- Map prep recipes to `elc_setup_*`; keep external scripts as recovery.
 - Accept: mapping objects match known-good commissioning path.
 
 **Phase 11 — Cyclic path**

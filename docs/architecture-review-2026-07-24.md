@@ -139,7 +139,7 @@ The plan's documentation gate now passes for standalone API 0.10:
 
 The install/uninstall layout was tested under a temporary `DESTDIR`: both
 modules were installed mode 0644 under the target release's
-`extra/cw_ethercat` directory and removed cleanly. The live module tree was not
+`extra/elc_ethercat` directory and removed cleanly. The live module tree was not
 modified. Debug-kernel procedures distinguish unsupported target facilities
 from completed tests.
 

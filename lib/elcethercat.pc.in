@@ -1,0 +1,10 @@
+prefix=@PREFIX@
+exec_prefix=${prefix}
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: elcethercat
+Description: Generic userspace library for the elc_ethercat EtherCAT cyclic transport
+Version: @VERSION@
+Libs: -L${libdir} -lelcethercat
+Cflags: -I${includedir}

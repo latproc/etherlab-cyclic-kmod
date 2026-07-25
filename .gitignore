@@ -40,7 +40,7 @@
 /tools/elc_sdo
 /tools/elc_config
 /tools/elc_config_stress
-/lib/cwethercat.pc
+/lib/elcethercat.pc
 __pycache__/
 *.pyc
 

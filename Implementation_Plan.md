@@ -477,7 +477,7 @@ Prefer a small number of top-level owner objects with deterministic teardown.
 For example:
 
 ```text
-cw_ec_device
+elc_device
     |
     +-- active configuration
     |       |
@@ -541,7 +541,7 @@ if (!cfg->syncs) {
 return 0;
 
 fail:
-    cw_ec_config_destroy(cfg);
+    elc_config_destroy(cfg);
     return ret;
 ```
 
@@ -556,11 +556,11 @@ Use `kzalloc`/`kcalloc` where zero-initialisation makes teardown safer.
 Functions such as:
 
 ```text
-cw_ec_stop_cycle()
-cw_ec_deactivate()
-cw_ec_config_destroy()
-cw_ec_release_master()
-cw_ec_device_cleanup()
+elc_stop_cycle()
+elc_deactivate()
+elc_config_destroy()
+elc_release_master()
+elc_device_cleanup()
 ```
 
 should tolerate partially initialised state.
@@ -1282,9 +1282,9 @@ kernel/
     clockwork_ethercat/
         Makefile
         Kbuild
-        cw_ec_module.c
-        cw_ec_internal.h
-        cw_ec_uapi.h
+        elc_module.c
+        elc_internal.h
+        elc_uapi.h
 ```
 
 ## First test module
@@ -1350,7 +1350,7 @@ This must support Clockwork's existing scan-and-match behaviour later.
 At minimum:
 
 ```c
-struct cw_ec_slave_info {
+struct elc_slave_info {
     __u16 position;
     __u16 alias;
 
@@ -1385,15 +1385,15 @@ Introduce a module state machine early.
 For example:
 
 ```c
-enum cw_ec_state {
-    CW_EC_STATE_DOWN,
-    CW_EC_STATE_WAITING_FOR_LINK,
-    CW_EC_STATE_SCANNING,
-    CW_EC_STATE_BUS_READY,
-    CW_EC_STATE_CONFIGURING,
-    CW_EC_STATE_READY,
-    CW_EC_STATE_RUNNING,
-    CW_EC_STATE_ERROR,
+enum elc_state {
+    ELC_STATE_DOWN,
+    ELC_STATE_WAITING_FOR_LINK,
+    ELC_STATE_SCANNING,
+    ELC_STATE_BUS_READY,
+    ELC_STATE_CONFIGURING,
+    ELC_STATE_READY,
+    ELC_STATE_RUNNING,
+    ELC_STATE_ERROR,
 };
 ```
 
@@ -1432,16 +1432,16 @@ This utility must not use Clockwork classes.
 A character device is a reasonable initial direction:
 
 ```text
-/dev/cw_ethercat0
+/dev/elc_ethercat0
 ```
 
 Potential operations:
 
 ```text
-CW_EC_IOC_GET_API_VERSION
-CW_EC_IOC_GET_MASTER_INFO
-CW_EC_IOC_GET_SLAVE_COUNT
-CW_EC_IOC_GET_SLAVE_INFO
+ELC_IOC_GET_API_VERSION
+ELC_IOC_GET_MASTER_INFO
+ELC_IOC_GET_SLAVE_COUNT
+ELC_IOC_GET_SLAVE_INFO
 ```
 
 Before freezing this ABI:
@@ -1489,17 +1489,17 @@ They are not equivalent to Clockwork's existing runtime `SDOEntry` objects.
 Suggested conceptual structure:
 
 ```c
-enum cw_ec_sdo_data_type {
-    CW_EC_SDO_U8,
-    CW_EC_SDO_S8,
-    CW_EC_SDO_U16,
-    CW_EC_SDO_S16,
-    CW_EC_SDO_U32,
-    CW_EC_SDO_S32,
-    CW_EC_SDO_BYTES,
+enum elc_sdo_data_type {
+    ELC_SDO_U8,
+    ELC_SDO_S8,
+    ELC_SDO_U16,
+    ELC_SDO_S16,
+    ELC_SDO_U32,
+    ELC_SDO_S32,
+    ELC_SDO_BYTES,
 };
 
-struct cw_ec_setup_sdo {
+struct elc_setup_sdo {
     __u32 sequence;
     __u16 position;
     __u16 index;
@@ -2025,7 +2025,7 @@ slave
 Possible structures:
 
 ```c
-struct cw_ec_slave_cfg {
+struct elc_slave_cfg {
     __u32 config_id;
     __u16 alias;
     __u16 position;
@@ -2034,7 +2034,7 @@ struct cw_ec_slave_cfg {
     __u32 revision_number; /* matching/diagnostic only if required */
 };
 
-struct cw_ec_sync_cfg {
+struct elc_sync_cfg {
     __u32 slave_config_id;
     __u8 sync_index;
     __u8 direction;
@@ -2042,13 +2042,13 @@ struct cw_ec_sync_cfg {
     __u8 reserved;
 };
 
-struct cw_ec_pdo_cfg {
+struct elc_pdo_cfg {
     __u32 sync_config_id;
     __u16 pdo_index;
     __u16 reserved;
 };
 
-struct cw_ec_pdo_entry_cfg {
+struct elc_pdo_entry_cfg {
     __u32 pdo_config_id;
     __u32 entry_id;
     __u16 index;
@@ -2256,7 +2256,7 @@ Counters must not require per-cycle formatted logging.
 Create:
 
 ```text
-tools/cw_ec_cycle
+tools/elc_cycle
 ```
 
 It should:
@@ -2290,7 +2290,7 @@ Allow a normal user-space process to consume inputs and update outputs without p
 Use a memory-mapped region associated with:
 
 ```text
-/dev/cw_ethercat0
+/dev/elc_ethercat0
 ```
 
 Conceptually:
@@ -2568,7 +2568,7 @@ The initial implementation should expose sufficient timing information for diagn
 Conceptually:
 
 ```c
-struct cw_ec_cycle_info {
+struct elc_cycle_info {
     __u32 struct_size;
     __u32 flags;
 
@@ -2826,7 +2826,7 @@ It should nevertheless preserve a clean architectural path for a later queue con
 Conceptually only:
 
 ```c
-struct cw_ec_scheduled_output {
+struct elc_scheduled_output {
     __u32 struct_size;
     __u32 flags;
 
@@ -2974,7 +2974,7 @@ cycle-addressed queue above. Queue lead, admission deadline, capacity,
 underrun indication and fail-safe response must be explicit.
 
 Because existing ioctl command encoding includes structure size, do not enlarge
-the API 0.13 `cw_ec_cycle_info` in place. Add a new versioned timing-record and
+the API 0.13 `elc_cycle_info` in place. Add a new versioned timing-record and
 wait operation, while continuing to serve the API 0.13 record for binary
 compatibility.
 
@@ -3310,7 +3310,7 @@ Create a user-space library that wraps the kernel ABI.
 Possible names:
 
 ```text
-libcwethercat
+libelcethercat
 libclockwork_ethercat
 ```
 
@@ -3348,7 +3348,7 @@ It should be reusable by:
 elc_bus
 elc_sdo
 elc_config
-cw_ec_cycle
+elc_cycle
 iod
 ```
 
@@ -3417,7 +3417,7 @@ ecrt_slave_config_pdos
 PDO registration functions
 ```
 
-with calls through `libcwethercat`.
+with calls through `libelcethercat`.
 
 ## Existing configuration data
 
@@ -3439,7 +3439,7 @@ ECModule
 Kernel configuration DTO
     |
     v
-libcwethercat
+libelcethercat
 ```
 
 Do not make `ECModule` depend directly on Linux ioctl structs.
@@ -3852,7 +3852,7 @@ ulimit -c unlimited
 
 echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 
-# Ensure EtherLab and cw_ethercat kernel modules are loaded.
+# Ensure EtherLab and elc_ethercat kernel modules are loaded.
 # Wait for the new transport to report link/bus readiness.
 
 ${BASEDIR}/code/machine/scripts/iod_irq_affinity.sh || \
@@ -3915,7 +3915,7 @@ validate it
 show resulting registration offsets
 ```
 
-## `cw_ec_cycle`
+## `elc_cycle`
 
 Purpose:
 
@@ -3935,7 +3935,7 @@ set mapped outputs
 inspect raw/shared process image
 ```
 
-## `cw_ec_status`
+## `elc_status`
 
 Purpose:
 
@@ -4002,7 +4002,7 @@ Possible layout:
 ```text
 ethercat-kernel/
     include/
-        cw_ec_uapi.h
+        elc_uapi.h
     module/
         ...
     lib/
@@ -4024,14 +4024,14 @@ Avoid C++ constructs in UAPI.
 Eventually support:
 
 ```text
-cw_ethercat.ko
-libcwethercat.so or static library
-cw_ec_* tools
+elc_ethercat.ko
+libelcethercat.so or static library
+elc_* tools
 udev rule if needed
 module-load config
 ```
 
-Do not require world-writable `/dev/cw_ethercat0`.
+Do not require world-writable `/dev/elc_ethercat0`.
 
 Define appropriate group/permissions.
 
@@ -4050,14 +4050,14 @@ clockwork-ethercat-kmod/
 ├── Makefile
 ├── kernel/
 │   ├── Kbuild
-│   ├── cw_ethercat_main.c
-│   ├── cw_ethercat_master.c
-│   ├── cw_ethercat_config.c
-│   ├── cw_ethercat_cycle.c
-│   ├── cw_ethercat_sdo.c
-│   └── cw_ethercat_internal.h
+│   ├── elc_ethercat_main.c
+│   ├── elc_ethercat_master.c
+│   ├── elc_ethercat_config.c
+│   ├── elc_ethercat_cycle.c
+│   ├── elc_ethercat_sdo.c
+│   └── elc_ethercat_internal.h
 ├── include/
-│   └── cw_ethercat_uapi.h
+│   └── elc_ethercat_uapi.h
 ├── lib/
 ├── tools/
 ├── tests/
@@ -4166,7 +4166,7 @@ The kernel-module source itself should not care whether those artifacts originat
 
 ## Consider DKMS for the new module
 
-After the standalone module is proven, consider providing a DKMS package for `cw_ethercat.ko` on newer systems.
+After the standalone module is proven, consider providing a DKMS package for `elc_ethercat.ko` on newer systems.
 
 Conceptually:
 
@@ -4178,7 +4178,7 @@ ethercat-master DKMS
     v
 clockwork-ethercat-kmod DKMS
     |
-    +-- builds cw_ethercat.ko against the matching
+    +-- builds elc_ethercat.ko against the matching
         EtherLab API/symbol artifacts for kernel X
 ```
 
@@ -4251,7 +4251,7 @@ user-space application
         |
         | UAPI / user-space library
         v
-/dev/cw_ethercat0
+/dev/elc_ethercat0
         |
         v
 etherlab-cyclic-kmod
@@ -4320,9 +4320,9 @@ Document each tool as it is implemented:
 elc_bus
 elc_sdo
 elc_config
-cw_ec_cycle
+elc_cycle
 elc_io
-cw_ec_status
+elc_status
 ```
 
 Explain which operations are diagnostic-only and which require master ownership.
@@ -4466,8 +4466,8 @@ This is important because IOD and the kernel module may be updated independently
 Include:
 
 ```c
-#define CW_EC_API_VERSION_MAJOR ...
-#define CW_EC_API_VERSION_MINOR ...
+#define ELC_API_VERSION_MAJOR ...
+#define ELC_API_VERSION_MINOR ...
 ```
 
 Have:
@@ -4906,11 +4906,11 @@ The first useful end-to-end prototype does **not** need full Clockwork support.
 
 It is complete when all of these are true:
 
-1. `cw_ethercat.ko` can be loaded and unloaded cleanly.
+1. `elc_ethercat.ko` can be loaded and unloaded cleanly.
 2. `elc_bus` reports the real bus.
 3. `elc_sdo` can reproduce the ED3L `sdo.sh` mapping.
 4. `elc_config` can configure a known slave/domain.
-5. `cw_ec_cycle` starts a 2 kHz kernel cyclic loop.
+5. `elc_cycle` starts a 2 kHz kernel cyclic loop.
 6. `elc_io` can read one real input and drive one test output.
 7. Cycle statistics can be collected.
 8. The old IOD path remains untouched and runnable.
@@ -4984,7 +4984,7 @@ This isolates the first real boundary:
 ```text
 EtherLab kernel API
         |
-cw_ethercat.ko
+elc_ethercat.ko
         |
 versioned UAPI
         |

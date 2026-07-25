@@ -16,20 +16,20 @@ PKGCONFIGDIR ?= $(LIBDIR)/pkgconfig
 LIB_VERSION_MAJOR := 0
 LIB_VERSION_MINOR := 16
 LIB_VERSION := $(LIB_VERSION_MAJOR).$(LIB_VERSION_MINOR).0
-SONAME := libcwethercat.so.$(LIB_VERSION_MAJOR)
+SONAME := libelcethercat.so.$(LIB_VERSION_MAJOR)
 
 .PHONY: all modules lib tools check-build-env test-build-contract \
 	install install-lib uninstall uninstall-lib clean
 
-MODULE_INSTALL_DIR := $(DESTDIR)/lib/modules/$(KERNEL_RELEASE)/extra/cw_ethercat
-MODULE_FILES := kernel/cw_ethercat.ko kernel/cw_ethercat_probe.ko
+MODULE_INSTALL_DIR := $(DESTDIR)/lib/modules/$(KERNEL_RELEASE)/extra/elc_ethercat
+MODULE_FILES := kernel/elc_ethercat.ko kernel/elc_ethercat_probe.ko
 
-LIB_OBJS := lib/cw_ethercat.o
-LIB_STATIC := lib/libcwethercat.a
-LIB_SHARED := lib/libcwethercat.so.$(LIB_VERSION)
-LIB_SONAME_LINK := lib/libcwethercat.so.$(LIB_VERSION_MAJOR)
-LIB_LINK := lib/libcwethercat.so
-PKGCONFIG := lib/cwethercat.pc
+LIB_OBJS := lib/elc_ethercat.o
+LIB_STATIC := lib/libelcethercat.a
+LIB_SHARED := lib/libelcethercat.so.$(LIB_VERSION)
+LIB_SONAME_LINK := lib/libelcethercat.so.$(LIB_VERSION_MAJOR)
+LIB_LINK := lib/libelcethercat.so
+PKGCONFIG := lib/elcethercat.pc
 
 all: modules lib tools
 
@@ -74,8 +74,8 @@ modules: check-build-env
 
 lib: $(LIB_STATIC) $(LIB_SHARED) $(LIB_LINK) $(LIB_SONAME_LINK) $(PKGCONFIG)
 
-lib/cw_ethercat.o: lib/cw_ethercat.c include/cw_ethercat.h \
-		include/cw_ethercat_uapi.h
+lib/elc_ethercat.o: lib/elc_ethercat.c include/elc_ethercat.h \
+		include/elc_ethercat_uapi.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 -fPIC \
 		-I"$(CURDIR)/include" -c -o "$@" "$<"
 
@@ -91,7 +91,7 @@ $(LIB_SONAME_LINK): $(LIB_SHARED)
 $(LIB_LINK): $(LIB_SONAME_LINK)
 	ln -sfn "$(notdir $(LIB_SONAME_LINK))" "$@"
 
-$(PKGCONFIG): lib/cwethercat.pc.in
+$(PKGCONFIG): lib/elcethercat.pc.in
 	sed -e 's|@PREFIX@|$(PREFIX)|g' \
 		-e 's|@VERSION@|$(LIB_VERSION)|g' \
 		"$<" > "$@"
@@ -102,29 +102,29 @@ tools: lib tools/elc_bus tools/elc_abi_test tools/elc_sdo \
 test-build-contract:
 	./tools/elc_test_build_contract.sh
 
-# Feature tools link libcwethercat. abi_test keeps raw ioctls so hostile
+# Feature tools link libelcethercat. abi_test keeps raw ioctls so hostile
 # struct_size/reserved checks exercise the kernel UAPI directly.
-tools/elc_bus: tools/elc_bus.c include/cw_ethercat.h include/cw_ethercat_uapi.h \
+tools/elc_bus: tools/elc_bus.c include/elc_ethercat.h include/elc_ethercat_uapi.h \
 		$(LIB_STATIC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \
 		-I"$(CURDIR)/include" -o "$@" "$<" $(LIB_STATIC)
 
-tools/elc_abi_test: tools/elc_abi_test.c include/cw_ethercat_uapi.h
+tools/elc_abi_test: tools/elc_abi_test.c include/elc_ethercat_uapi.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \
 		-I"$(CURDIR)/include" -o "$@" "$<"
 
-tools/elc_sdo: tools/elc_sdo.c include/cw_ethercat.h include/cw_ethercat_uapi.h \
+tools/elc_sdo: tools/elc_sdo.c include/elc_ethercat.h include/elc_ethercat_uapi.h \
 		$(LIB_STATIC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \
 		-I"$(CURDIR)/include" -o "$@" "$<" $(LIB_STATIC)
 
-tools/elc_config: tools/elc_config.c include/cw_ethercat.h include/cw_ethercat_uapi.h \
+tools/elc_config: tools/elc_config.c include/elc_ethercat.h include/elc_ethercat_uapi.h \
 		$(LIB_STATIC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \
 		-I"$(CURDIR)/include" -o "$@" "$<" $(LIB_STATIC)
 
-tools/elc_config_stress: tools/elc_config_stress.c include/cw_ethercat.h \
-		include/cw_ethercat_uapi.h $(LIB_STATIC)
+tools/elc_config_stress: tools/elc_config_stress.c include/elc_ethercat.h \
+		include/elc_ethercat_uapi.h $(LIB_STATIC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \
 		-I"$(CURDIR)/include" -o "$@" "$<" $(LIB_STATIC)
 
@@ -137,7 +137,7 @@ install-lib: lib
 	install -d "$(DESTDIR)$(INCLUDEDIR)"
 	install -d "$(DESTDIR)$(LIBDIR)"
 	install -d "$(DESTDIR)$(PKGCONFIGDIR)"
-	install -m 0644 include/cw_ethercat_uapi.h include/cw_ethercat.h \
+	install -m 0644 include/elc_ethercat_uapi.h include/elc_ethercat.h \
 		"$(DESTDIR)$(INCLUDEDIR)/"
 	install -m 0644 $(LIB_STATIC) "$(DESTDIR)$(LIBDIR)/"
 	install -m 0755 $(LIB_SHARED) "$(DESTDIR)$(LIBDIR)/"
@@ -147,7 +147,7 @@ install-lib: lib
 		"$(DESTDIR)$(LIBDIR)/$(notdir $(LIB_LINK))"
 	sed -e 's|@PREFIX@|$(PREFIX)|g' \
 		-e 's|@VERSION@|$(LIB_VERSION)|g' \
-		lib/cwethercat.pc.in > "$(DESTDIR)$(PKGCONFIGDIR)/cwethercat.pc"
+		lib/elcethercat.pc.in > "$(DESTDIR)$(PKGCONFIGDIR)/elcethercat.pc"
 
 uninstall: uninstall-lib
 	$(RM) $(addprefix $(MODULE_INSTALL_DIR)/,$(notdir $(MODULE_FILES)))
@@ -155,13 +155,13 @@ uninstall: uninstall-lib
 	@if [ -z "$(DESTDIR)" ]; then depmod -a "$(KERNEL_RELEASE)"; fi
 
 uninstall-lib:
-	$(RM) "$(DESTDIR)$(INCLUDEDIR)/cw_ethercat_uapi.h" \
-		"$(DESTDIR)$(INCLUDEDIR)/cw_ethercat.h"
-	$(RM) "$(DESTDIR)$(LIBDIR)/libcwethercat.a" \
-		"$(DESTDIR)$(LIBDIR)/libcwethercat.so" \
-		"$(DESTDIR)$(LIBDIR)/libcwethercat.so.$(LIB_VERSION_MAJOR)" \
-		"$(DESTDIR)$(LIBDIR)/libcwethercat.so.$(LIB_VERSION)"
-	$(RM) "$(DESTDIR)$(PKGCONFIGDIR)/cwethercat.pc"
+	$(RM) "$(DESTDIR)$(INCLUDEDIR)/elc_ethercat_uapi.h" \
+		"$(DESTDIR)$(INCLUDEDIR)/elc_ethercat.h"
+	$(RM) "$(DESTDIR)$(LIBDIR)/libelcethercat.a" \
+		"$(DESTDIR)$(LIBDIR)/libelcethercat.so" \
+		"$(DESTDIR)$(LIBDIR)/libelcethercat.so.$(LIB_VERSION_MAJOR)" \
+		"$(DESTDIR)$(LIBDIR)/libelcethercat.so.$(LIB_VERSION)"
+	$(RM) "$(DESTDIR)$(PKGCONFIGDIR)/elcethercat.pc"
 
 clean:
 	-$(MAKE) -C "$(KERNEL_BUILD)" M="$(CURDIR)/kernel" clean
