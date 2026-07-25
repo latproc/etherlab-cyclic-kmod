@@ -158,6 +158,15 @@ struct cw_ec_file {
 	spinlock_t cycle_info_lock;
 	struct cw_ec_cycle_info cycle_info;
 	atomic64_t cycle_info_sequence;
+	/* DC motion-clock contract fields: published under cycle_info_lock
+	 * together with cycle_info so waiters see one coherent snapshot.
+	 * Zero when DC is not configured.
+	 */
+	u64 dc_published_app_time_ns;
+	u8 dc_published_reference_valid;
+	u32 dc_published_reference_sample;
+	s32 dc_published_phase_difference_ns;
+	s32 dc_published_applied_adjustment_ns;
 	bool io_ever_healthy;
 	spinlock_t input_lock;
 	u8 *input_buffers[2];
@@ -496,11 +505,17 @@ static int cw_ec_dc_process_receive(struct cw_ec_file *ctx)
 		}
 		ctx->dc_last_difference_ns = difference;
 		ctx->dc_reference_valid = true;
+		ctx->dc_published_reference_sample = reference;
+		ctx->dc_published_phase_difference_ns = difference;
+		ctx->dc_published_reference_valid = 1;
 		if (ctx->dc_last_reference_result)
 			atomic64_inc(&ctx->dc_reference_resume_count);
 	} else {
 		ctx->dc_reference_valid = false;
 		atomic64_inc(&ctx->dc_reference_read_error_count);
+		ctx->dc_published_reference_sample = 0;
+		ctx->dc_published_phase_difference_ns = 0;
+		ctx->dc_published_reference_valid = 0;
 	}
 	ctx->dc_last_reference_result = ret;
 	atomic_set(&ctx->dc_status_reference_valid,
@@ -544,6 +559,9 @@ static int cw_ec_dc_prepare_send(struct cw_ec_file *ctx)
 
 	ctx->application_time_ns +=
 		ctx->cycle_period_ns - ctx->dc_cycle_adjustment_ns - phase_step;
+	ctx->dc_published_app_time_ns = ctx->application_time_ns;
+	ctx->dc_published_applied_adjustment_ns =
+		ctx->dc_cycle_adjustment_ns + phase_step;
 	ret = ecrt_master_application_time(ctx->master,
 					  ctx->application_time_ns);
 	operation_result = ecrt_master_sync_slave_clocks(ctx->master);
@@ -1021,7 +1039,7 @@ static int cw_ec_wait_output_gate(struct cw_ec_file *ctx, u64 request)
 
 	timeout = msecs_to_jiffies(
 		2U * DIV_ROUND_UP(ctx->cycle_period_ns, 1000000U) + 100U);
-	wait_result = wait_event_interruptible_timeout(
+	wait_result = wait_event_killable_timeout(
 		authority->gate_wait,
 		atomic64_read(&authority->gate_applied) >= request,
 		timeout);
@@ -1109,6 +1127,8 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	}
 
 	ctx->master = master;
+	if (cw_ec_test_fail_allocation)
+		atomic_set(&cw_ec_test_allocation_count, 0);
 	mutex_init(&ctx->lock);
 	spin_lock_init(&ctx->input_lock);
 	spin_lock_init(&ctx->compat_output.lock);
@@ -1158,6 +1178,11 @@ static int cw_ec_open(struct inode *inode, struct file *file)
 	atomic64_set(&ctx->dc_reference_resume_count, 0);
 	atomic64_set(&ctx->dc_monitor_success_count, 0);
 	atomic64_set(&ctx->dc_monitor_timeout_count, 0);
+	ctx->dc_published_app_time_ns = 0;
+	ctx->dc_published_reference_valid = 0;
+	ctx->dc_published_reference_sample = 0;
+	ctx->dc_published_phase_difference_ns = 0;
+	ctx->dc_published_applied_adjustment_ns = 0;
 	atomic_set(&ctx->io_bus_healthy, 0);
 	atomic_set(&ctx->compat_output.armed, 0);
 	atomic_set(&ctx->compat_output.rearm_required, 0);
@@ -1979,6 +2004,11 @@ static long cw_ec_cycle_activate(struct cw_ec_file *ctx, void __user *argp)
 	atomic64_set(&ctx->dc_reference_resume_count, 0);
 	atomic64_set(&ctx->dc_monitor_success_count, 0);
 	atomic64_set(&ctx->dc_monitor_timeout_count, 0);
+	ctx->dc_published_app_time_ns = 0;
+	ctx->dc_published_reference_valid = 0;
+	ctx->dc_published_reference_sample = 0;
+	ctx->dc_published_phase_difference_ns = 0;
+	ctx->dc_published_applied_adjustment_ns = 0;
 	atomic_set(&ctx->io_bus_healthy, 0);
 	atomic_set(&authority->armed, 0);
 	atomic_set(&authority->rearm_required, 0);
@@ -2224,6 +2254,59 @@ static long cw_ec_cycle_get_info(struct cw_ec_file *ctx, void __user *argp)
 		return -EINVAL;
 
 	cw_ec_copy_cycle_info(ctx, &result);
+	if (copy_to_user(argp, &result, sizeof(result)))
+		return -EFAULT;
+	return 0;
+}
+
+static long cw_ec_cycle_get_dc_info(struct cw_ec_file *ctx, void __user *argp)
+{
+	struct cw_ec_cycle_dc_info request;
+	struct cw_ec_cycle_dc_info result;
+	struct cw_ec_cycle_info cycle;
+	unsigned long irq_flags;
+	int ret;
+
+	if (copy_from_user(&request, argp, sizeof(request)))
+		return -EFAULT;
+	ret = cw_ec_check_header(request.struct_size, request.api_major,
+				 sizeof(request));
+	if (ret)
+		return ret;
+	if (request.flags || request.reserved1 ||
+	    memchr_inv(request.reserved2, 0, sizeof(request.reserved2)))
+		return -EINVAL;
+
+	memset(&result, 0, sizeof(result));
+	result.struct_size = sizeof(result);
+	result.api_major = CW_EC_API_VERSION_MAJOR;
+
+	spin_lock_irqsave(&ctx->cycle_info_lock, irq_flags);
+	cycle = ctx->cycle_info;
+	result.application_time_ns = ctx->dc_published_app_time_ns;
+	result.dc_reference_valid = ctx->dc_published_reference_valid;
+	result.dc_reference_sample = ctx->dc_published_reference_sample;
+	result.dc_phase_difference_ns = ctx->dc_published_phase_difference_ns;
+	result.dc_applied_adjustment_ns = ctx->dc_published_applied_adjustment_ns;
+	spin_unlock_irqrestore(&ctx->cycle_info_lock, irq_flags);
+
+	result.config_generation = cycle.config_generation;
+	result.cycle_index = cycle.cycle_index;
+	result.cycle_period_ns = cycle.cycle_period_ns;
+	result.scheduled_time_ns = cycle.scheduled_time_ns;
+	result.actual_wake_time_ns = cycle.actual_wake_time_ns;
+	result.wake_lateness_ns = cycle.wake_lateness_ns;
+	result.input_sequence = cycle.input_sequence;
+	result.output_sequence_consumed = cycle.output_sequence_consumed;
+	result.missed_deadlines = cycle.missed_deadlines;
+	result.stale_output_cycles = cycle.stale_output_cycles;
+	result.working_counter = cycle.working_counter;
+	result.working_counter_state = cycle.working_counter_state;
+	result.outputs_armed = cycle.outputs_armed;
+	result.bus_healthy = cycle.bus_healthy;
+	result.dc_enabled = !!ctx->config_dc_count;
+	result.cycle_result = cycle.cycle_result;
+
 	if (copy_to_user(argp, &result, sizeof(result)))
 		return -EFAULT;
 	return 0;
@@ -2547,6 +2630,7 @@ static long cw_ec_get_input_history_batch(struct cw_ec_file *ctx,
 	u32 *slots = NULL;
 	u32 count = 0;
 	u32 i;
+	u8 *image_data = NULL;
 	int ret;
 
 	if (copy_from_user(&result, argp, sizeof(result)))
@@ -2590,6 +2674,11 @@ static long cw_ec_get_input_history_batch(struct cw_ec_file *ctx,
 	result.image_size = ctx->domain_size;
 	if (result.data_capacity < required_data) {
 		ret = -ENOSPC;
+		goto out_copy_result;
+	}
+	image_data = kvmalloc(required_data, GFP_KERNEL);
+	if (!image_data) {
+		ret = -ENOMEM;
 		goto out_copy_result;
 	}
 
@@ -2644,15 +2733,15 @@ static long cw_ec_get_input_history_batch(struct cw_ec_file *ctx,
 		goto out_release;
 	}
 	for (i = 0; i < count; i++) {
-		if (copy_to_user(
-			    (u8 __user *)data_ptr +
-				    (size_t)i * ctx->domain_size,
-			    history->data +
-				    (size_t)slots[i] * ctx->domain_size,
-			    ctx->domain_size)) {
-			ret = -EFAULT;
-			goto out_release;
-		}
+		memcpy(image_data + (size_t)i * ctx->domain_size,
+		       history->data +
+			       (size_t)slots[i] * ctx->domain_size,
+		       ctx->domain_size);
+	}
+	if (count && copy_to_user(data_ptr, image_data,
+				  (size_t)count * ctx->domain_size)) {
+		ret = -EFAULT;
+		goto out_release;
 	}
 	ret = 0;
 
@@ -2670,6 +2759,7 @@ out_copy_result:
 out_unlock:
 	mutex_unlock(&ctx->lock);
 out_free:
+	kvfree(image_data);
 	kfree(records);
 	kfree(slots);
 	return ret;
@@ -3130,6 +3220,17 @@ out:
 	return ret;
 }
 
+static bool cw_ec_entry_config_valid(const struct cw_ec_config_entry *cfg)
+{
+	/* Padding entry: all zero */
+	if (!cfg->entry_id && !cfg->index && !cfg->subindex)
+		return true;
+	/* Both identity fields set (entry_id + index/subindex) */
+	if (cfg->entry_id && cfg->index)
+		return true;
+	return false;
+}
+
 #define CW_EC_CONFIG_ADD_CHILD(function_name, node_type, cfg_member, list_name, \
 			       count_name, max_count, validate_expr) \
 static long function_name(struct cw_ec_file *ctx, void __user *argp) \
@@ -3191,9 +3292,7 @@ CW_EC_CONFIG_ADD_CHILD(cw_ec_config_add_entry, cw_ec_entry_node, cfg,
 		       config_entries, config_entry_count,
 		       CW_EC_CONFIG_ENTRY_MAX,
 		       !node->cfg.pdo_config_id || !node->cfg.bit_length ||
-		       ((!node->cfg.entry_id || !node->cfg.index) &&
-			(node->cfg.entry_id || node->cfg.index ||
-			 node->cfg.subindex)))
+		       !cw_ec_entry_config_valid(&node->cfg))
 
 CW_EC_CONFIG_ADD_CHILD(cw_ec_config_add_dc, cw_ec_dc_node, cfg,
 		       config_dcs, config_dc_count, CW_EC_CONFIG_DC_MAX,
@@ -3726,7 +3825,8 @@ static long cw_ec_get_capabilities(void __user *argp)
 			CW_EC_CAP_DC_DIAGNOSTICS |
 			CW_EC_CAP_OUTPUT_LEASE |
 			CW_EC_CAP_CYCLE_PERIOD_UPDATE |
-			CW_EC_CAP_INPUT_HISTORY,
+			CW_EC_CAP_INPUT_HISTORY |
+			CW_EC_CAP_CYCLE_DC_INFO,
 	};
 	int ret;
 
@@ -3781,10 +3881,10 @@ static long cw_ec_get_slave_info(struct cw_ec_file *ctx, void __user *argp)
 	if (copy_from_user(&info, argp, sizeof(info)))
 		return -EFAULT;
 
-	if (info.struct_size != sizeof(info))
-		return -EINVAL;
-	if (info.api_major != CW_EC_API_VERSION_MAJOR)
-		return -EPROTONOSUPPORT;
+	ret = cw_ec_check_header(info.struct_size, info.api_major,
+				 sizeof(info));
+	if (ret)
+		return ret;
 
 	ret = ecrt_master_get_slave(ctx->master, info.position, &ec_info);
 	if (ret)
@@ -3835,6 +3935,8 @@ static long cw_ec_ioctl(struct file *file, unsigned int cmd,
 		return cw_ec_cycle_get_dc_status(ctx, argp);
 	case CW_EC_IOC_CYCLE_GET_INFO:
 		return cw_ec_cycle_get_info(ctx, argp);
+	case CW_EC_IOC_CYCLE_GET_DC_INFO:
+		return cw_ec_cycle_get_dc_info(ctx, argp);
 	case CW_EC_IOC_CYCLE_WAIT:
 		return cw_ec_cycle_wait(ctx, argp);
 	case CW_EC_IOC_CYCLE_SET_PERIOD:

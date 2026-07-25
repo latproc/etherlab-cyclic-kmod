@@ -40,6 +40,7 @@
 #define CW_EC_CAP_OUTPUT_LEASE (1ULL << 4)
 #define CW_EC_CAP_CYCLE_PERIOD_UPDATE (1ULL << 5)
 #define CW_EC_CAP_INPUT_HISTORY (1ULL << 6)
+#define CW_EC_CAP_CYCLE_DC_INFO (1ULL << 7)
 
 enum cw_ec_sdo_type {
 	CW_EC_SDO_U8 = 1,
@@ -377,6 +378,42 @@ struct cw_ec_cycle_info {
 };
 
 /*
+ * Coherent per-cycle record with DC motion-clock contract fields.
+ * All fields are from the same cycle; DC fields are zero when DC is
+ * not configured. The kernel publishes this atomically under the same
+ * cycle_info_lock as the base cycle info.
+ */
+struct cw_ec_cycle_dc_info {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 config_generation;
+	__u64 cycle_index;
+	__u64 cycle_period_ns;
+	__u64 scheduled_time_ns;
+	__u64 actual_wake_time_ns;
+	__s64 wake_lateness_ns;
+	__u64 input_sequence;
+	__u64 output_sequence_consumed;
+	__u64 missed_deadlines;
+	__u64 stale_output_cycles;
+	__u32 working_counter;
+	__u8 working_counter_state;
+	__u8 outputs_armed;
+	__u8 bus_healthy;
+	__u8 dc_enabled;
+	__s32 cycle_result;
+	__u32 reserved1;
+	/* DC motion-clock contract fields */
+	__u64 application_time_ns;
+	__u8 dc_reference_valid;
+	__u8 reserved2[3];
+	__u32 dc_reference_sample;
+	__s32 dc_phase_difference_ns;
+	__s32 dc_applied_adjustment_ns;
+};
+
+/*
  * Wait for a cycle record newer than after_cycle_index in the exact active
  * configuration generation. The kernel returns a coherent cycle snapshot;
  * timeout_ms bounds an interruptible sleep and is never used by the RT task.
@@ -671,5 +708,7 @@ struct cw_ec_domain_status {
 	_IOWR(CW_EC_IOC_MAGIC, 0x4a, struct cw_ec_input_history_config)
 #define CW_EC_IOC_GET_INPUT_HISTORY_BATCH \
 	_IOWR(CW_EC_IOC_MAGIC, 0x4b, struct cw_ec_input_history_batch)
+#define CW_EC_IOC_CYCLE_GET_DC_INFO \
+	_IOWR(CW_EC_IOC_MAGIC, 0x37, struct cw_ec_cycle_dc_info)
 
 #endif /* CW_ETHERCAT_UAPI_H */
