@@ -97,6 +97,43 @@ The fields are `domain DOMAIN_ID` and
 the contiguous domain-segment order in the copied global process image. Files
 without these records retain the implicit single-domain compatibility mode.
 
+## Log process-data value changes
+
+`cycle-log` runs a **disarmed** cyclic session and writes only **changed**
+values for named entries. Each log line is simply:
+
+```text
+name value
+```
+
+Create a name map file (see `tools/configs/ed3l_pos29_io_names.txt`):
+
+```text
+# ENTRY_ID NAME
+0x604100 Statusword
+0x606c00 VelocityActual
+# or object INDEX SUBINDEX NAME
+object 0x6041 0 Statusword
+```
+
+Then:
+
+```sh
+sudo insmod kernel/elc_ethercat.ko
+# log to stdout for 10 s at 1 ms
+sudo tools/elc_config cycle-log \
+  tools/configs/ed3l_velocity_pos29.conf 1000000 10 \
+  tools/configs/ed3l_pos29_io_names.txt
+# or write a file
+sudo tools/elc_config cycle-log \
+  tools/configs/ed3l_velocity_pos29.conf 1000000 10 \
+  tools/configs/ed3l_pos29_io_names.txt /tmp/io-changes.log
+sudo rmmod elc_ethercat
+```
+
+The first sample for each name is always logged; later lines appear only when
+the value changes. Outputs remain disarmed.
+
 ## Zero-output cyclic check
 
 Only after motion inhibition is confirmed:

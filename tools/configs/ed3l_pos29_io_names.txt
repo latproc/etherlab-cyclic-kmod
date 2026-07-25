@@ -1,0 +1,14 @@
+# Name map for elc_config cycle-log (ED3L position 29 fixture).
+# Lines are: ENTRY_ID NAME...
+# or:        object INDEX SUBINDEX NAME...
+# Only listed entries are watched. Output stays disarmed.
+
+# Controlword / setpoints (outputs — still logged if present in image)
+0x604000 Controlword
+0x60ff00 TargetVelocity
+
+# Status / feedback (inputs)
+0x604100 Statusword
+0x606c00 VelocityActual
+0x607700 TorqueActual
+0x603f00 ErrorCode

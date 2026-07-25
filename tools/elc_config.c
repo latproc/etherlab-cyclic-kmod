@@ -191,9 +191,15 @@ static void usage(const char *program)
 		"  %s cycle-zero-hold CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-monitor CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-abi CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
-		"  %s pulse-entry CONFIG PERIOD_NS ENTRY_ID PULSE_MS [DEVICE]\n",
+		"  %s cycle-log CONFIG PERIOD_NS DURATION_SECONDS NAMES_FILE [LOG_FILE] [DEVICE]\n"
+		"  %s pulse-entry CONFIG PERIOD_NS ENTRY_ID PULSE_MS [DEVICE]\n"
+		"\n"
+		"cycle-log: disarmed cycling; log process-data changes as \"name value\".\n"
+		"  NAMES_FILE lines: ENTRY_ID NAME...  or  object INDEX SUBINDEX NAME...\n"
+		"  LOG_FILE defaults to stdout (-). Outputs stay disarmed.\n",
 		program, program, program, program, program, program, program,
-		program, program, program, program, program, program, program);
+		program, program, program, program, program, program, program,
+		program);
 }
 
 static int expect_ioctl_errno(elc_handle *h, unsigned long request,
@@ -671,6 +677,230 @@ static void image_set_value(uint8_t *image, uint8_t *mask,
 		else
 			image[byte] &= ~bit_mask;
 	}
+}
+
+#define IO_LOG_NAME_MAX 96U
+
+struct io_log_point {
+	char name[IO_LOG_NAME_MAX];
+	uint32_t entry_id;
+	uint16_t object_index;
+	uint8_t object_subindex;
+	bool match_object;
+	struct elc_entry_offset offset;
+	uint64_t last_value;
+	bool have_last;
+	bool resolved;
+};
+
+struct io_log_table {
+	struct io_log_point *points;
+	size_t count;
+	size_t capacity;
+};
+
+static void free_io_log_table(struct io_log_table *table)
+{
+	free(table->points);
+	table->points = NULL;
+	table->count = 0;
+	table->capacity = 0;
+}
+
+static int io_log_append(struct io_log_table *table, const struct io_log_point *point)
+{
+	struct io_log_point *grown;
+
+	if (table->count == table->capacity) {
+		size_t next = table->capacity ? table->capacity * 2U : 16U;
+
+		grown = realloc(table->points, next * sizeof(*grown));
+		if (!grown)
+			return -1;
+		table->points = grown;
+		table->capacity = next;
+	}
+	table->points[table->count++] = *point;
+	return 0;
+}
+
+/*
+ * Name map file format (one entry per line):
+ *   ENTRY_ID NAME...
+ *   object INDEX SUBINDEX NAME...
+ * Blank lines and # comments are ignored. NAME may contain spaces.
+ */
+static int load_io_name_map(const char *path, struct io_log_table *table)
+{
+	char line[512];
+	unsigned int line_number = 0;
+	FILE *file = fopen(path, "r");
+
+	if (!file) {
+		fprintf(stderr, "elc_config: cannot open name map %s: %s\n",
+			path, strerror(errno));
+		return -1;
+	}
+	memset(table, 0, sizeof(*table));
+	while (fgets(line, sizeof(line), file)) {
+		struct io_log_point point;
+		char *cursor;
+		char *token;
+		char *saveptr = NULL;
+		uint64_t value;
+
+		line_number++;
+		cursor = line;
+		while (*cursor == ' ' || *cursor == '\t')
+			cursor++;
+		if (!*cursor || *cursor == '\n' || *cursor == '#')
+			continue;
+
+		memset(&point, 0, sizeof(point));
+		token = strtok_r(cursor, " \t\r\n", &saveptr);
+		if (!token)
+			continue;
+		if (!strcmp(token, "object")) {
+			token = strtok_r(NULL, " \t\r\n", &saveptr);
+			if (!token || parse_u64(token, UINT16_MAX, &value))
+				goto bad_line;
+			point.object_index = (uint16_t)value;
+			token = strtok_r(NULL, " \t\r\n", &saveptr);
+			if (!token || parse_u64(token, UINT8_MAX, &value))
+				goto bad_line;
+			point.object_subindex = (uint8_t)value;
+			point.match_object = true;
+		} else {
+			if (parse_u64(token, UINT32_MAX, &value) || !value)
+				goto bad_line;
+			point.entry_id = (uint32_t)value;
+		}
+
+		token = strtok_r(NULL, "\r\n", &saveptr);
+		if (!token)
+			goto bad_line;
+		while (*token == ' ' || *token == '\t')
+			token++;
+		if (!*token || *token == '#')
+			goto bad_line;
+		/* Trim trailing comment / whitespace. */
+		{
+			char *hash = strchr(token, '#');
+			size_t len;
+
+			if (hash)
+				*hash = '\0';
+			len = strlen(token);
+			while (len &&
+			       (token[len - 1U] == ' ' ||
+				token[len - 1U] == '\t')) {
+				token[--len] = '\0';
+			}
+			if (!len || len >= IO_LOG_NAME_MAX)
+				goto bad_line;
+			memcpy(point.name, token, len + 1U);
+		}
+		if (io_log_append(table, &point)) {
+			fprintf(stderr, "elc_config: out of memory loading names\n");
+			fclose(file);
+			free_io_log_table(table);
+			return -1;
+		}
+		continue;
+bad_line:
+		fprintf(stderr, "elc_config: invalid name map line %u in %s\n",
+			line_number, path);
+		fclose(file);
+		free_io_log_table(table);
+		return -1;
+	}
+	if (ferror(file)) {
+		fprintf(stderr, "elc_config: read name map %s: %s\n", path,
+			strerror(errno));
+		fclose(file);
+		free_io_log_table(table);
+		return -1;
+	}
+	fclose(file);
+	if (!table->count) {
+		fprintf(stderr, "elc_config: name map %s has no entries\n",
+			path);
+		return -1;
+	}
+	return 0;
+}
+
+static int resolve_io_log_points(elc_handle *h, const char *config_path,
+				 struct io_log_table *table)
+{
+	struct counts counts;
+	struct io_metadata metadata;
+	size_t i;
+	uint32_t e;
+
+	if (scan_config(config_path, &counts) ||
+	    load_io_metadata(config_path, &counts, &metadata)) {
+		fprintf(stderr,
+			"elc_config: cannot load configuration metadata for logging\n");
+		return -1;
+	}
+	for (i = 0; i < table->count; i++) {
+		struct io_log_point *point = &table->points[i];
+		struct io_entry *entry = NULL;
+
+		if (point->match_object) {
+			for (e = 0; e < metadata.entry_count; e++) {
+				if (metadata.entries[e].cfg.index ==
+					    point->object_index &&
+				    metadata.entries[e].cfg.subindex ==
+					    point->object_subindex) {
+					if (entry) {
+						fprintf(stderr,
+							"elc_config: object 0x%04" PRIx16
+							":%02" PRIx8
+							" matches multiple entries; use ENTRY_ID\n",
+							point->object_index,
+							point->object_subindex);
+						free_io_metadata(&metadata);
+						return -1;
+					}
+					entry = &metadata.entries[e];
+				}
+			}
+		} else {
+			entry = find_io_entry(&metadata, point->entry_id);
+		}
+		if (!entry) {
+			fprintf(stderr,
+				"elc_config: log name \"%s\" does not match a configured entry\n",
+				point->name);
+			free_io_metadata(&metadata);
+			return -1;
+		}
+		if (entry->cfg.bit_length == 0 || entry->cfg.bit_length > 64U) {
+			fprintf(stderr,
+				"elc_config: entry %" PRIu32
+				" width %u cannot be logged as a scalar\n",
+				entry->cfg.entry_id, entry->cfg.bit_length);
+			free_io_metadata(&metadata);
+			return -1;
+		}
+		point->entry_id = entry->cfg.entry_id;
+		point->offset.struct_size = sizeof(point->offset);
+		point->offset.api_major = ELC_API_VERSION_MAJOR;
+		point->offset.entry_id = entry->cfg.entry_id;
+		if (lib_ret(elc_get_entry_offset(h, &point->offset)) < 0) {
+			fprintf(stderr,
+				"elc_config: offset lookup for entry %" PRIu32
+				" failed: %s\n",
+				point->entry_id, strerror(errno));
+			free_io_metadata(&metadata);
+			return -1;
+		}
+		point->resolved = true;
+	}
+	free_io_metadata(&metadata);
+	return 0;
 }
 
 static int submit_record(elc_handle *h, const struct record *record)
@@ -1211,6 +1441,181 @@ static int prepare(const char *path, const char *device)
 	ret = 0;
 out:
 	elc_close(h);
+	return ret;
+}
+
+/*
+ * Disarmed cyclic run that logs process-data changes as:
+ *   name value
+ * Only configured names are watched. First sample logs every name.
+ */
+static int cycle_io_log(const char *config_path, uint32_t period_ns,
+			unsigned int duration_seconds, const char *names_path,
+			const char *log_path, const char *device)
+{
+	struct elc_config_validate validate;
+	struct elc_cycle_activate activate = {
+		.struct_size = sizeof(activate),
+		.api_major = ELC_API_VERSION_MAJOR,
+		.cycle_period_ns = period_ns,
+	};
+	struct elc_cycle_deactivate deactivate = {
+		.struct_size = sizeof(deactivate),
+		.api_major = ELC_API_VERSION_MAJOR,
+	};
+	struct elc_cycle_wait cycle_wait = {
+		.struct_size = sizeof(cycle_wait),
+		.api_major = ELC_API_VERSION_MAJOR,
+		.timeout_ms = 1000,
+	};
+	struct elc_input_snapshot snapshot = {
+		.struct_size = sizeof(snapshot),
+		.api_major = ELC_API_VERSION_MAJOR,
+	};
+	struct io_log_table table;
+	uint8_t *snapshot_data = NULL;
+	elc_handle *h = NULL;
+	FILE *log = stdout;
+	bool close_log = false;
+	bool active = false;
+	uint64_t previous_cycle = 0;
+	uint64_t changes = 0;
+	uint64_t samples = 0;
+	struct timespec end_ts;
+	int ret = 1;
+	size_t i;
+
+	memset(&table, 0, sizeof(table));
+	if (load_io_name_map(names_path, &table))
+		return 1;
+	if (log_path && strcmp(log_path, "-")) {
+		log = fopen(log_path, "w");
+		if (!log) {
+			fprintf(stderr, "elc_config: cannot open log %s: %s\n",
+				log_path, strerror(errno));
+			free_io_log_table(&table);
+			return 1;
+		}
+		close_log = true;
+	}
+
+	if (open_handle(device, &h) < 0) {
+		fprintf(stderr, "elc_config: cannot open %s: %s\n", device,
+			strerror(errno));
+		goto out;
+	}
+	suppress_offset_output = true;
+	if (configure_handle(h, config_path, &validate))
+		goto out;
+	if (resolve_io_log_points(h, config_path, &table))
+		goto out;
+	if (lib_ret(elc_cycle_activate(h, activate.cycle_period_ns,
+				       activate.flags, &activate)) < 0) {
+		fprintf(stderr, "elc_config: activation failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	active = true;
+	snapshot_data = calloc(activate.domain_size, 1);
+	if (!snapshot_data) {
+		fprintf(stderr, "elc_config: allocate input image: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	snapshot.data_ptr = (uintptr_t)snapshot_data;
+	snapshot.data_capacity = activate.domain_size;
+
+	{
+		struct elc_io_status io_status = {
+			.struct_size = sizeof(io_status),
+			.api_major = ELC_API_VERSION_MAJOR,
+		};
+		struct elc_cycle_info cycle_info = {
+			.struct_size = sizeof(cycle_info),
+			.api_major = ELC_API_VERSION_MAJOR,
+		};
+
+		if (lib_ret(elc_get_io_status(h, &io_status)) < 0 ||
+		    lib_ret(elc_cycle_info(h, &cycle_info)) < 0) {
+			fprintf(stderr,
+				"elc_config: initial cycle status failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		cycle_wait.config_generation = io_status.config_generation;
+		previous_cycle = cycle_info.cycle_index;
+		snapshot.config_generation = io_status.config_generation;
+	}
+
+	if (clock_gettime(CLOCK_MONOTONIC, &end_ts) < 0)
+		goto out;
+	end_ts.tv_sec += duration_seconds;
+
+	fprintf(stderr,
+		"elc_config: cycle-log watching %zu named entr%s for %u s at %" PRIu32
+		" ns (outputs disarmed)\n",
+		table.count, table.count == 1 ? "y" : "ies", duration_seconds,
+		period_ns);
+
+	while (true) {
+		struct timespec now;
+		uint64_t value;
+
+		cycle_wait.after_cycle_index = previous_cycle;
+		if (lib_ret(elc_cycle_wait(h, &cycle_wait)) < 0) {
+			if (errno == ETIMEDOUT)
+				continue;
+			fprintf(stderr, "elc_config: cycle wait failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		previous_cycle = cycle_wait.cycle.cycle_index;
+		if (lib_ret(elc_get_input_snapshot(
+			    h, &snapshot, snapshot_data,
+			    activate.domain_size)) < 0) {
+			fprintf(stderr,
+				"elc_config: input snapshot failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		samples++;
+		for (i = 0; i < table.count; i++) {
+			struct io_log_point *point = &table.points[i];
+
+			value = image_get_value(snapshot_data, &point->offset);
+			if (point->have_last && value == point->last_value)
+				continue;
+			fprintf(log, "%s %" PRIu64 "\n", point->name, value);
+			point->last_value = value;
+			point->have_last = true;
+			changes++;
+		}
+		fflush(log);
+		if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
+			goto out;
+		if (now.tv_sec > end_ts.tv_sec ||
+		    (now.tv_sec == end_ts.tv_sec &&
+		     now.tv_nsec >= end_ts.tv_nsec))
+			break;
+	}
+	fprintf(stderr,
+		"elc_config: cycle-log finished samples=%" PRIu64
+		" changes=%" PRIu64 " last_cycle=%" PRIu64 "\n",
+		samples, changes, previous_cycle);
+	ret = 0;
+out:
+	if (active &&
+	    lib_ret(elc_cycle_deactivate(h, &deactivate)) < 0) {
+		fprintf(stderr, "elc_config: deactivation failed: %s\n",
+			strerror(errno));
+		ret = 1;
+	}
+	elc_close(h);
+	free(snapshot_data);
+	free_io_log_table(&table);
+	if (close_log)
+		fclose(log);
+	suppress_offset_output = false;
 	return ret;
 }
 
@@ -2464,7 +2869,7 @@ static int interactive_io(const char *path, uint32_t period_ns,
 		printf("elc_io: warning: bus is not fully healthy; reads remain available but arm will fail\n");
 	io_print_help();
 
-	while (printf("cw-ec> "), fflush(stdout),
+	while (printf("elc> "), fflush(stdout),
 	       fgets(command, sizeof(command), stdin)) {
 		char *name;
 		char *arg1;
@@ -2710,7 +3115,7 @@ int main(int argc, char **argv)
 	uint64_t target_period;
 	uint64_t history_depth;
 
-	if (argc < 3 || argc > 7) {
+	if (argc < 3 || argc > 8) {
 		usage(argv[0]);
 		return 2;
 	}
@@ -2819,6 +3224,37 @@ int main(int argc, char **argv)
 			     !strcmp(argv[1], "cycle-abi"),
 			     !strcmp(argv[1], "cycle-strict"), 0, false,
 			     0, device);
+	}
+	if (!strcmp(argv[1], "cycle-log") &&
+	    (argc == 6 || argc == 7 || argc == 8)) {
+		const char *log_path = "-";
+
+		if (parse_u64(argv[3], ELC_CYCLE_PERIOD_MAX_NS, &period) ||
+		    period < ELC_CYCLE_PERIOD_MIN_NS ||
+		    parse_u64(argv[4], 3600, &duration) || !duration) {
+			fprintf(stderr,
+				"elc_config: invalid period or duration for cycle-log\n");
+			return 2;
+		}
+		/*
+		 * Forms:
+		 *   cycle-log CONFIG PERIOD DURATION NAMES
+		 *   cycle-log CONFIG PERIOD DURATION NAMES LOG
+		 *   cycle-log CONFIG PERIOD DURATION NAMES DEVICE
+		 *   cycle-log CONFIG PERIOD DURATION NAMES LOG DEVICE
+		 */
+		if (argc == 7) {
+			if (!strncmp(argv[6], "/dev/", 5))
+				device = argv[6];
+			else
+				log_path = argv[6];
+		} else if (argc == 8) {
+			log_path = argv[6];
+			device = argv[7];
+		}
+		return cycle_io_log(argv[2], (uint32_t)period,
+				    (unsigned int)duration, argv[5], log_path,
+				    device);
 	}
 	usage(argv[0]);
 	return 2;
