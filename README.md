@@ -242,6 +242,8 @@ layout is stable across a changed configuration.
 - [Developer guide](docs/developer-guide.md) — implementing a new controller.
 - [libelcethercat](docs/libelcethercat.md) — generic userspace library API
   (`make lib` / `make install-lib`) and optional consumer integration notes.
+- [IOD session handoff](docs/iod-session-handoff.md) — copy-pasteable prompt
+  for starting an agent session in Latproc/IOD against this transport.
 - [Operator guide](docs/operator-guide.md) — safe build and test sequence.
 - [Testing](docs/testing.md) — test matrix and recorded evidence.
 - [Process-image exchange](docs/process-image-exchange.md) — buffering,

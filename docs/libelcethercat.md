@@ -447,6 +447,10 @@ ioctl glue.
 
 # Appendix A — Integrating a specific consumer (Clockwork/IOD)
 
+For a table-free, copy-pasteable starter prompt when opening a new agent
+session in Latproc/IOD, see
+[`iod-session-handoff.md`](iod-session-handoff.md).
+
 This appendix is **not** part of the generic library contract. It records
 how one existing runtime (`/opt/latproc/iod`) can adopt the transport
 without putting Clockwork types into this repository.
