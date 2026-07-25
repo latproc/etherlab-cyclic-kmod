@@ -4,7 +4,7 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-module_path=${CW_EC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
+module_path=${ELC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
 module_name=cw_ethercat
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -31,13 +31,13 @@ cleanup()
 trap cleanup EXIT HUP INT TERM
 
 ethercat slaves -v >"$tmp_dir/ethercat-before.txt"
-"$project_dir/tools/cw_ec_capture_topology.sh" \
+"$project_dir/tools/elc_capture_topology.sh" \
 	>"$tmp_dir/topology-before.txt"
 insmod "$module_path"
-"$project_dir/tools/cw_ec_abi_test"
-"$project_dir/tools/cw_ec_bus" >"$tmp_dir/cw-bus.txt"
+"$project_dir/tools/elc_abi_test"
+"$project_dir/tools/elc_bus" >"$tmp_dir/cw-bus.txt"
 rmmod "$module_name"
-"$project_dir/tools/cw_ec_capture_topology.sh" \
+"$project_dir/tools/elc_capture_topology.sh" \
 	>"$tmp_dir/topology-after.txt"
 
 cmp "$tmp_dir/topology-before.txt" "$tmp_dir/topology-after.txt"

@@ -15,7 +15,7 @@ static int require_ok(int ret, const char *operation)
 {
 	if (ret == 0)
 		return 0;
-	fprintf(stderr, "cw_ec_config_stress: %s: %s\n", operation,
+	fprintf(stderr, "elc_config_stress: %s: %s\n", operation,
 		strerror(-ret));
 	return -1;
 }
@@ -25,7 +25,7 @@ static int require_limit(int ret, const char *operation)
 	if (ret == -E2BIG)
 		return 0;
 	fprintf(stderr,
-		"cw_ec_config_stress: %s did not return E2BIG: %s\n",
+		"elc_config_stress: %s did not return E2BIG: %s\n",
 		operation, ret ? strerror(-ret) : "unexpected success");
 	return -1;
 }
@@ -209,7 +209,7 @@ int main(int argc, char **argv)
 
 	ret = cw_ec_open(device, &h);
 	if (ret) {
-		fprintf(stderr, "cw_ec_config_stress: open %s: %s\n", device,
+		fprintf(stderr, "elc_config_stress: open %s: %s\n", device,
 			strerror(-ret));
 		return 1;
 	}

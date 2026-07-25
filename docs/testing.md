@@ -16,7 +16,7 @@ DKMS `Module.symvers`.
 With IOD stopped:
 
 ```sh
-sudo CW_EC_TEST_REPEAT=10 tools/cw_ec_test_master.sh
+sudo ELC_TEST_REPEAT=10 tools/elc_test_master.sh
 ```
 
 On 2026-07-24 this passed ten load/acquire/release/unload iterations. Master 0
@@ -30,7 +30,7 @@ active Operation-phase master with 29 slaves and link up.
 With IOD stopped:
 
 ```sh
-sudo tools/cw_ec_test_bus.sh
+sudo tools/elc_test_bus.sh
 ```
 
 The script:
@@ -38,7 +38,7 @@ The script:
 1. snapshots `ethercat slaves -v`;
 2. loads `cw_ethercat.ko`;
 3. runs malformed ABI and exclusive-open checks;
-4. retrieves topology through `cw_ec_bus`;
+4. retrieves topology through `elc_bus`;
 5. closes and unloads the module;
 6. confirms the CLI topology is unchanged;
 7. compares position/vendor/product/revision for every slave.
@@ -89,7 +89,7 @@ persistent/declarative decision-gate tests.
 
 On 2026-07-24, the API 0.3 module built against the target kernel/EtherLab
 artifacts, loaded with IOD stopped, and passed the extended
-`cw_ec_abi_test`. The new cases covered:
+`elc_abi_test`. The new cases covered:
 
 ```text
 PASS: config add before begin returned Invalid argument
@@ -135,7 +135,7 @@ remained empty after unload.
 
 ## ED3L declarative no-activation preparation
 
-The standalone `cw_ec_config` tool and
+The standalone `elc_config` tool and
 `tools/configs/ed3l_velocity_pos29.conf` fixture were tested on 2026-07-24.
 Syntax checking reported one slave, two Sync Managers, two PDOs, and ten
 entries. With IOD stopped, `prepare` constructed the configuration and domain
@@ -165,7 +165,7 @@ Build and syntax checks:
 
 ```sh
 make -j2
-./tools/cw_ec_config check tools/configs/ed3l_velocity_pos29.conf
+./tools/elc_config check tools/configs/ed3l_velocity_pos29.conf
 ```
 
 The no-activation ABI suite also verifies inactive status, inactive
@@ -175,7 +175,7 @@ unsupported activation flags.
 The bounded hardware command is:
 
 ```sh
-./tools/cw_ec_config cycle \
+./tools/elc_config cycle \
   tools/configs/ed3l_velocity_pos29.conf 1000000 10
 ```
 
@@ -435,8 +435,8 @@ does not claim a warning-free power cycle.
 
 ## API 0.10 lifecycle repetition
 
-`tools/cw_ec_test_cycle_lifecycle.sh` requires the explicit
-`CW_EC_MOTION_INHIBITED=YES` acknowledgement and repeats the complete
+`tools/elc_test_cycle_lifecycle.sh` requires the explicit
+`ELC_MOTION_INHIBITED=YES` acknowledgement and repeats the complete
 configure/activate/zero-publish/arm/disarm/deactivate/close lifecycle. It
 checks the cyclic task count after every iteration, requires the EtherLab
 master to be idle/inactive after close, compares topology before/after module
@@ -464,7 +464,7 @@ every iteration.
 
 ## API 0.10 active hostile-input checks
 
-`cw_ec_config cycle-abi` activates a configured domain but never arms outputs.
+`elc_config cycle-abi` activates a configured domain but never arms outputs.
 It requires a healthy bus, then verifies undersized snapshot capacity, bad
 flags, stale publish/arm/disarm generations, wrong output size, unknown output
 sequence, and duplicate activation return their documented errors.
@@ -530,7 +530,7 @@ An invalid CPU 99 was rejected with `EINVAL` before cyclic activation. Close
 and unload returned master 0 idle/inactive with 34 slaves. This establishes
 the scheduler foundation.
 
-`tools/cw_ec_test_timing.sh` provides a bounded, disarmed comparison using the
+`tools/elc_test_timing.sh` provides a bounded, disarmed comparison using the
 full captured topology. Its default gate runs three 30-second trials in each
 of these declared load states:
 
@@ -552,7 +552,7 @@ The harness also requires unchanged topology, idle master teardown, and no new
 fatal kernel diagnostic. Run it only in the site commissioning state:
 
 ```sh
-sudo env CW_EC_MOTION_INHIBITED=YES tools/cw_ec_test_timing.sh
+sudo env ELC_MOTION_INHIBITED=YES tools/elc_test_timing.sh
 ```
 
 On 2026-07-24 the default gate ran three 30-second trials per mode against
@@ -591,7 +591,7 @@ Therefore 2 kHz is promising cyclic-loop evidence, not a passed multi-trial
 full-topology rate gate. A continuous single-activation load-phase test and
 the repeated-activation cause remain outstanding.
 
-`CW_EC_TEST_CONTINUOUS_PHASES=YES` performs the three load phases inside one
+`ELC_TEST_CONTINUOUS_PHASES=YES` performs the three load phases inside one
 strict-health activation. This rate-screening mode reports one aggregate
 maximum-lateness value rather than one value per phase. On 2026-07-24:
 
@@ -617,7 +617,7 @@ its selected period also controls EtherLab's operation-FSM interval.
 
 API 0.15 therefore adds a transport-local, acknowledged period transition for
 active non-DC sessions while outputs are disarmed. The timing harness accepts
-`CW_EC_TEST_START_PERIOD_NS`; when it differs from the measured period, it
+`ELC_TEST_START_PERIOD_NS`; when it differs from the measured period, it
 reaches strict health at the start period, applies the new period at a reported
 completed-cycle boundary, and starts load only after acknowledgement. This
 separates the cyclic-rate screen from the known fast-rate activation/FSM
@@ -681,20 +681,20 @@ notifications during its 99,915 exchanges.
 
 ## Interactive commissioning CLI
 
-The first `cw_ec_io` hardware test used the full 34-slave configuration at
+The first `elc_io` hardware test used the full 34-slave configuration at
 1 ms. It reached 34/34 online and operational with outputs disarmed, read
 stable input entry `503316487` (`0x6041:00`) as `0x608`, exited normally,
 returned master 0 idle, and permitted module unload.
 
 A second session staged value `6` for configured output entry `503316481`,
 published sequence 1, and confirmed `armed=0`. With no
-`CW_EC_NONZERO_OUTPUT_AUTHORIZED=YES` environment gate, the CLI refused the
+`ELC_NONZERO_OUTPUT_AUTHORIZED=YES` environment gate, the CLI refused the
 `arm` command; a following status still reported `armed=0`. It then exited and
 unloaded cleanly. No nonzero output was transmitted by these tests.
 
 ## Zero-armed controller death
 
-`tools/cw_ec_test_controller_death.sh` starts `cycle-zero-hold`, waits until an
+`tools/elc_test_controller_death.sh` starts `cycle-zero-hold`, waits until an
 all-zero output shadow is explicitly armed, then sends `SIGKILL` to the
 controller. It verifies kernel file-release teardown rather than allowing the
 tool to issue its normal disarm/deactivate calls.
@@ -730,7 +730,7 @@ a test-only, read-only `test_fail_allocation=N` parameter. Its default is zero,
 which adds no failure. A positive value fails exactly the Nth module-owned
 allocation.
 
-`tools/cw_ec_test_allocation_failures.sh` reloads the module for each failure
+`tools/elc_test_allocation_failures.sh` reloads the module for each failure
 point. It covers the file context and all allocations reached by:
 
 - staging the 21-write ED3L recipe without applying it; and
@@ -808,7 +808,7 @@ record, before activation allocates copied process images.
 
 ## Maximum pending configuration stress
 
-`tools/cw_ec_test_config_stress.sh` defaults to ten iterations. Each iteration
+`tools/elc_test_config_stress.sh` defaults to ten iterations. Each iteration
 constructs and resets:
 
 - 256 pending ordered setup SDOs;
@@ -860,7 +860,7 @@ live `depmod` behavior was not exercised.
 ## Phase 2 contention
 
 On 2026-07-24, with IOD owning master 0, `cw_ethercat.ko` registered its device
-without claiming the master. `cw_ec_bus` then failed to open the device with
+without claiming the master. `elc_bus` then failed to open the device with
 `EBUSY` and reported that master 0 was already owned. After module unload, IOD
 still held master 0 in active Operation phase with 29 slaves and link up.
 
@@ -955,7 +955,7 @@ machine outputs without E-stop power, the core-console EL2034 at position 15
 was configured alone. Its zero-only test reached OP with complete WC and valid
 data, then passed zero arm/disarm and stale-sequence checks.
 
-`pulse-entry` requires `CW_EC_NONZERO_OUTPUT_AUTHORIZED=YES`. It resolves the
+`pulse-entry` requires `ELC_NONZERO_OUTPUT_AUTHORIZED=YES`. It resolves the
 stable entry ID, proves the entry is uniquely linked through a PDO to an
 output Sync Manager, requires a one-bit entry, and publishes an update mask
 containing only that bit. A diagnostic input was rejected before opening the
@@ -979,7 +979,7 @@ warning/error appeared.
 
 ## Full captured topology OP test
 
-`cw_ec_config_from_topology.py` converts captured generic topology JSON into a
+`elc_config_from_topology.py` converts captured generic topology JSON into a
 reviewable text fixture. It preserves every captured Sync Manager, PDO, entry,
 and padding bit; emits revision zero because API 0.12 cannot enforce revision;
 and can split slaves into explicit availability domains. Generated stable
@@ -1037,7 +1037,7 @@ Six no-hardware converter regression tests cover:
 Run them with:
 
 ```sh
-python3 tools/test_cw_ec_config_from_topology.py -v
+python3 tools/test_elc_config_from_topology.py -v
 ```
 
 ## API 0.13 cycle identity and notification

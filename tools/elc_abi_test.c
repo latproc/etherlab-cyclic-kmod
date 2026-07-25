@@ -267,7 +267,7 @@ int main(int argc, char **argv)
 
 	fd = open(device, O_RDWR | O_CLOEXEC);
 	if (fd < 0) {
-		fprintf(stderr, "cw_ec_abi_test: cannot open %s: %s\n",
+		fprintf(stderr, "elc_abi_test: cannot open %s: %s\n",
 			device, strerror(errno));
 		return 1;
 	}
@@ -1274,7 +1274,7 @@ int main(int argc, char **argv)
 	}
 
 	if (failures) {
-		fprintf(stderr, "cw_ec_abi_test: %d failure(s)\n", failures);
+		fprintf(stderr, "elc_abi_test: %d failure(s)\n", failures);
 		return 1;
 	}
 

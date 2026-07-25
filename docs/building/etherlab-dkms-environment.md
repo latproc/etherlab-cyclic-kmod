@@ -229,7 +229,7 @@ modinfo kernel/cw_ethercat_probe.ko
 The privileged lifecycle test is:
 
 ```sh
-sudo CW_EC_TEST_REPEAT=10 tools/cw_ec_test_master.sh
+sudo ELC_TEST_REPEAT=10 tools/elc_test_master.sh
 ```
 
 The script refuses to disturb a probe module that was already loaded.

@@ -89,12 +89,12 @@ API 0.16 currently includes:
 - bounded resource limits, hostile-input validation, and partial-failure
   unwind.
 
-For commissioning and diagnosis, `tools/cw_ec_io` is an interactive frontend
+For commissioning and diagnosis, `tools/elc_io` is an interactive frontend
 over the same declarative configuration parser. It can list and read entries,
 watch values, and stage masked output values. Outputs start disarmed; staging
 and publication do not transmit a commanded value. `arm` is a separate
 explicit command and is refused unless the process was started with
-`CW_EC_NONZERO_OUTPUT_AUTHORIZED=YES` after site safety approval.
+`ELC_NONZERO_OUTPUT_AUTHORIZED=YES` after site safety approval.
 
 Hardware evidence includes the current 34-slave target, multiple explicit
 domains, Distributed Clocks, servo supply loss/restoration, controller-death
@@ -170,13 +170,13 @@ hardware test.
 Start with the minimal acquire/release probe:
 
 ```sh
-sudo tools/cw_ec_test_master.sh
+sudo tools/elc_test_master.sh
 ```
 
 Then run discovery and hostile ABI checks:
 
 ```sh
-sudo tools/cw_ec_test_bus.sh
+sudo tools/elc_test_bus.sh
 ```
 
 After each test, `ethercat master` should report an idle, inactive master.
@@ -185,7 +185,7 @@ Review new kernel warnings and errors. Never force-unload the module.
 Configuration syntax can be checked without claiming the master:
 
 ```sh
-tools/cw_ec_config check \
+tools/elc_config check \
   tools/configs/ed3l_velocity_dc_pos29.conf
 ```
 
@@ -215,14 +215,19 @@ Start with the [developer guide](docs/developer-guide.md). It explains:
 The normative ABI description is [docs/uapi.md](docs/uapi.md), and the shared
 fixed-width definitions are in
 [`include/cw_ethercat_uapi.h`](include/cw_ethercat_uapi.h). The most useful
-reference implementations are:
+reference implementations are the generic **`elc_*` tools** (EtherLab Cyclic;
+not Clockwork-specific):
 
-- [`tools/cw_ec_bus.c`](tools/cw_ec_bus.c) for discovery and capabilities;
-- [`tools/cw_ec_config.c`](tools/cw_ec_config.c) for complete configuration,
+- [`tools/elc_bus.c`](tools/elc_bus.c) for discovery and capabilities;
+- [`tools/elc_config.c`](tools/elc_config.c) for complete configuration,
   cycling, snapshots, output gating, and teardown;
-- [`tools/cw_ec_sdo.c`](tools/cw_ec_sdo.c) for bounded SDO operations; and
-- [`tools/cw_ec_abi_test.c`](tools/cw_ec_abi_test.c) for error behavior and
+- [`tools/elc_sdo.c`](tools/elc_sdo.c) for bounded SDO operations; and
+- [`tools/elc_abi_test.c`](tools/elc_abi_test.c) for error behavior and
   hostile-input expectations.
+
+Harness environment variables use the same `ELC_` prefix (for example
+`ELC_MOTION_INHIBITED`). Kernel UAPI symbols and `/dev/cw_ethercat0` still use
+the historical `cw_ec` / `cw_ethercat` names for ABI stability.
 
 Applications should parse ESI XML and implement device/machine policy outside
 the kernel. They must use returned entry offsets and explicit generations,

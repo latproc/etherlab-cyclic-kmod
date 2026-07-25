@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit a cw_ec_config fixture from a captured generic topology JSON file."""
+"""Emit a elc_config fixture from a captured generic topology JSON file."""
 
 import argparse
 import json

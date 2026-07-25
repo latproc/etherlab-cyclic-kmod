@@ -7,9 +7,9 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-module_path=${CW_EC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
+module_path=${ELC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
 module_name=cw_ethercat
-device=${CW_EC_DEVICE:-/dev/cw_ethercat0}
+device=${ELC_DEVICE:-/dev/cw_ethercat0}
 iterations=${CW_EC_STRESS_ITERATIONS:-10}
 
 case "$iterations" in
@@ -45,7 +45,7 @@ cleanup()
 }
 trap cleanup EXIT HUP INT TERM
 
-"$project_dir/tools/cw_ec_capture_topology.sh" >"$tmp_dir/slaves-before.txt"
+"$project_dir/tools/elc_capture_topology.sh" >"$tmp_dir/slaves-before.txt"
 dmesg --level=err,warn >"$tmp_dir/dmesg-before.txt"
 insmod "$module_path"
 
@@ -60,14 +60,14 @@ if [ ! -e "$device" ]; then
 	exit 1
 fi
 
-"$project_dir/tools/cw_ec_config_stress" "$iterations" "$device"
+"$project_dir/tools/elc_config_stress" "$iterations" "$device"
 
 ethercat master >"$tmp_dir/master-after.txt"
 grep -q 'Phase: Idle' "$tmp_dir/master-after.txt"
 grep -q 'Active: no' "$tmp_dir/master-after.txt"
 rmmod "$module_name"
 
-"$project_dir/tools/cw_ec_capture_topology.sh" >"$tmp_dir/slaves-after.txt"
+"$project_dir/tools/elc_capture_topology.sh" >"$tmp_dir/slaves-after.txt"
 cmp "$tmp_dir/slaves-before.txt" "$tmp_dir/slaves-after.txt"
 dmesg --level=err,warn >"$tmp_dir/dmesg-after.txt"
 before_lines=$(wc -l <"$tmp_dir/dmesg-before.txt")

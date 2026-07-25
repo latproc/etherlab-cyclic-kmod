@@ -96,34 +96,34 @@ $(PKGCONFIG): lib/cwethercat.pc.in
 		-e 's|@VERSION@|$(LIB_VERSION)|g' \
 		"$<" > "$@"
 
-tools: lib tools/cw_ec_bus tools/cw_ec_abi_test tools/cw_ec_sdo \
-	tools/cw_ec_config tools/cw_ec_config_stress
+tools: lib tools/elc_bus tools/elc_abi_test tools/elc_sdo \
+	tools/elc_config tools/elc_config_stress
 
 test-build-contract:
-	./tools/cw_ec_test_build_contract.sh
+	./tools/elc_test_build_contract.sh
 
 # Feature tools link libcwethercat. abi_test keeps raw ioctls so hostile
 # struct_size/reserved checks exercise the kernel UAPI directly.
-tools/cw_ec_bus: tools/cw_ec_bus.c include/cw_ethercat.h include/cw_ethercat_uapi.h \
+tools/elc_bus: tools/elc_bus.c include/cw_ethercat.h include/cw_ethercat_uapi.h \
 		$(LIB_STATIC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \
 		-I"$(CURDIR)/include" -o "$@" "$<" $(LIB_STATIC)
 
-tools/cw_ec_abi_test: tools/cw_ec_abi_test.c include/cw_ethercat_uapi.h
+tools/elc_abi_test: tools/elc_abi_test.c include/cw_ethercat_uapi.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \
 		-I"$(CURDIR)/include" -o "$@" "$<"
 
-tools/cw_ec_sdo: tools/cw_ec_sdo.c include/cw_ethercat.h include/cw_ethercat_uapi.h \
+tools/elc_sdo: tools/elc_sdo.c include/cw_ethercat.h include/cw_ethercat_uapi.h \
 		$(LIB_STATIC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \
 		-I"$(CURDIR)/include" -o "$@" "$<" $(LIB_STATIC)
 
-tools/cw_ec_config: tools/cw_ec_config.c include/cw_ethercat.h include/cw_ethercat_uapi.h \
+tools/elc_config: tools/elc_config.c include/cw_ethercat.h include/cw_ethercat_uapi.h \
 		$(LIB_STATIC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \
 		-I"$(CURDIR)/include" -o "$@" "$<" $(LIB_STATIC)
 
-tools/cw_ec_config_stress: tools/cw_ec_config_stress.c include/cw_ethercat.h \
+tools/elc_config_stress: tools/elc_config_stress.c include/cw_ethercat.h \
 		include/cw_ethercat_uapi.h $(LIB_STATIC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \
 		-I"$(CURDIR)/include" -o "$@" "$<" $(LIB_STATIC)
@@ -165,7 +165,7 @@ uninstall-lib:
 
 clean:
 	-$(MAKE) -C "$(KERNEL_BUILD)" M="$(CURDIR)/kernel" clean
-	$(RM) tools/cw_ec_bus tools/cw_ec_abi_test tools/cw_ec_sdo \
-		tools/cw_ec_config tools/cw_ec_config_stress
+	$(RM) tools/elc_bus tools/elc_abi_test tools/elc_sdo \
+		tools/elc_config tools/elc_config_stress
 	$(RM) $(LIB_OBJS) $(LIB_STATIC) $(LIB_SHARED) $(LIB_SONAME_LINK) \
 		$(LIB_LINK) $(PKGCONFIG)

@@ -558,7 +558,7 @@ for its cyclic schedule.
 
 ## Standalone declarative file format
 
-`tools/cw_ec_config` provides a temporary dependency-free text format for
+`tools/elc_config` provides a temporary dependency-free text format for
 testing this UAPI independently of Clockwork:
 
 ```text
@@ -597,6 +597,6 @@ notifications and fixed-histogram kernel-wake/user-observation latency
 statistics. This distinguishes kernel bus-cycle capacity from the rate at
 which a particular user process actually observes every cycle.
 
-`cw_ec_sdo stage FILE` parses and submits an ordered SDO batch to the pending
+`elc_sdo stage FILE` parses and submits an ordered SDO batch to the pending
 kernel transaction, then closes without applying it. It is intended for
 validation and allocation/unwind tests and performs no SDO download.

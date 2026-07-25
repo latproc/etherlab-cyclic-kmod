@@ -1318,7 +1318,7 @@ Do not start a cyclic thread yet.
 Add a script:
 
 ```text
-tools/cw_ec_test_master.sh
+tools/elc_test_master.sh
 ```
 
 It should:
@@ -1406,7 +1406,7 @@ Investigate EtherLab's scan lifecycle first.
 Create a small independent utility:
 
 ```text
-tools/cw_ec_bus
+tools/elc_bus
 ```
 
 Preferred language: C or C++ with minimal dependencies.
@@ -1414,7 +1414,7 @@ Preferred language: C or C++ with minimal dependencies.
 Example desired behaviour:
 
 ```text
-$ cw_ec_bus
+$ elc_bus
 master: 0
 state: BUS_READY
 link: up
@@ -1458,7 +1458,7 @@ Before freezing this ABI:
 With IOD stopped:
 
 ```text
-cw_ec_bus
+elc_bus
 ```
 
 must report a bus topology that can be compared against:
@@ -1545,14 +1545,14 @@ The new implementation should make error policy explicit.
 Create:
 
 ```text
-tools/cw_ec_sdo
+tools/elc_sdo
 ```
 
 It should be capable of performing operations such as:
 
 ```text
-cw_ec_sdo write --position 5 --type u8  0x1600 0 0
-cw_ec_sdo write --position 5 --type u32 0x1600 1 0x60400010
+elc_sdo write --position 5 --type u8  0x1600 0 0
+elc_sdo write --position 5 --type u32 0x1600 1 0x60400010
 ```
 
 Then add a recipe mechanism:
@@ -2090,7 +2090,7 @@ This avoids relying on array order as an implicit API.
 Create:
 
 ```text
-tools/cw_ec_config
+tools/elc_config
 ```
 
 It should be able to read a simple test configuration independent of Clockwork.
@@ -3345,9 +3345,9 @@ Keep this library independent of Clockwork's `MachineInstance`.
 It should be reusable by:
 
 ```text
-cw_ec_bus
-cw_ec_sdo
-cw_ec_config
+elc_bus
+elc_sdo
+elc_config
 cw_ec_cycle
 iod
 ```
@@ -3885,7 +3885,7 @@ The project should deliberately provide tools that let the architecture be teste
 
 At minimum:
 
-## `cw_ec_bus`
+## `elc_bus`
 
 Purpose:
 
@@ -3896,7 +3896,7 @@ show scanned slaves
 show identity information
 ```
 
-## `cw_ec_sdo`
+## `elc_sdo`
 
 Purpose:
 
@@ -3905,7 +3905,7 @@ perform/test generic setup SDO reads/writes
 execute an ordered recipe
 ```
 
-## `cw_ec_config`
+## `elc_config`
 
 Purpose:
 
@@ -3925,7 +3925,7 @@ run kernel cyclic loop
 show timing and bus statistics
 ```
 
-## `cw_ec_io`
+## `elc_io`
 
 Purpose:
 
@@ -4317,11 +4317,11 @@ Include command examples.
 Document each tool as it is implemented:
 
 ```text
-cw_ec_bus
-cw_ec_sdo
-cw_ec_config
+elc_bus
+elc_sdo
+elc_config
 cw_ec_cycle
-cw_ec_io
+elc_io
 cw_ec_status
 ```
 
@@ -4449,7 +4449,7 @@ Before IOD integration begins, the repository documentation must allow a develop
 1. understand the project purpose;
 2. build against a supported EtherLab installation;
 3. install and load the module;
-4. run `cw_ec_bus`;
+4. run `elc_bus`;
 5. run the standalone configuration tests;
 6. understand the lifecycle and state machine;
 7. understand how user-space software interfaces with the module;
@@ -4711,10 +4711,10 @@ Minimal external EtherLab kernel application module experiment.
 Character device plus API version/status.
 
 ## Commit 4
-Slave discovery API and `cw_ec_bus`.
+Slave discovery API and `elc_bus`.
 
 ## Commit 5
-Generic typed SDO test API and `cw_ec_sdo`.
+Generic typed SDO test API and `elc_sdo`.
 
 ## Commit 6
 ED3L PDO recipe test reproducing `sdo.sh`.
@@ -4732,7 +4732,7 @@ Domain registration result/entry-ID mapping.
 Kernel cyclic thread and statistics.
 
 ## Commit 11
-Shared process image plus `cw_ec_io`.
+Shared process image plus `elc_io`.
 
 ## Commit 12
 Common user-space library.
@@ -4907,11 +4907,11 @@ The first useful end-to-end prototype does **not** need full Clockwork support.
 It is complete when all of these are true:
 
 1. `cw_ethercat.ko` can be loaded and unloaded cleanly.
-2. `cw_ec_bus` reports the real bus.
-3. `cw_ec_sdo` can reproduce the ED3L `sdo.sh` mapping.
-4. `cw_ec_config` can configure a known slave/domain.
+2. `elc_bus` reports the real bus.
+3. `elc_sdo` can reproduce the ED3L `sdo.sh` mapping.
+4. `elc_config` can configure a known slave/domain.
 5. `cw_ec_cycle` starts a 2 kHz kernel cyclic loop.
-6. `cw_ec_io` can read one real input and drive one test output.
+6. `elc_io` can read one real input and drive one test output.
 7. Cycle statistics can be collected.
 8. The old IOD path remains untouched and runnable.
 
@@ -4968,7 +4968,7 @@ Expected output:
 ```text
 docs/ethercat-kernel/current-architecture.md
 experiments/ethercat_kernel/...
-tools/cw_ec_test_master.sh
+tools/elc_test_master.sh
 ```
 
 Only after this experiment succeeds should the next Codex task begin bus discovery and the UAPI.
@@ -4977,7 +4977,7 @@ Only after this experiment succeeds should the next Codex task begin bus discove
 
 # 37. Recommended second Codex task
 
-> Extend the experimental kernel module with a versioned character-device API capable of returning master status and scanned slave identity information. Build a dependency-light `cw_ec_bus` utility that prints the topology. Compare its output to `ethercat master` and `ethercat slaves`. Do not add cyclic operation, PDO configuration, SDO configuration, or IOD integration yet.
+> Extend the experimental kernel module with a versioned character-device API capable of returning master status and scanned slave identity information. Build a dependency-light `elc_bus` utility that prints the topology. Compare its output to `ethercat master` and `ethercat slaves`. Do not add cyclic operation, PDO configuration, SDO configuration, or IOD integration yet.
 
 This isolates the first real boundary:
 

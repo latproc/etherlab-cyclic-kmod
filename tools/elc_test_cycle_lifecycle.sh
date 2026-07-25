@@ -8,33 +8,33 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-module_path=${CW_EC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
+module_path=${ELC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
 module_name=cw_ethercat
-config=${CW_EC_CONFIG:-"$project_dir/tools/configs/ed3l_velocity_dc_pos29.conf"}
-repeat=${CW_EC_TEST_REPEAT:-5}
-duration=${CW_EC_TEST_DURATION:-2}
-period=${CW_EC_TEST_PERIOD_NS:-1000000}
+config=${ELC_CONFIG:-"$project_dir/tools/configs/ed3l_velocity_dc_pos29.conf"}
+repeat=${ELC_TEST_REPEAT:-5}
+duration=${ELC_TEST_DURATION:-2}
+period=${ELC_TEST_PERIOD_NS:-1000000}
 
 case "$repeat" in
 	''|*[!0-9]*|0)
-		echo "error: CW_EC_TEST_REPEAT must be a positive integer" >&2
+		echo "error: ELC_TEST_REPEAT must be a positive integer" >&2
 		exit 2
 		;;
 esac
 case "$duration" in
 	''|*[!0-9]*|0)
-		echo "error: CW_EC_TEST_DURATION must be a positive integer" >&2
+		echo "error: ELC_TEST_DURATION must be a positive integer" >&2
 		exit 2
 		;;
 esac
 case "$period" in
 	''|*[!0-9]*|0)
-		echo "error: CW_EC_TEST_PERIOD_NS must be a positive integer" >&2
+		echo "error: ELC_TEST_PERIOD_NS must be a positive integer" >&2
 		exit 2
 		;;
 esac
-if [ "${CW_EC_MOTION_INHIBITED:-}" != YES ]; then
-	echo "error: set CW_EC_MOTION_INHIBITED=YES only after motion is safely inhibited" >&2
+if [ "${ELC_MOTION_INHIBITED:-}" != YES ]; then
+	echo "error: set ELC_MOTION_INHIBITED=YES only after motion is safely inhibited" >&2
 	exit 2
 fi
 if [ "$(id -u)" -ne 0 ]; then
@@ -66,14 +66,14 @@ cycle_tasks()
 }
 
 before_tasks=$(cycle_tasks)
-"$project_dir/tools/cw_ec_capture_topology.sh" >"$tmp_dir/slaves-before.txt"
+"$project_dir/tools/elc_capture_topology.sh" >"$tmp_dir/slaves-before.txt"
 dmesg --level=err,warn >"$tmp_dir/dmesg-before.txt"
 insmod "$module_path"
 
 i=1
 while [ "$i" -le "$repeat" ]; do
 	echo "API lifecycle iteration $i/$repeat"
-	"$project_dir/tools/cw_ec_config" cycle-zero-arm \
+	"$project_dir/tools/elc_config" cycle-zero-arm \
 		"$config" "$period" "$duration" \
 		>"$tmp_dir/cycle-$i.txt"
 	if [ "$(cycle_tasks)" -ne "$before_tasks" ]; then
@@ -90,7 +90,7 @@ while [ "$i" -le "$repeat" ]; do
 done
 
 rmmod "$module_name"
-"$project_dir/tools/cw_ec_capture_topology.sh" >"$tmp_dir/slaves-after.txt"
+"$project_dir/tools/elc_capture_topology.sh" >"$tmp_dir/slaves-after.txt"
 cmp "$tmp_dir/slaves-before.txt" "$tmp_dir/slaves-after.txt"
 dmesg --level=err,warn >"$tmp_dir/dmesg-after.txt"
 

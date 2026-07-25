@@ -27,8 +27,8 @@ an **appendix**, not part of the library design.
 
 1. every userspace client shares one ABI client instead of open-coding
    ioctl layouts;
-2. in-tree tools (`cw_ec_bus`, `cw_ec_config`, …) and external controllers
-   exercise the same path; and
+2. in-tree tools (`elc_bus`, `elc_config`, … — **elc** = EtherLab Cyclic,
+   not Clockwork) and external controllers exercise the same path; and
 3. machine policy stays **out** of both the kernel module and this library.
 
 **User space owns** device identity, ESI/XML (or other) parsing, PDO and
@@ -398,11 +398,11 @@ integrations:
 
 | Tool | Library? | Coverage |
 |------|----------|----------|
-| `cw_ec_bus` | yes | open, negotiate, discovery |
-| `cw_ec_sdo` | yes | setup / upload / recipes |
-| `cw_ec_config` | yes | full config, cycle, images, timing; hostile active checks still use raw ioctl via `cw_ec_fd` so wrong `struct_size` is not papered over |
-| `cw_ec_config_stress` | yes | maximum pending create/reset limits |
-| `cw_ec_abi_test` | **no** (intentional) | raw ioctl hostile ABI suite against the kernel UAPI |
+| `elc_bus` | yes | open, negotiate, discovery |
+| `elc_sdo` | yes | setup / upload / recipes |
+| `elc_config` | yes | full config, cycle, images, timing; hostile active checks still use raw ioctl via `cw_ec_fd` so wrong `struct_size` is not papered over |
+| `elc_config_stress` | yes | maximum pending create/reset limits |
+| `elc_abi_test` | **no** (intentional) | raw ioctl hostile ABI suite against the kernel UAPI |
 
 External controllers should use the same installed library, not a fork of
 ioctl glue.
@@ -414,9 +414,9 @@ ioctl glue.
 - [x] Add `include/cw_ethercat.h` matching §4
 - [x] Implement `lib/` sources
 - [x] `make lib` / `make install-lib` / pkg-config
-- [x] Migrate `tools/cw_ec_bus` to the library
-- [x] Migrate `tools/cw_ec_sdo`, `tools/cw_ec_config`, `tools/cw_ec_config_stress`
-- [x] Keep `tools/cw_ec_abi_test` on raw ioctls for hostile UAPI checks
+- [x] Migrate `tools/elc_bus` to the library
+- [x] Migrate `tools/elc_sdo`, `tools/elc_config`, `tools/elc_config_stress`
+- [x] Keep `tools/elc_abi_test` on raw ioctls for hostile UAPI checks
 - [x] Document package version and library license decision (GPL-2.0-only v1)
 - [x] Keep this document updated when the public API ships
 
@@ -496,7 +496,7 @@ optional PDO) when building IDs; never silently fall back to flat `pos`.
 
 - Files: thin `KernelEthercatBus` adapter; optional call from
   `listSlaves()` / `setupEtherCatThread()` behind a flag.
-- Accept: topology matches `ethercat slaves` / `cw_ec_bus`; master
+- Accept: topology matches `ethercat slaves` / `elc_bus`; master
   exclusivity documented.
 
 **Phase 9 — Configuration**

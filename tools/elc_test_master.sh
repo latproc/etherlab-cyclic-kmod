@@ -9,11 +9,11 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 module_path=${CW_EC_PROBE_MODULE:-"$project_dir/kernel/cw_ethercat_probe.ko"}
 module_name=cw_ethercat_probe
-repeat=${CW_EC_TEST_REPEAT:-1}
+repeat=${ELC_TEST_REPEAT:-1}
 
 case "$repeat" in
 	''|*[!0-9]*|0)
-		echo "error: CW_EC_TEST_REPEAT must be a positive integer" >&2
+		echo "error: ELC_TEST_REPEAT must be a positive integer" >&2
 		exit 2
 		;;
 esac

@@ -8,15 +8,15 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-module_path=${CW_EC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
+module_path=${ELC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
 module_name=cw_ethercat
-device=${CW_EC_DEVICE:-/dev/cw_ethercat0}
-config=${CW_EC_CONFIG:-"$project_dir/tools/configs/ed3l_velocity_dc_pos29.conf"}
-period=${CW_EC_TEST_PERIOD_NS:-1000000}
+device=${ELC_DEVICE:-/dev/cw_ethercat0}
+config=${ELC_CONFIG:-"$project_dir/tools/configs/ed3l_velocity_dc_pos29.conf"}
+period=${ELC_TEST_PERIOD_NS:-1000000}
 pre_image_allocations=${CW_EC_PRE_IMAGE_ALLOCATIONS:-18}
 
-if [ "${CW_EC_MOTION_INHIBITED:-}" != YES ]; then
-	echo "error: set CW_EC_MOTION_INHIBITED=YES only after motion is safely inhibited" >&2
+if [ "${ELC_MOTION_INHIBITED:-}" != YES ]; then
+	echo "error: set ELC_MOTION_INHIBITED=YES only after motion is safely inhibited" >&2
 	exit 2
 fi
 case "$pre_image_allocations" in
@@ -67,7 +67,7 @@ verify_idle()
 	grep -q 'Active: no' "$tmp_dir/master.txt"
 }
 
-"$project_dir/tools/cw_ec_capture_topology.sh" >"$tmp_dir/slaves-before.txt"
+"$project_dir/tools/elc_capture_topology.sh" >"$tmp_dir/slaves-before.txt"
 dmesg --level=err,warn >"$tmp_dir/dmesg-before.txt"
 
 # The fixture-specific prefix contains the file context, pending records, and
@@ -81,7 +81,7 @@ while [ "$fail" -le "$last_image_allocation" ]; do
 	insmod "$module_path" test_fail_allocation="$fail"
 	wait_for_device
 	set +e
-	"$project_dir/tools/cw_ec_config" cycle "$config" "$period" 1 "$device" \
+	"$project_dir/tools/elc_config" cycle "$config" "$period" 1 "$device" \
 		>"$tmp_dir/failure-$fail.txt" 2>&1
 	status=$?
 	set -e
@@ -103,7 +103,7 @@ done
 insmod "$module_path" test_fail_cycle_thread=1
 wait_for_device
 set +e
-"$project_dir/tools/cw_ec_config" cycle "$config" "$period" 1 "$device" \
+"$project_dir/tools/elc_config" cycle "$config" "$period" 1 "$device" \
 	>"$tmp_dir/thread-failure.txt" 2>&1
 status=$?
 set -e
@@ -122,14 +122,14 @@ rmmod "$module_name"
 # and teardown.
 insmod "$module_path" test_fail_allocation="$success_allocation"
 wait_for_device
-"$project_dir/tools/cw_ec_config" cycle "$config" "$period" 8 "$device" \
+"$project_dir/tools/elc_config" cycle "$config" "$period" 8 "$device" \
 	>"$tmp_dir/success-boundary.txt"
 cat "$tmp_dir/success-boundary.txt"
 grep -q 'IO status: .* healthy=1 ' "$tmp_dir/success-boundary.txt"
 verify_idle
 rmmod "$module_name"
 
-"$project_dir/tools/cw_ec_capture_topology.sh" >"$tmp_dir/slaves-after.txt"
+"$project_dir/tools/elc_capture_topology.sh" >"$tmp_dir/slaves-after.txt"
 cmp "$tmp_dir/slaves-before.txt" "$tmp_dir/slaves-after.txt"
 dmesg --level=err,warn >"$tmp_dir/dmesg-after.txt"
 before_lines=$(wc -l <"$tmp_dir/dmesg-before.txt")

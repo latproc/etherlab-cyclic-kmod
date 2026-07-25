@@ -8,18 +8,18 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-module_path=${CW_EC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
+module_path=${ELC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
 module_name=cw_ethercat
-config=${CW_EC_CONFIG:-"$project_dir/tools/configs/all34_captured_topology.conf"}
-device=${CW_EC_DEVICE:-/dev/cw_ethercat0}
-period=${CW_EC_TEST_PERIOD_NS:-1000000}
-start_period=${CW_EC_TEST_START_PERIOD_NS:-$period}
-duration=${CW_EC_TEST_DURATION:-30}
-repeat=${CW_EC_TEST_REPEAT:-3}
-cycle_cpu=${CW_EC_TEST_CPU:-1}
-fifo_priority=${CW_EC_TEST_FIFO_PRIORITY:-70}
-maximum_lateness=${CW_EC_TEST_MAXIMUM_LATENESS_NS:-250000}
-continuous_phases=${CW_EC_TEST_CONTINUOUS_PHASES:-NO}
+config=${ELC_CONFIG:-"$project_dir/tools/configs/all34_captured_topology.conf"}
+device=${ELC_DEVICE:-/dev/cw_ethercat0}
+period=${ELC_TEST_PERIOD_NS:-1000000}
+start_period=${ELC_TEST_START_PERIOD_NS:-$period}
+duration=${ELC_TEST_DURATION:-30}
+repeat=${ELC_TEST_REPEAT:-3}
+cycle_cpu=${ELC_TEST_CPU:-1}
+fifo_priority=${ELC_TEST_FIFO_PRIORITY:-70}
+maximum_lateness=${ELC_TEST_MAXIMUM_LATENESS_NS:-250000}
+continuous_phases=${ELC_TEST_CONTINUOUS_PHASES:-NO}
 
 positive_integer()
 {
@@ -35,29 +35,29 @@ if [ "$(id -u)" -ne 0 ]; then
 	echo "error: run as root" >&2
 	exit 1
 fi
-if [ "${CW_EC_MOTION_INHIBITED:-}" != YES ]; then
-	echo "error: set CW_EC_MOTION_INHIBITED=YES only after motion is safely inhibited" >&2
+if [ "${ELC_MOTION_INHIBITED:-}" != YES ]; then
+	echo "error: set ELC_MOTION_INHIBITED=YES only after motion is safely inhibited" >&2
 	exit 2
 fi
-positive_integer CW_EC_TEST_PERIOD_NS "$period"
-positive_integer CW_EC_TEST_START_PERIOD_NS "$start_period"
-positive_integer CW_EC_TEST_DURATION "$duration"
-positive_integer CW_EC_TEST_REPEAT "$repeat"
-positive_integer CW_EC_TEST_MAXIMUM_LATENESS_NS "$maximum_lateness"
+positive_integer ELC_TEST_PERIOD_NS "$period"
+positive_integer ELC_TEST_START_PERIOD_NS "$start_period"
+positive_integer ELC_TEST_DURATION "$duration"
+positive_integer ELC_TEST_REPEAT "$repeat"
+positive_integer ELC_TEST_MAXIMUM_LATENESS_NS "$maximum_lateness"
 case "$continuous_phases" in
 YES|NO) ;;
 *)
-	echo "error: CW_EC_TEST_CONTINUOUS_PHASES must be YES or NO" >&2
+	echo "error: ELC_TEST_CONTINUOUS_PHASES must be YES or NO" >&2
 	exit 2
 	;;
 esac
 case "$cycle_cpu" in
 	''|*[!0-9]*)
-		echo "error: CW_EC_TEST_CPU must be a non-negative integer" >&2
+		echo "error: ELC_TEST_CPU must be a non-negative integer" >&2
 		exit 2
 		;;
 esac
-positive_integer CW_EC_TEST_FIFO_PRIORITY "$fifo_priority"
+positive_integer ELC_TEST_FIFO_PRIORITY "$fifo_priority"
 if [ ! -f "$module_path" ] || [ ! -f "$config" ]; then
 	echo "error: module or configuration fixture is missing" >&2
 	exit 1
@@ -184,10 +184,10 @@ start_strict_controller()
 	run_duration=$2
 
 	if [ "$start_period" -eq "$period" ]; then
-		"$project_dir/tools/cw_ec_config" cycle-strict \
+		"$project_dir/tools/elc_config" cycle-strict \
 			"$config" "$period" "$run_duration" "$device" >"$log" &
 	else
-		"$project_dir/tools/cw_ec_config" cycle-rate \
+		"$project_dir/tools/elc_config" cycle-rate \
 			"$config" "$start_period" "$period" "$run_duration" \
 			"$device" >"$log" &
 	fi
@@ -279,8 +279,8 @@ check_run()
 	grep '^domain status:' "$log" | sed 's/^/  /'
 }
 
-"$project_dir/tools/cw_ec_config" check "$config"
-"$project_dir/tools/cw_ec_capture_topology.sh" >"$tmp_dir/slaves-before.txt"
+"$project_dir/tools/elc_config" check "$config"
+"$project_dir/tools/elc_capture_topology.sh" >"$tmp_dir/slaves-before.txt"
 dmesg --level=err,warn >"$tmp_dir/dmesg-before.txt"
 insmod "$module_path" cycle_cpu="$cycle_cpu" \
 	cycle_fifo_priority="$fifo_priority"
@@ -336,7 +336,7 @@ else
 fi
 
 rmmod "$module_name"
-"$project_dir/tools/cw_ec_capture_topology.sh" >"$tmp_dir/slaves-after.txt"
+"$project_dir/tools/elc_capture_topology.sh" >"$tmp_dir/slaves-after.txt"
 cmp "$tmp_dir/slaves-before.txt" "$tmp_dir/slaves-after.txt"
 ethercat master >"$tmp_dir/master.txt"
 grep -q 'Phase: Idle' "$tmp_dir/master.txt"

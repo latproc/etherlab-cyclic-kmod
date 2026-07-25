@@ -7,13 +7,13 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-module_path=${CW_EC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
+module_path=${ELC_MODULE:-"$project_dir/kernel/cw_ethercat.ko"}
 module_name=cw_ethercat
-config=${CW_EC_CONFIG:-"$project_dir/tools/configs/ed3l_velocity_dc_pos29.conf"}
-period=${CW_EC_TEST_PERIOD_NS:-1000000}
+config=${ELC_CONFIG:-"$project_dir/tools/configs/ed3l_velocity_dc_pos29.conf"}
+period=${ELC_TEST_PERIOD_NS:-1000000}
 
-if [ "${CW_EC_MOTION_INHIBITED:-}" != YES ]; then
-	echo "error: set CW_EC_MOTION_INHIBITED=YES only after motion is safely inhibited" >&2
+if [ "${ELC_MOTION_INHIBITED:-}" != YES ]; then
+	echo "error: set ELC_MOTION_INHIBITED=YES only after motion is safely inhibited" >&2
 	exit 2
 fi
 if [ "$(id -u)" -ne 0 ]; then
@@ -50,11 +50,11 @@ cycle_tasks()
 }
 
 before_tasks=$(cycle_tasks)
-"$project_dir/tools/cw_ec_capture_topology.sh" >"$tmp_dir/slaves-before.txt"
+"$project_dir/tools/elc_capture_topology.sh" >"$tmp_dir/slaves-before.txt"
 dmesg --level=err,warn >"$tmp_dir/dmesg-before.txt"
 insmod "$module_path"
 
-stdbuf -oL -eL "$project_dir/tools/cw_ec_config" cycle-zero-hold \
+stdbuf -oL -eL "$project_dir/tools/elc_config" cycle-zero-hold \
 	"$config" "$period" 60 >"$tmp_dir/controller.txt" 2>&1 &
 controller_pid=$!
 
@@ -116,7 +116,7 @@ if ! grep -q 'Phase: Idle' "$tmp_dir/master-after.txt" ||
 fi
 
 rmmod "$module_name"
-"$project_dir/tools/cw_ec_capture_topology.sh" >"$tmp_dir/slaves-after.txt"
+"$project_dir/tools/elc_capture_topology.sh" >"$tmp_dir/slaves-after.txt"
 cmp "$tmp_dir/slaves-before.txt" "$tmp_dir/slaves-after.txt"
 dmesg --level=err,warn >"$tmp_dir/dmesg-after.txt"
 before_lines=$(wc -l <"$tmp_dir/dmesg-before.txt")

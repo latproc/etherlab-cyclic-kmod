@@ -131,8 +131,8 @@ Do not begin a later phase before its prerequisite evidence exists.
 1. Inspect and document the target kernel and EtherLab installation/build.
 2. Build a minimal external module that requests master 0, reports the result,
    releases it, and unloads cleanly.
-3. Add a versioned character-device status/discovery API and `cw_ec_bus`.
-4. Add generic ordered typed pre-activation SDO operations and `cw_ec_sdo`.
+3. Add a versioned character-device status/discovery API and `elc_bus`.
+4. Add generic ordered typed pre-activation SDO operations and `elc_sdo`.
 5. Run the ED3L PDO mechanism decision gate: compare explicit ordered SDO
    mapping with `ecrt_slave_config_pdos()` using readback, operation,
    power-cycle recovery, and lifecycle repetition.
@@ -459,7 +459,7 @@ testing, safety, and build documents.
 - A follow-up 100,000-interval 10 kHz exchange measured an exact 10 s
   scheduled span (`grid_error=0`) and 99,999.975 ns mean actual wake interval.
   The kernel deadline grid did not drift in that sample.
-- `tools/cw_ec_io` provides interactive list/read/watch/status and staged
+- `tools/elc_io` provides interactive list/read/watch/status and staged
   masked set/publish/arm/disarm commands over the shared configuration parser.
   Hardware tests proved 34/34 read-only operation and that a nonzero staged
   publication remains disarmed and unauthorized `arm` is refused.
@@ -496,9 +496,11 @@ testing, safety, and build documents.
 - Phase 7 `libcwethercat` is implemented under `lib/` with public header
   `include/cw_ethercat.h` (GPL-2.0-only, SONAME major tracks UAPI major).
   Build/install: `make lib`, `make install-lib PREFIX=...`, pkg-config
-  `cwethercat`. Feature tools `cw_ec_bus`, `cw_ec_sdo`, `cw_ec_config`, and
-  `cw_ec_config_stress` link the library. `cw_ec_abi_test` keeps raw ioctls
-  for hostile kernel UAPI checks. Contract: `docs/libcwethercat.md`. This
-  project is a generic transport; the library and UAPI must not embed
-  Clockwork or any other control-system policy. External runtimes are
-  optional consumers via installable headers and `libcwethercat`.
+  `cwethercat`. Feature tools use the generic `elc_*` prefix (EtherLab
+  Cyclic): `elc_bus`, `elc_sdo`, `elc_config`, `elc_config_stress`; harness
+  env vars use `ELC_*`. `elc_abi_test` keeps raw ioctls for hostile kernel
+  UAPI checks. Kernel device/UAPI symbols remain `cw_ethercat` / `cw_ec_*`
+  for ABI stability. Contract: `docs/libcwethercat.md`. This project is a
+  generic transport; the library and UAPI must not embed Clockwork or any
+  other control-system policy. External runtimes are optional consumers via
+  installable headers and `libcwethercat`.

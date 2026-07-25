@@ -97,7 +97,7 @@ wait-for-cycle, DC diagnostics, and optional output leases. It does not report
 scheduled outputs or delegated domain connections.
 
 See `get_api_version()` and `get_capabilities()` in
-[`cw_ec_bus.c`](../tools/cw_ec_bus.c).
+[`elc_bus.c`](../tools/elc_bus.c).
 
 ## Discover and match the network
 
@@ -136,7 +136,7 @@ returned `global_offset`, bit position, and bit length only for that
 configuration generation. The deprecated `domain_offset` union member denotes
 the same global offset and exists only for source compatibility.
 
-[`cw_ec_config.c`](../tools/cw_ec_config.c) is the complete reference for
+[`elc_config.c`](../tools/elc_config.c) is the complete reference for
 submission order, result checking, domains, padding, and offset resolution.
 
 ## Activate and follow the cycle
@@ -269,12 +269,12 @@ The lease detects a controller that remains alive but stops renewing. It does
 not interpret why upstream control was lost, and it does not replace a
 hardware watchdog or safety system.
 
-`tools/cw_ec_io` is the interactive reference controller for inspecting this
+`tools/elc_io` is the interactive reference controller for inspecting this
 lifecycle. It resolves stable entry IDs to global offsets, decodes scalar
 entries up to 64 bits, stages only configured output entries, publishes a
 masked shadow while disarmed, and keeps arm as a distinct authorized action.
-It deliberately shares `cw_ec_config`'s parser and activation implementation
-through the `cw_ec_config io` frontend so commissioning behavior cannot drift
+It deliberately shares `elc_config`'s parser and activation implementation
+through the `elc_config io` frontend so commissioning behavior cannot drift
 to a second configuration format.
 
 ## Error and teardown rules

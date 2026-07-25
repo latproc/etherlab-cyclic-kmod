@@ -189,7 +189,7 @@ static int open_device(const char *device, cw_ec_handle **out)
 	int ret = cw_ec_open(device, out);
 
 	if (ret) {
-		fprintf(stderr, "cw_ec_sdo: cannot open %s: %s\n", device,
+		fprintf(stderr, "elc_sdo: cannot open %s: %s\n", device,
 			strerror(-ret));
 		return 1;
 	}
@@ -208,14 +208,14 @@ static int execute_write(const char *device,
 
 	ret = cw_ec_setup_begin(h);
 	if (ret) {
-		fprintf(stderr, "cw_ec_sdo: SETUP_BEGIN: %s\n",
+		fprintf(stderr, "elc_sdo: SETUP_BEGIN: %s\n",
 			strerror(-ret));
 		cw_ec_close(h);
 		return 1;
 	}
 	ret = cw_ec_setup_add_sdo(h, request);
 	if (ret) {
-		fprintf(stderr, "cw_ec_sdo: SETUP_ADD_SDO: %s\n",
+		fprintf(stderr, "elc_sdo: SETUP_ADD_SDO: %s\n",
 			strerror(-ret));
 		cw_ec_close(h);
 		return 1;
@@ -223,7 +223,7 @@ static int execute_write(const char *device,
 	ret = cw_ec_setup_apply(h, &apply);
 	if (ret) {
 		fprintf(stderr,
-			"cw_ec_sdo: write failed: %s; sequence=%" PRIu32
+			"elc_sdo: write failed: %s; sequence=%" PRIu32
 			" slave=%" PRIu16 " object=0x%04" PRIx16 ":%02" PRIx8
 			" abort=0x%08" PRIx32 "\n",
 			strerror(-ret), apply.failed_sequence,
@@ -272,7 +272,7 @@ static int execute_read(const char *device, char **argv)
 	ret = cw_ec_sdo_upload(h, &upload);
 	if (ret) {
 		fprintf(stderr,
-			"cw_ec_sdo: read slave %" PRIu16 " object 0x%04" PRIx16
+			"elc_sdo: read slave %" PRIu16 " object 0x%04" PRIx16
 			":%02" PRIx8 " failed: %s; abort=0x%08" PRIx32 "\n",
 			upload.position, upload.index, upload.subindex,
 			strerror(-ret), upload.abort_code);
@@ -303,7 +303,7 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 
 	stream = fopen(path, "r");
 	if (!stream) {
-		fprintf(stderr, "cw_ec_sdo: cannot open recipe %s: %s\n",
+		fprintf(stderr, "elc_sdo: cannot open recipe %s: %s\n",
 			path, strerror(errno));
 		return 1;
 	}
@@ -314,7 +314,7 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 	}
 	ret = cw_ec_setup_begin(h);
 	if (ret) {
-		fprintf(stderr, "cw_ec_sdo: SETUP_BEGIN: %s\n",
+		fprintf(stderr, "elc_sdo: SETUP_BEGIN: %s\n",
 			strerror(-ret));
 		fclose(stream);
 		cw_ec_close(h);
@@ -350,7 +350,7 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 		    (extra && extra[0] != '#') ||
 		    parse_u64(tokens[0], UINT32_MAX, &sequence) ||
 		    !sequence || sequence <= last_sequence) {
-			fprintf(stderr, "cw_ec_sdo: invalid recipe line %u\n",
+			fprintf(stderr, "elc_sdo: invalid recipe line %u\n",
 				line_number);
 			fclose(stream);
 			cw_ec_close(h);
@@ -363,7 +363,7 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 		fake_argv[5] = tokens[4];
 		fake_argv[6] = tokens[5];
 		if (prepare_request(fake_argv, &request)) {
-			fprintf(stderr, "cw_ec_sdo: invalid recipe line %u\n",
+			fprintf(stderr, "elc_sdo: invalid recipe line %u\n",
 				line_number);
 			fclose(stream);
 			cw_ec_close(h);
@@ -374,7 +374,7 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 		ret = cw_ec_setup_add_sdo(h, &request);
 		if (ret) {
 			fprintf(stderr,
-				"cw_ec_sdo: add recipe line %u: %s\n",
+				"elc_sdo: add recipe line %u: %s\n",
 				line_number, strerror(-ret));
 			fclose(stream);
 			cw_ec_close(h);
@@ -384,7 +384,7 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 		count++;
 	}
 	if (ferror(stream)) {
-		fprintf(stderr, "cw_ec_sdo: read recipe %s: %s\n",
+		fprintf(stderr, "elc_sdo: read recipe %s: %s\n",
 			path, strerror(errno));
 		fclose(stream);
 		cw_ec_close(h);
@@ -393,7 +393,7 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 	fclose(stream);
 
 	if (!count) {
-		fprintf(stderr, "cw_ec_sdo: recipe contains no operations\n");
+		fprintf(stderr, "elc_sdo: recipe contains no operations\n");
 		cw_ec_close(h);
 		return 2;
 	}
@@ -402,7 +402,7 @@ static int execute_recipe(const char *device, const char *path, int apply_recipe
 		ret = cw_ec_setup_apply(h, &apply);
 		if (ret) {
 			fprintf(stderr,
-				"cw_ec_sdo: recipe failed: result=%" PRId32
+				"elc_sdo: recipe failed: result=%" PRId32
 				" sequence=%" PRIu32 " slave=%" PRIu16
 				" object=0x%04" PRIx16 ":%02" PRIx8
 				" abort=0x%08" PRIx32 "\n",
@@ -463,7 +463,7 @@ int main(int argc, char **argv)
 		device = argv[7];
 
 	if (prepare_request(argv, &request)) {
-		fprintf(stderr, "cw_ec_sdo: invalid position/type/object/value\n");
+		fprintf(stderr, "elc_sdo: invalid position/type/object/value\n");
 		return 2;
 	}
 

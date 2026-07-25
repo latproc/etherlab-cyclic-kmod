@@ -47,11 +47,11 @@ int main(int argc, char **argv)
 
 	ret = cw_ec_open(device, &h);
 	if (ret) {
-		fprintf(stderr, "cw_ec_bus: cannot open %s: %s\n", device,
+		fprintf(stderr, "elc_bus: cannot open %s: %s\n", device,
 			strerror(-ret));
 		if (ret == -EBUSY)
 			fprintf(stderr,
-				"cw_ec_bus: EtherLab master 0 is already owned\n");
+				"elc_bus: EtherLab master 0 is already owned\n");
 		return 1;
 	}
 
@@ -60,12 +60,12 @@ int main(int argc, char **argv)
 	if (ret) {
 		if (cw_ec_get_api_version(h, &version) == 0) {
 			fprintf(stderr,
-				"cw_ec_bus: incompatible API: kernel %u.%u, tool %u.%u\n",
+				"elc_bus: incompatible API: kernel %u.%u, tool %u.%u\n",
 				version.major, version.minor,
 				CW_EC_API_VERSION_MAJOR,
 				CW_EC_API_VERSION_MINOR);
 		} else {
-			fprintf(stderr, "cw_ec_bus: require API: %s\n",
+			fprintf(stderr, "elc_bus: require API: %s\n",
 				strerror(-ret));
 		}
 		cw_ec_close(h);
@@ -74,7 +74,7 @@ int main(int argc, char **argv)
 
 	ret = cw_ec_get_api_version(h, &version);
 	if (ret) {
-		fprintf(stderr, "cw_ec_bus: GET_API_VERSION: %s\n",
+		fprintf(stderr, "elc_bus: GET_API_VERSION: %s\n",
 			strerror(-ret));
 		cw_ec_close(h);
 		return 1;
@@ -82,7 +82,7 @@ int main(int argc, char **argv)
 
 	ret = cw_ec_get_capabilities(h, &capabilities);
 	if (ret) {
-		fprintf(stderr, "cw_ec_bus: GET_CAPABILITIES: %s\n",
+		fprintf(stderr, "elc_bus: GET_CAPABILITIES: %s\n",
 			strerror(-ret));
 		cw_ec_close(h);
 		return 1;
@@ -90,7 +90,7 @@ int main(int argc, char **argv)
 
 	ret = cw_ec_get_master_info(h, &master);
 	if (ret) {
-		fprintf(stderr, "cw_ec_bus: GET_MASTER_INFO: %s\n",
+		fprintf(stderr, "elc_bus: GET_MASTER_INFO: %s\n",
 			strerror(-ret));
 		cw_ec_close(h);
 		return 1;
@@ -108,14 +108,14 @@ int main(int argc, char **argv)
 	if (master.slave_count) {
 		slaves = calloc(master.slave_count, sizeof(*slaves));
 		if (!slaves) {
-			fprintf(stderr, "cw_ec_bus: out of memory\n");
+			fprintf(stderr, "elc_bus: out of memory\n");
 			cw_ec_close(h);
 			return 1;
 		}
 		ret = cw_ec_list_slaves(h, slaves, master.slave_count,
 					&slave_count);
 		if (ret) {
-			fprintf(stderr, "cw_ec_bus: list slaves: %s\n",
+			fprintf(stderr, "elc_bus: list slaves: %s\n",
 				strerror(-ret));
 			free(slaves);
 			cw_ec_close(h);

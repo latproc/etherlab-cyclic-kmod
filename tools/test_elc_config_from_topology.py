@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-import cw_ec_config_from_topology as converter
+import elc_config_from_topology as converter
 
 
 def device(position, sync_managers=None, configured_sync_managers=None):
@@ -53,7 +53,7 @@ class ConverterTest(unittest.TestCase):
         ) as stream:
             json.dump(topology, stream)
             path = stream.name
-        argv = ["cw_ec_config_from_topology.py"]
+        argv = ["elc_config_from_topology.py"]
         if split_position is not None:
             argv.extend(["--split-position", str(split_position)])
         argv.append(path)

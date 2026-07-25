@@ -35,11 +35,11 @@
 *.i*86
 *.x86_64
 *.hex
-/tools/cw_ec_bus
-/tools/cw_ec_abi_test
-/tools/cw_ec_sdo
-/tools/cw_ec_config
-/tools/cw_ec_config_stress
+/tools/elc_bus
+/tools/elc_abi_test
+/tools/elc_sdo
+/tools/elc_config
+/tools/elc_config_stress
 /lib/cwethercat.pc
 __pycache__/
 *.pyc

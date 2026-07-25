@@ -40,7 +40,7 @@ an ambiguous or mismatched result.
 
 ```sh
 sudo insmod kernel/cw_ethercat.ko
-sudo tools/cw_ec_bus
+sudo tools/elc_bus
 sudo rmmod cw_ethercat
 ethercat master
 ```
@@ -49,7 +49,7 @@ After release, `ethercat master` must report `Phase: Idle` and `Active: no`.
 For the repeatable ABI and identity comparison:
 
 ```sh
-sudo tools/cw_ec_test_bus.sh
+sudo tools/elc_test_bus.sh
 ```
 
 ## Validate configuration without hardware activation
@@ -57,7 +57,7 @@ sudo tools/cw_ec_test_bus.sh
 Syntax-only validation does not claim the master:
 
 ```sh
-tools/cw_ec_config check \
+tools/elc_config check \
   tools/configs/ed3l_velocity_dc_pos29.conf
 ```
 
@@ -73,7 +73,7 @@ or send cyclic process data:
 
 ```sh
 sudo insmod kernel/cw_ethercat.ko
-sudo tools/cw_ec_config prepare \
+sudo tools/elc_config prepare \
   tools/configs/ed3l_velocity_dc_pos29.conf
 sudo rmmod cw_ethercat
 ethercat master
@@ -103,7 +103,7 @@ Only after motion inhibition is confirmed:
 
 ```sh
 sudo insmod kernel/cw_ethercat.ko
-sudo tools/cw_ec_config cycle \
+sudo tools/elc_config cycle \
   tools/configs/ed3l_velocity_dc_pos29.conf 1000000 8
 sudo rmmod cw_ethercat
 ethercat master
@@ -127,14 +127,14 @@ overruns, maximum lateness, DC convergence, and the declared system load.
 For a bounded disarmed baseline/load comparison of the captured full topology:
 
 ```sh
-sudo env CW_EC_MOTION_INHIBITED=YES tools/cw_ec_test_timing.sh
+sudo env ELC_MOTION_INHIBITED=YES tools/elc_test_timing.sh
 ```
 
 The harness declares its period, duration, repetition count, cyclic CPU/FIFO
 priority, load modes, and maximum-lateness criterion. It runs baseline,
 same-CPU, and all-online-CPU load trials; requires complete/valid domains and
 all configured slaves operational; and verifies idle teardown, unchanged
-topology, and fatal kernel diagnostics. Override its `CW_EC_TEST_*`
+topology, and fatal kernel diagnostics. Override its `ELC_TEST_*`
 environment variables only when the changed test conditions are recorded.
 Each trial first requires every configured slave to reach OP and every domain
 to become valid; it aborts before the timed interval otherwise. Generated load
@@ -145,15 +145,15 @@ Sync Manager watchdog transitions after deactivation even when the master
 subsequently returns idle.
 
 For a short rate screen that keeps all load phases inside one activation, set
-`CW_EC_TEST_CONTINUOUS_PHASES=YES`. This avoids conflating the known
+`ELC_TEST_CONTINUOUS_PHASES=YES`. This avoids conflating the known
 re-activation transition boundary with cyclic timing, but reports one
 aggregate maximum-lateness value for all phases. It is characterization, not
 the default multi-trial acceptance gate.
 
 To activate conservatively and begin the measured phases only after a live,
-acknowledged period change, also set `CW_EC_TEST_START_PERIOD_NS`. For example,
-`CW_EC_TEST_START_PERIOD_NS=1000000` with
-`CW_EC_TEST_PERIOD_NS=333333` first reaches the strict-health gate at 1 kHz,
+acknowledged period change, also set `ELC_TEST_START_PERIOD_NS`. For example,
+`ELC_TEST_START_PERIOD_NS=1000000` with
+`ELC_TEST_PERIOD_NS=333333` first reaches the strict-health gate at 1 kHz,
 then changes the disarmed non-DC session at a cycle boundary. The harness
 aborts if either OP/valid health or the period acknowledgement fails.
 
@@ -162,14 +162,14 @@ aborts if either OP/valid health or the period acknowledgement fails.
 These tests never request nonzero output but still require motion inhibition:
 
 ```sh
-sudo env CW_EC_MOTION_INHIBITED=YES \
-  tools/cw_ec_test_cycle_lifecycle.sh
+sudo env ELC_MOTION_INHIBITED=YES \
+  tools/elc_test_cycle_lifecycle.sh
 
-sudo env CW_EC_MOTION_INHIBITED=YES \
-  tools/cw_ec_test_controller_death.sh
+sudo env ELC_MOTION_INHIBITED=YES \
+  tools/elc_test_controller_death.sh
 
-sudo env CW_EC_MOTION_INHIBITED=YES \
-  tools/cw_ec_test_process_image_allocations.sh
+sudo env ELC_MOTION_INHIBITED=YES \
+  tools/elc_test_process_image_allocations.sh
 ```
 
 Each harness verifies stable physical identity/topology, master release, task
@@ -178,8 +178,8 @@ cleanup, and newly added kernel warning/error lines.
 To exercise the optional controller lease with a zero-only image:
 
 ```sh
-sudo env CW_EC_MOTION_INHIBITED=YES \
-  tools/cw_ec_config cycle-zero-lease \
+sudo env ELC_MOTION_INHIBITED=YES \
+  tools/elc_config cycle-zero-lease \
   tools/configs/ed3l_velocity_dc_pos29.conf 1000000 1
 ```
 
@@ -192,8 +192,8 @@ that re-arming requires both renewal and a fresh zero publication.
 These tests do not apply SDO writes or activate cyclic I/O:
 
 ```sh
-sudo tools/cw_ec_test_allocation_failures.sh
-sudo tools/cw_ec_test_config_stress.sh
+sudo tools/elc_test_allocation_failures.sh
+sudo tools/elc_test_config_stress.sh
 ```
 
 The allocation harness uses disabled-by-default test module parameters. Never
@@ -204,13 +204,13 @@ load a production-intended instance with either failure parameter enabled.
 Read-only upload example:
 
 ```sh
-sudo tools/cw_ec_sdo read 29 0x6060 0 1
+sudo tools/elc_sdo read 29 0x6060 0 1
 ```
 
 Parse and stage an ordered recipe without applying it:
 
 ```sh
-sudo tools/cw_ec_sdo stage \
+sudo tools/elc_sdo stage \
   tools/recipes/ed3l_velocity_pdo_pos29.txt
 ```
 
@@ -250,8 +250,8 @@ The current machine fixture is limited to the core-console EL2034 at position
 the buzzer:
 
 ```sh
-sudo env CW_EC_NONZERO_OUTPUT_AUTHORIZED=YES \
-  ./tools/cw_ec_config pulse-entry \
+sudo env ELC_NONZERO_OUTPUT_AUTHORIZED=YES \
+  ./tools/elc_config pulse-entry \
   tools/configs/el2034_core_console_pos15.conf \
   1000000 0x701001 1000
 ```
@@ -262,10 +262,10 @@ Never use it for drive enable or motion.
 
 ## Interactive I/O commissioning
 
-`cw_ec_io` uses the same validated configuration path as `cw_ec_config`:
+`elc_io` uses the same validated configuration path as `elc_config`:
 
 ```sh
-sudo tools/cw_ec_io tools/configs/all34_captured_topology.conf 1000000
+sudo tools/elc_io tools/configs/all34_captured_topology.conf 1000000
 ```
 
 The session activates with outputs disarmed. `list`, `read`, `watch`, and
@@ -274,7 +274,7 @@ a value, and `publish` only copies the masked shadow into the kernel while the
 gate remains disarmed. Actual output requires a later explicit `arm` command.
 
 The CLI refuses `arm` unless it was started with
-`CW_EC_NONZERO_OUTPUT_AUTHORIZED=YES`. Set that variable only under the site's
+`ELC_NONZERO_OUTPUT_AUTHORIZED=YES`. Set that variable only under the site's
 commissioning procedure after identifying the exact stable entry ID and
 physically confirming that the output is safe. `disarm` synchronously
 zero-gates the output. `quit` disarms if necessary, deactivates, and releases
