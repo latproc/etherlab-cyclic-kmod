@@ -1,6 +1,6 @@
 # libelcethercat — Generic User-Space Library API
 
-**Status:** Phase 7 library landed for API 0.16. Sources live under `lib/`
+**Status:** Phase 7 library tracks UAPI 0.17. Sources live under `lib/`
 and `include/elc_ethercat.h`. This document remains the public contract;
 keep it aligned when the API changes.
 
@@ -278,10 +278,10 @@ intermediate notifications.
 | Function | Behaviour |
 |----------|-----------|
 | `elc_get_input_snapshot(h, struct elc_input_snapshot *snap, void *buf, size_t len)` | Coherent global input image. |
-| `elc_publish_output(h, const void *image, const void *mask, size_t len, struct elc_output_publish *pub)` | Publish full image + update mask. Does **not** arm. |
-| `elc_arm_output(h, struct elc_output_arm *arm)` | Arm exact generation + latest publication sequence. |
-| `elc_disarm_output(h, struct elc_output_disarm *disarm)` | Synchronous disarm / zero gate. |
-| `elc_get_io_status(h, struct elc_io_status *st)` | Health, arm, re-arm required, faults. |
+| `elc_publish_output(h, const void *image, const void *mask, size_t len, struct elc_output_publish *pub)` | Publish image + update mask. Does **not** arm. `pub->domain_config_id` 0 = full global image; non-zero = that domain segment (API 0.17+). |
+| `elc_arm_output(h, struct elc_output_arm *arm)` | Arm exact generation + publication sequence. `arm->flags` 0 = every healthy domain with that sequence; non-zero = that `domain_config_id` only. |
+| `elc_disarm_output(h, struct elc_output_disarm *disarm)` | Synchronous disarm / zero gate. `disarm->flags` 0 = all domains; non-zero = one domain. |
+| `elc_get_io_status(h, struct elc_io_status *st)` | Aggregate health, any-armed, any-rearm, faults. Per-domain arm/rearm: `elc_get_domain_status`. |
 
 Optional lease (API 0.14):
 
@@ -361,6 +361,12 @@ Recommended pattern for **any** controller:
 With multiple domains the kernel still exposes one **concatenated global**
 image; domain declaration order defines segment order. Per-slave validity
 follows the assigned domain’s working counter.
+
+API 0.17 adds **per-domain output authority**: arm, re-arm, publication
+buffers, and health gating are independent per domain. Master/link faults
+still gate every domain; a domain WC/slave fault disarms only that domain.
+Capability bit `ELC_CAP_DOMAIN_OUTPUT_AUTHORITY` is set when the kernel
+supports this model.
 
 When object identity `(index, subindex)` is duplicated, the controller must
 supply an additional discriminator (for example PDO index or occurrence).

@@ -481,10 +481,17 @@ int elc_publish_output(elc_handle *h, const void *image, const void *mask,
 	struct elc_output_publish local;
 	struct elc_output_publish *req = pub ? pub : &local;
 	uint64_t generation = 0;
+	uint32_t flags = 0;
+	uint32_t domain_config_id = 0;
 	int ret;
 
 	if (!image || !mask || !len || len > UINT32_MAX)
 		return -EINVAL;
+
+	if (pub) {
+		flags = pub->flags;
+		domain_config_id = pub->domain_config_id;
+	}
 
 	if (pub && pub->config_generation)
 		generation = pub->config_generation;
@@ -498,6 +505,8 @@ int elc_publish_output(elc_handle *h, const void *image, const void *mask,
 	}
 
 	elc_init_api_header(req, sizeof(*req));
+	req->flags = flags;
+	req->domain_config_id = domain_config_id;
 	req->data_ptr = (uint64_t)(uintptr_t)image;
 	req->mask_ptr = (uint64_t)(uintptr_t)mask;
 	req->data_size = (uint32_t)len;

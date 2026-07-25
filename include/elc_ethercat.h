@@ -130,8 +130,14 @@ int elc_get_input_snapshot(elc_handle *h, struct elc_input_snapshot *snap,
 			     void *buf, size_t len);
 
 /*
- * Publish full output image and update mask of size len.
- * Does not arm. On success, pub receives the assigned output_sequence.
+ * Publish output image and update mask of size len. Does not arm.
+ * On success, pub receives the assigned output_sequence.
+ *
+ * API 0.17+: if pub is non-NULL, flags and domain_config_id are preserved.
+ * domain_config_id == 0 publishes the full global image (len must match
+ * global size); non-zero targets that domain segment (len must match the
+ * domain size). arm->flags / disarm->flags use the same 0 = all /
+ * non-zero = domain_config_id convention.
  */
 int elc_publish_output(elc_handle *h, const void *image, const void *mask,
 			 size_t len, struct elc_output_publish *pub);
