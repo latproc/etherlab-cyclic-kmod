@@ -517,11 +517,21 @@ blocking mailbox operation, or user-space callback.
 ### `ELC_IOC_CYCLE_SET_PERIOD`
 
 API 0.15 permits a controller to activate conservatively, wait for its required
-slaves and domains to reach OP/valid, and then change the non-DC cyclic period
-without rebuilding the EtherLab configuration. The caller supplies the active
+slaves and domains to reach OP/valid, and then change the cyclic period without
+rebuilding the full EtherLab configuration. The caller supplies the active
 configuration generation and a period within the activation limits. Outputs
-must be disarmed. A DC-configured session returns `EOPNOTSUPP`; an armed
-session returns `EBUSY`; a stale generation returns `ESTALE`.
+must be disarmed. An armed session returns `EBUSY`; a stale generation returns
+`ESTALE`.
+
+DC sessions are allowed while disarmed. At the completed-cycle boundary the
+kernel updates the host cycle period, rewrites each configured SYNC0 that
+matched the previous period to the new period via `ecrt_slave_config_dc()`,
+and resets the DC filter/adjustment so phase control re-locks. Host
+application-time stepping uses the new period immediately. EtherLab programs
+ESC SYNC0 registers during slave configuration; the stored `slave_config` is
+updated at the boundary, but a full hardware SYNC0 rewrite may wait until the
+next slave reconfiguration pass. Controllers that need a guaranteed ESC SYNC0
+change should deactivate and reactivate with the new period.
 
 The cyclic thread uses one immutable period for each complete
 receive/process/application-time/queue/send cycle. It publishes that cycle's

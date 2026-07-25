@@ -39,9 +39,11 @@ decisions, risks, commands, or next steps change.
   simultaneously with both domains complete. A following 34/34-healthy
   session pulsed only the console LED update bit and synchronously disarmed.
 - The converter must use slave-reported `sync_managers`, not IOD's requested
-  `configured_sync_managers`. EL5152 position 4 still emits fixed-map warnings
-  because EtherLab/XML diagnostic-object identities differ from the fresh live
-  PDO report at unchanged bit positions. Do not call this a clean-log result.
+  `configured_sync_managers`. EL5152 position 3 is rev `0x00120000` and
+  position 4 is `0x00140000`; diagnostic object identities differ at the same
+  bit slots. Match live CoE maps per position. IOD `modules.lpc` must declare
+  matching `RevisionNo` values. Clean full-topology activate is free of fixed-
+  map PDO warnings after rescan with the dual-revision fixture.
 - Five corrected full-topology zero-arm lifecycles and a full-topology
   zero-armed controller-death test pass with no new kernel warning/error,
   topology change, cyclic task leak, or retained master ownership.
@@ -423,13 +425,11 @@ testing, safety, and build documents.
   boundary; master 0 returned idle with all 34 slaves visible. An earlier
   intermediate run also logged one AL-state datagram initialization failure
   and one skipped master-FSM datagram.
-- API 0.13 DC status is not yet a complete user-space motion-clock contract.
-  A future coherent timing record must add the exact application time used for
-  each global cycle, reference validity and low-32-bit reference sample,
-  normalized phase difference, and applied adjustment. User space follows
-  that kernel timeline and queues output for an explicit future cycle; a wake
-  after cycle N cannot alter cycle N. Preserve the existing cycle-info ioctl
-  size for binary compatibility and add a new operation.
+- API 0.16 `ELC_IOC_CYCLE_GET_DC_INFO` is the coherent DC motion-clock record
+  (application time, reference validity/sample, phase, applied adjustment)
+  snapshotted with the base cycle under `cycle_info_lock`. Scheduled
+  cycle-addressed outputs remain future work: a wake after cycle N still
+  cannot alter cycle N.
 - API 0.14 adds an optional 1--1,000,000 armed-cycle lease to the compatibility
   output authority. It starts invalid on activation, pauses while disarmed,
   and expires into a distinct controller-stale fault and zero gate. Renewal
@@ -439,11 +439,12 @@ testing, safety, and build documents.
   fresh zero publication, and returned master 0 idle. A subsequent
   lease-disabled zero-arm lifecycle also passed after one transient
   post-teardown health-wait failure.
-- API 0.15 adds an acknowledged non-DC cycle-period update at a completed-cycle
-  boundary. The operation requires the active generation and disarmed outputs;
-  DC sessions are rejected until a coherent DC transition contract exists.
-  `cycle-rate` starts at a conservative rate, waits for strict bus health,
-  applies the target period, and begins measurement only after acknowledgement.
+- API 0.15 cycle-period update works while disarmed for non-DC and DC sessions.
+  At the boundary the host period changes, DC SYNC0 config records that matched
+  the previous period are rewritten, and the DC filter resets. ESC SYNC0
+  hardware may wait for the next slave reconfiguration; deactivate/reactivate
+  remains the hard guarantee. `cycle-rate` starts conservatively, waits for
+  strict health, applies the target period, then measures.
 - Staged disarmed full-topology screens activated at 1 ms and then ran at
   333,333, 250,000, 200,000, and 100,000 ns across baseline, same-CPU, and
   system load. All four ended with zero errors/overruns, 34/34 OP, and both

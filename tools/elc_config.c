@@ -2404,6 +2404,8 @@ static int cycle(const char *path, uint32_t period_ns,
 		goto out;
 	}
 	if (dc_status.enabled) {
+		struct elc_cycle_dc_info dc_info;
+
 		printf("DC status: reference_valid=%u reference_result=%" PRId32
 		       " difference=%" PRId32 " ns adjustment=%" PRId32
 		       " ns monitor_pending=%u deviation=%" PRIu32
@@ -2422,6 +2424,21 @@ static int cycle(const char *path, uint32_t period_ns,
 		       (uint64_t)dc_status.reference_resume_count,
 		       (uint64_t)dc_status.monitor_success_count,
 		       (uint64_t)dc_status.monitor_timeout_count);
+		memset(&dc_info, 0, sizeof(dc_info));
+		if (lib_ret(elc_cycle_dc_info(h, &dc_info)) < 0) {
+			fprintf(stderr,
+				"elc_config: cycle DC info failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		printf("DC cycle info: enabled=%u cycle=%" PRIu64
+		       " app_time=%" PRIu64 " ref_valid=%u ref_sample=0x%08"
+		       PRIx32 " phase=%" PRId32 " ns adj=%" PRId32 " ns\n",
+		       dc_info.dc_enabled, (uint64_t)dc_info.cycle_index,
+		       (uint64_t)dc_info.application_time_ns,
+		       dc_info.dc_reference_valid, dc_info.dc_reference_sample,
+		       dc_info.dc_phase_difference_ns,
+		       dc_info.dc_applied_adjustment_ns);
 	}
 	if (lib_ret(elc_get_io_status(h, &io_status)) < 0) {
 		fprintf(stderr, "elc_config: IO status failed: %s\n",

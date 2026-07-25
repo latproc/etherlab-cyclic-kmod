@@ -130,6 +130,8 @@ struct elc_file {
 	s64 dc_difference_total_ns;
 	s64 dc_delta_total_ns;
 	s32 dc_last_difference_ns;
+	u32 dc_last_reference_sample;
+	s32 dc_last_applied_adjustment_ns;
 	u32 dc_filter_count;
 	u32 dc_monitor_countdown;
 	u32 dc_monitor_wait_cycles;
@@ -299,6 +301,9 @@ static void *elc_kvzalloc(size_t size)
 	return kvzalloc(size, GFP_KERNEL);
 }
 
+
+static struct elc_slave_node *elc_find_slave(struct elc_file *ctx,
+					      u32 config_id);
 
 static void elc_authority_init(struct elc_output_authority *authority)
 {
@@ -592,18 +597,15 @@ static int elc_dc_process_receive(struct elc_file *ctx)
 			}
 		}
 		ctx->dc_last_difference_ns = difference;
+		ctx->dc_last_reference_sample = reference;
 		ctx->dc_reference_valid = true;
-		ctx->dc_published_reference_sample = reference;
-		ctx->dc_published_phase_difference_ns = difference;
-		ctx->dc_published_reference_valid = 1;
 		if (ctx->dc_last_reference_result)
 			atomic64_inc(&ctx->dc_reference_resume_count);
 	} else {
 		ctx->dc_reference_valid = false;
 		atomic64_inc(&ctx->dc_reference_read_error_count);
-		ctx->dc_published_reference_sample = 0;
-		ctx->dc_published_phase_difference_ns = 0;
-		ctx->dc_published_reference_valid = 0;
+		ctx->dc_last_reference_sample = 0;
+		ctx->dc_last_difference_ns = 0;
 	}
 	ctx->dc_last_reference_result = ret;
 	atomic_set(&ctx->dc_status_reference_valid,
@@ -647,8 +649,7 @@ static int elc_dc_prepare_send(struct elc_file *ctx)
 
 	ctx->application_time_ns +=
 		ctx->cycle_period_ns - ctx->dc_cycle_adjustment_ns - phase_step;
-	ctx->dc_published_app_time_ns = ctx->application_time_ns;
-	ctx->dc_published_applied_adjustment_ns =
+	ctx->dc_last_applied_adjustment_ns =
 		ctx->dc_cycle_adjustment_ns + phase_step;
 	ret = ecrt_master_application_time(ctx->master,
 					  ctx->application_time_ns);
@@ -920,6 +921,27 @@ static void elc_publish_cycle_info(struct elc_file *ctx, u64 cycle_index,
 
 	spin_lock_irqsave(&ctx->cycle_info_lock, irq_flags);
 	ctx->cycle_info = info;
+	/*
+	 * Snapshot DC motion-clock fields under the same lock as cycle_info so
+	 * GET_DC_INFO cannot observe a torn half-cycle record.
+	 */
+	if (ctx->config_dc_count) {
+		ctx->dc_published_app_time_ns = ctx->application_time_ns;
+		ctx->dc_published_reference_valid =
+			ctx->dc_reference_valid ? 1 : 0;
+		ctx->dc_published_reference_sample =
+			ctx->dc_last_reference_sample;
+		ctx->dc_published_phase_difference_ns =
+			ctx->dc_last_difference_ns;
+		ctx->dc_published_applied_adjustment_ns =
+			ctx->dc_last_applied_adjustment_ns;
+	} else {
+		ctx->dc_published_app_time_ns = 0;
+		ctx->dc_published_reference_valid = 0;
+		ctx->dc_published_reference_sample = 0;
+		ctx->dc_published_phase_difference_ns = 0;
+		ctx->dc_published_applied_adjustment_ns = 0;
+	}
 	spin_unlock_irqrestore(&ctx->cycle_info_lock, irq_flags);
 	/* Publish the wait predicate only after the coherent record above. */
 	atomic64_set(&ctx->cycle_info_sequence, cycle_index);
@@ -1114,7 +1136,54 @@ static int elc_cycle_thread(void *data)
 				&ctx->pending_cycle_period_ns, 0);
 
 			if (pending) {
+				u32 previous = cycle_period_ns;
+				struct elc_dc_node *dc;
+
 				WRITE_ONCE(ctx->cycle_period_ns, pending);
+				if (ctx->config_dc_count) {
+					/*
+					 * Keep SYNC0 identical to the host
+					 * period (activation invariant).
+					 * ecrt_slave_config_dc only updates
+					 * the stored slave_config; EtherLab
+					 * reprograms the ESC on the next
+					 * slave configuration pass. Host
+					 * application-time stepping and the
+					 * DC filter use the new period
+					 * immediately.
+					 */
+					list_for_each_entry(
+						dc, &ctx->config_dcs,
+						common.node) {
+						struct elc_slave_node *slave;
+
+						if (dc->cfg.sync0_cycle_ns ==
+						    previous)
+							dc->cfg.sync0_cycle_ns =
+								pending;
+						slave = elc_find_slave(
+							ctx,
+							dc->cfg.slave_config_id);
+						if (!slave ||
+						    !slave->ec_config)
+							continue;
+						ecrt_slave_config_dc(
+							slave->ec_config,
+							dc->cfg.assign_activate,
+							dc->cfg.sync0_cycle_ns,
+							dc->cfg.sync0_shift_ns,
+							dc->cfg.sync1_cycle_ns,
+							dc->cfg.sync1_shift_ns);
+					}
+					ctx->dc_filter_count = 0;
+					ctx->dc_difference_total_ns = 0;
+					ctx->dc_delta_total_ns = 0;
+					ctx->dc_cycle_adjustment_ns = 0;
+					ctx->dc_last_applied_adjustment_ns = 0;
+					ctx->dc_monitor_countdown =
+						DIV_ROUND_UP(1000000000U,
+							     pending);
+				}
 				atomic64_set(&ctx->period_applied_cycle,
 					     cycle_index);
 				atomic64_set(
@@ -1303,6 +1372,8 @@ static int elc_open(struct inode *inode, struct file *file)
 	atomic64_set(&ctx->dc_reference_resume_count, 0);
 	atomic64_set(&ctx->dc_monitor_success_count, 0);
 	atomic64_set(&ctx->dc_monitor_timeout_count, 0);
+	ctx->dc_last_reference_sample = 0;
+	ctx->dc_last_applied_adjustment_ns = 0;
 	ctx->dc_published_app_time_ns = 0;
 	ctx->dc_published_reference_valid = 0;
 	ctx->dc_published_reference_sample = 0;
@@ -2138,6 +2209,8 @@ static long elc_cycle_activate(struct elc_file *ctx, void __user *argp)
 	atomic64_set(&ctx->dc_reference_resume_count, 0);
 	atomic64_set(&ctx->dc_monitor_success_count, 0);
 	atomic64_set(&ctx->dc_monitor_timeout_count, 0);
+	ctx->dc_last_reference_sample = 0;
+	ctx->dc_last_applied_adjustment_ns = 0;
 	ctx->dc_published_app_time_ns = 0;
 	ctx->dc_published_reference_valid = 0;
 	ctx->dc_published_reference_sample = 0;
@@ -2245,10 +2318,13 @@ static long elc_cycle_set_period(struct elc_file *ctx, void __user *argp)
 		ret = -ESTALE;
 		goto out;
 	}
-	if (ctx->config_dc_count) {
-		ret = -EOPNOTSUPP;
-		goto out;
-	}
+	/*
+	 * DC sessions are allowed when disarmed. At the completed-cycle
+	 * boundary the cyclic task updates the host period, rewrites each
+	 * configured SYNC0 to match, and resets the DC filter so phase
+	 * control re-locks to the new period. Outputs must stay disarmed for
+	 * the whole transition.
+	 */
 	{
 		bool any_armed = false;
 		struct elc_domain_node *d;

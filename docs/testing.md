@@ -1010,13 +1010,13 @@ The first conversion attempt used the JSON `configured_sync_managers` view and
 was rejected as authoritative after EL5152 position 4 emitted fixed-mapping
 warnings. The converter now uses the slave-reported `sync_managers` view.
 Fresh idle-master `ethercat pdos -p 4` agrees with the corrected fixture.
-EtherLab still warns that the fixed mapping differs from its cached/default
-description: the installed Beckhoff XML variant names sync-error and
-TxPDO-toggle objects at four diagnostic-bit positions where the live slave
-reports channel status objects. Bit positions, PDO sizes, counter values, and
-frequency values are unchanged. The corrected run reaches complete WC and OP,
-but this fixed-mapping warning remains a documented compatibility issue rather
-than a clean-kernel-log result.
+Position 3 (rev `0x00120000`) and position 4 (rev `0x00140000`) report different
+object identities at the same diagnostic bit slots. The transport fixture must
+match the live CoE map per position (not a single XML recipe for both). After a
+clean rescan, the dual-revision fixture completes OP/WC without EtherLab
+"does not support changing the PDO mapping" warnings. IOD
+`code/config/Beckhoff/modules.lpc` must declare `EL5152_03` as
+`RevisionNo:0x00120000` and `EL5152_04` as `0x00140000`.
 
 The corrected full fixture then passed five consecutive zero-output lifecycle
 iterations. Every iteration returned master 0 idle with no cyclic task leak;
@@ -1110,6 +1110,20 @@ intermediate five-iteration run also recorded one position-11 AL-state
 datagram initialization failure and one skipped master-FSM datagram. These are
 not a clean-log acceptance result; they remain evidence for the known
 asynchronous EtherLab deactivation boundary. No nonzero output was requested.
+
+## DC period update and coherent DC cycle info
+
+A disarmed ED3L position-29 DC session activates at 1 ms, then
+`ELC_IOC_CYCLE_SET_PERIOD` to 500 us at a completed-cycle boundary. The tool
+reports `cycle period changed at boundary`, continues with zero
+errors/overruns, `reference_valid=1`, and OP/valid for the configured drive.
+Host application-time and the DC filter use the new period immediately; SYNC0
+fields on each DC config record are rewritten to match.
+
+`ELC_IOC_CYCLE_GET_DC_INFO` returns the motion-clock fields (application time,
+reference validity/sample, phase, applied adjustment) snapshotted under the
+same lock as the coherent cycle record. `elc_config` prints a `DC cycle info`
+line after aggregate DC status when DC is enabled.
 
 ## API 0.17 per-domain output authority
 

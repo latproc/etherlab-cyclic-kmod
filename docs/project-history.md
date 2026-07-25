@@ -241,3 +241,9 @@ commands, outputs, and design details.
   disarmed cycle-strict and zero-arm smoke tests pass with both domains valid.
   Live drive power-loss independence (I/O domain stays armable while drives
   are offline) remains a pending hardware check.
+- Completed DC period-update contract while disarmed: host period, matching
+  SYNC0 config rewrite, and DC filter reset at a cycle boundary. Live ED3L
+  1 ms→500 us screen completed with zero overruns and valid DC reference.
+  DC motion-clock fields are published under the same lock as cycle_info.
+  EL5152 dual-revision fixed-map: transport fixture matches live CoE maps;
+  IOD `modules.lpc` `EL5152_03` revision corrected to `0x00120000`.
