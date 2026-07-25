@@ -493,3 +493,8 @@ testing, safety, and build documents.
   claiming that EtherLab's operation-FSM interval was changed.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.
+- The planned `libcwethercat` C API and install surface are specified in
+  `docs/libcwethercat.md`. This project is a generic transport; the library
+  and UAPI must not embed Clockwork or any other control-system policy.
+  External runtimes (including Clockwork/IOD) are optional consumers via
+  installable headers and `libcwethercat`.
