@@ -362,6 +362,17 @@ The cycle record is published under a dedicated short spinlock after
 only after that coherent record is complete. The cyclic task neither waits for
 nor calls user space.
 
+API 0.16 adds `CW_EC_IOC_CYCLE_GET_DC_INFO` with structure
+`cw_ec_cycle_dc_info`. It extends the coherent cycle record with the
+Distributed Clocks motion-clock contract: the exact application time sent
+for that cycle, reference-clock validity and low-32-bit sample, normalized
+phase difference, and the total adjustment applied. All DC fields are
+published under the same `cycle_info_lock` as the base timing record,
+ensuring one atomic snapshot per cycle. DC fields are zero when the
+configuration contains no DC records. `dc_enabled` distinguishes the
+non-DC case from a zero-valued DC field. The new ioctl preserves the
+existing `CW_EC_IOC_CYCLE_GET_INFO` size and semantics unchanged.
+
 API 0.6 adds `CW_EC_IOC_GET_IO_STATUS`. Each successfully validated
 configuration receives a nonzero monotonically increasing generation for the
 current module lifetime. While cycling, the status reports master link and

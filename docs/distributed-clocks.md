@@ -5,6 +5,16 @@
 Distributed clocks are mandatory for the kernel backend when enabled by user
 configuration.
 
+API 0.16 adds a coherent DC motion-clock contract via
+`CW_EC_IOC_CYCLE_GET_DC_INFO`. Each per-cycle record includes the application
+time, reference validity and low-32-bit sample, normalized phase difference,
+and applied adjustment, published atomically with cycle timing under
+`cycle_info_lock`. The existing `CW_EC_IOC_CYCLE_GET_DC_STATUS` remains
+available for aggregate diagnostics. A hardware-proven DC reference read
+against a 1 kHz ED3L fixture returned `dc_reference_valid=1`,
+`dc_phase_difference=-435379 ns`, and `dc_applied_adjustment=-1 ns`
+after three cycles.
+
 API 0.5 accepts, validates, and applies generic per-slave DC parameters plus
 disabled/automatic/explicit reference policy. The kernel now implements the
 reference-led IOD controller, cyclic slave synchronization, synchrony
