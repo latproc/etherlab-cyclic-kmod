@@ -41,6 +41,7 @@
 struct elc_output_authority {
 	atomic_t armed;
 	atomic_t rearm_required;
+	atomic_t healthy;
 	atomic_t current_faults;
 	atomic_t last_latched_faults;
 	atomic64_t fault_output_sequence;
@@ -56,10 +57,13 @@ struct elc_output_authority {
 	u8 active;
 	int reader;
 	atomic64_t sequence;
+	u32 image_size;
 	u32 lease_configured_cycles;
 	atomic_t lease_remaining_cycles;
 	atomic64_t lease_renewal_count;
 	atomic64_t lease_expiry_count;
+	bool ever_healthy;
+	bool initialised;
 };
 
 struct elc_input_history {
@@ -150,8 +154,8 @@ struct elc_file {
 	atomic_t io_configured_slaves_online;
 	atomic_t io_configured_slaves_operational;
 	atomic64_t io_fault_count;
-	struct elc_output_authority compat_output;
-	/* Published records are copied under cycle_info_lock; the atomic sequence
+	/* Per-domain output authorities live on elc_domain_node.authority.
+	 * Published records are copied under cycle_info_lock; the atomic sequence
 	 * changes only after the complete record is visible to waiters.
 	 */
 	wait_queue_head_t cycle_wait;
@@ -167,7 +171,6 @@ struct elc_file {
 	u32 dc_published_reference_sample;
 	s32 dc_published_phase_difference_ns;
 	s32 dc_published_applied_adjustment_ns;
-	bool io_ever_healthy;
 	spinlock_t input_lock;
 	u8 *input_buffers[2];
 	u8 input_active;
@@ -234,7 +237,7 @@ struct elc_dc_node {
 struct elc_domain_node {
 	struct elc_config_node common;
 	struct elc_config_domain cfg;
-	struct elc_output_authority *output_authority;
+	struct elc_output_authority authority;
 	ec_domain_t *ec_domain;
 	u8 *data;
 	u32 base_offset;
@@ -295,6 +298,103 @@ static void *elc_kvzalloc(size_t size)
 		return NULL;
 	return kvzalloc(size, GFP_KERNEL);
 }
+
+
+static void elc_authority_init(struct elc_output_authority *authority)
+{
+	memset(authority, 0, sizeof(*authority));
+	spin_lock_init(&authority->lock);
+	init_waitqueue_head(&authority->gate_wait);
+	authority->reader = -1;
+	authority->initialised = true;
+	atomic_set(&authority->armed, 0);
+	atomic_set(&authority->rearm_required, 0);
+	atomic_set(&authority->healthy, 0);
+	atomic_set(&authority->current_faults, 0);
+	atomic_set(&authority->last_latched_faults, 0);
+	atomic_set(&authority->lease_remaining_cycles, 0);
+	atomic64_set(&authority->sequence, 0);
+	atomic64_set(&authority->fault_output_sequence, 0);
+	atomic64_set(&authority->gate_request, 0);
+	atomic64_set(&authority->gate_applied, 0);
+	atomic64_set(&authority->lease_renewal_count, 0);
+	atomic64_set(&authority->lease_expiry_count, 0);
+}
+
+static void elc_authority_free_buffers(struct elc_output_authority *authority)
+{
+	if (!authority)
+		return;
+	kvfree(authority->buffers[0]);
+	kvfree(authority->buffers[1]);
+	kvfree(authority->mask);
+	kvfree(authority->update_mask);
+	authority->buffers[0] = NULL;
+	authority->buffers[1] = NULL;
+	authority->mask = NULL;
+	authority->update_mask = NULL;
+	authority->active = 0;
+	authority->reader = -1;
+	authority->image_size = 0;
+	atomic64_set(&authority->sequence, 0);
+}
+
+static int elc_authority_alloc_buffers(struct elc_output_authority *authority,
+					 u32 size)
+{
+	authority->buffers[0] = elc_kvzalloc(size);
+	authority->buffers[1] = elc_kvzalloc(size);
+	authority->mask = elc_kvzalloc(size);
+	authority->update_mask = elc_kvzalloc(size);
+	if (!authority->buffers[0] || !authority->buffers[1] ||
+	    !authority->mask || !authority->update_mask) {
+		elc_authority_free_buffers(authority);
+		return -ENOMEM;
+	}
+	authority->image_size = size;
+	return 0;
+}
+
+static void elc_free_all_output_buffers(struct elc_file *ctx)
+{
+	struct elc_domain_node *domain;
+
+	list_for_each_entry(domain, &ctx->config_domains, common.node)
+		elc_authority_free_buffers(&domain->authority);
+}
+
+static int elc_wait_authority_gate(struct elc_output_authority *authority,
+				     u64 request, u32 cycle_period_ns)
+{
+	unsigned long timeout;
+	long wait_result;
+
+	timeout = msecs_to_jiffies(
+		2U * DIV_ROUND_UP(cycle_period_ns, 1000000U) + 100U);
+	wait_result = wait_event_killable_timeout(
+		authority->gate_wait,
+		atomic64_read(&authority->gate_applied) >= request,
+		timeout);
+	if (wait_result < 0)
+		return wait_result;
+	if (!wait_result)
+		return -ETIMEDOUT;
+	return 0;
+}
+
+static void elc_disarm_authority(struct elc_output_authority *authority,
+				   u32 faults)
+{
+	atomic_set(&authority->armed, 0);
+	atomic64_inc(&authority->gate_request);
+	if (atomic_xchg(&authority->rearm_required, 1))
+		atomic_or(faults, &authority->last_latched_faults);
+	else
+		atomic_set(&authority->last_latched_faults, faults);
+	atomic64_set(&authority->fault_output_sequence,
+		     atomic64_read(&authority->sequence));
+}
+
 
 static void elc_invalidate_applied_config(struct elc_file *ctx)
 {
@@ -384,19 +484,7 @@ static int elc_allocate_input_history(struct elc_file *ctx,
 
 static void elc_free_output_buffers(struct elc_file *ctx)
 {
-	struct elc_output_authority *authority = &ctx->compat_output;
-
-	kvfree(authority->buffers[0]);
-	kvfree(authority->buffers[1]);
-	kvfree(authority->mask);
-	kvfree(authority->update_mask);
-	authority->buffers[0] = NULL;
-	authority->buffers[1] = NULL;
-	authority->mask = NULL;
-	authority->update_mask = NULL;
-	authority->active = 0;
-	authority->reader = -1;
-	atomic64_set(&authority->sequence, 0);
+	elc_free_all_output_buffers(ctx);
 }
 
 static void elc_setup_clear(struct elc_file *ctx)
@@ -585,22 +673,24 @@ static int elc_dc_prepare_send(struct elc_file *ctx)
 	return ret;
 }
 
-static void elc_update_io_health(struct elc_file *ctx,
-				   const ec_domain_state_t *domain_state)
+static void elc_update_io_health(struct elc_file *ctx)
 {
-	struct elc_output_authority *authority = &ctx->compat_output;
 	ec_master_state_t master_state = {};
+	struct elc_domain_node *domain;
 	struct elc_slave_node *slave;
-	u32 faults = 0;
 	u32 online = 0;
 	u32 operational = 0;
+	u32 aggregate_faults = 0;
+	bool all_healthy = true;
+	bool any_armed = false;
+	u32 master_faults = 0;
 	int ret;
 
 	ret = ecrt_master_state(ctx->master, &master_state);
 	if (ret)
-		faults |= ELC_IO_FAULT_MASTER_STATE;
+		master_faults |= ELC_IO_FAULT_MASTER_STATE;
 	else if (!master_state.link_up)
-		faults |= ELC_IO_FAULT_LINK_DOWN;
+		master_faults |= ELC_IO_FAULT_LINK_DOWN;
 
 	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
 		ec_slave_config_state_t state = {};
@@ -611,7 +701,6 @@ static void elc_update_io_health(struct elc_file *ctx,
 			atomic_set(&slave->state_online, 0);
 			atomic_set(&slave->state_operational, 0);
 			atomic_set(&slave->state_al_state, 0);
-			faults |= ELC_IO_FAULT_SLAVE_STATE;
 			continue;
 		}
 		atomic_set(&slave->state_online, state.online);
@@ -619,42 +708,63 @@ static void elc_update_io_health(struct elc_file *ctx,
 		atomic_set(&slave->state_al_state, state.al_state);
 		if (state.online)
 			online++;
-		else
-			faults |= ELC_IO_FAULT_SLAVE_OFFLINE;
 		if (state.operational)
 			operational++;
-		else
-			faults |= ELC_IO_FAULT_SLAVE_NOT_OPERATIONAL;
 	}
-	if (domain_state->wc_state != EC_WC_COMPLETE)
-		faults |= ELC_IO_FAULT_DOMAIN_INCOMPLETE;
+
+	/*
+	 * Master/link faults gate every domain. Domain WC and that domain's
+	 * slaves only affect that domain's authority so I/O can stay armed
+	 * while a drive domain is offline.
+	 */
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		struct elc_output_authority *authority = &domain->authority;
+		u32 faults = master_faults;
+		bool was_healthy;
+
+		if (atomic_read(&domain->working_counter_state) !=
+		    EC_WC_COMPLETE)
+			faults |= ELC_IO_FAULT_DOMAIN_INCOMPLETE;
+		list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+			if (slave->domain != domain)
+				continue;
+			if (atomic_read(&slave->state_result))
+				faults |= ELC_IO_FAULT_SLAVE_STATE;
+			if (!atomic_read(&slave->state_online))
+				faults |= ELC_IO_FAULT_SLAVE_OFFLINE;
+			if (!atomic_read(&slave->state_operational))
+				faults |= ELC_IO_FAULT_SLAVE_NOT_OPERATIONAL;
+		}
+		atomic_set(&authority->current_faults, faults);
+		was_healthy = atomic_read(&authority->healthy);
+		if (!faults) {
+			authority->ever_healthy = true;
+			atomic_set(&authority->healthy, 1);
+		} else {
+			atomic_set(&authority->healthy, 0);
+			if (was_healthy || authority->ever_healthy) {
+				if (atomic_read(&authority->armed) ||
+				    !atomic_read(&authority->rearm_required))
+					atomic64_inc(&ctx->io_fault_count);
+				elc_disarm_authority(authority, faults);
+			} else {
+				atomic_set(&authority->armed, 0);
+			}
+			all_healthy = false;
+		}
+		if (atomic_read(&authority->armed))
+			any_armed = true;
+		aggregate_faults |= faults;
+	}
 
 	atomic_set(&ctx->io_link_up, master_state.link_up);
 	atomic_set(&ctx->io_slaves_responding,
 		   master_state.slaves_responding);
 	atomic_set(&ctx->io_configured_slaves_online, online);
 	atomic_set(&ctx->io_configured_slaves_operational, operational);
-	atomic_set(&ctx->io_current_faults, faults);
-	if (!faults) {
-		ctx->io_ever_healthy = true;
-		atomic_set(&ctx->io_bus_healthy, 1);
-	} else if (ctx->io_ever_healthy &&
-		   atomic_xchg(&ctx->io_bus_healthy, 0)) {
-		atomic_set(&authority->armed, 0);
-		atomic64_inc(&authority->gate_request);
-		if (atomic_xchg(&authority->rearm_required, 1))
-			atomic_or(faults, &authority->last_latched_faults);
-		else
-			atomic_set(&authority->last_latched_faults, faults);
-		atomic64_set(&authority->fault_output_sequence,
-			     atomic64_read(&authority->sequence));
-		atomic64_inc(&ctx->io_fault_count);
-	} else {
-		atomic_set(&authority->armed, 0);
-		atomic_set(&ctx->io_bus_healthy, 0);
-		if (atomic_read(&authority->rearm_required))
-			atomic_or(faults, &authority->last_latched_faults);
-	}
+	atomic_set(&ctx->io_current_faults, aggregate_faults);
+	atomic_set(&ctx->io_bus_healthy, all_healthy ? 1 : 0);
+	(void)any_armed;
 }
 
 static bool elc_publish_input_snapshot(struct elc_file *ctx,
@@ -709,48 +819,60 @@ elc_expire_output_lease(struct elc_file *ctx,
 
 static u64 elc_apply_outputs(struct elc_file *ctx)
 {
-	struct elc_output_authority *authority = &ctx->compat_output;
 	struct elc_domain_node *domain;
 	unsigned long irq_flags;
-	u8 *source = NULL;
-	u8 reader = 0;
 	u64 output_sequence_consumed = 0;
 	u32 i;
 
-	if (atomic_read(&authority->armed) &&
-	    authority->lease_configured_cycles) {
-		if (atomic_read(&authority->lease_remaining_cycles) <= 0)
-			elc_expire_output_lease(ctx, authority);
-		else
-			atomic_dec(&authority->lease_remaining_cycles);
-	}
-	if (atomic_read(&authority->armed) &&
-	    atomic_read(&ctx->io_bus_healthy)) {
-		spin_lock_irqsave(&authority->lock, irq_flags);
-		reader = authority->active;
-		authority->reader = reader;
-		source = authority->buffers[reader];
-		output_sequence_consumed =
-			atomic64_read(&authority->sequence);
-		spin_unlock_irqrestore(&authority->lock, irq_flags);
-	}
 	list_for_each_entry(domain, &ctx->config_domains, common.node) {
-		if (domain->output_authority != authority)
-			continue;
-		for (i = 0; i < domain->size; i++) {
-			u32 global = domain->base_offset + i;
-			u8 output = source ? source[global] : 0;
+		struct elc_output_authority *authority = &domain->authority;
+		u8 *source = NULL;
+		u8 reader = 0;
 
-			domain->data[i] =
-				(domain->data[i] &
-				 ~authority->mask[global]) |
-				(output & authority->mask[global]);
+		if (atomic_read(&authority->armed) &&
+		    authority->lease_configured_cycles) {
+			if (atomic_read(&authority->lease_remaining_cycles) <=
+			    0)
+				elc_expire_output_lease(ctx, authority);
+			else
+				atomic_dec(&authority->lease_remaining_cycles);
 		}
-	}
-	if (source) {
-		spin_lock_irqsave(&authority->lock, irq_flags);
-		authority->reader = -1;
-		spin_unlock_irqrestore(&authority->lock, irq_flags);
+		if (atomic_read(&authority->armed) &&
+		    atomic_read(&authority->healthy) &&
+		    authority->buffers[0]) {
+			spin_lock_irqsave(&authority->lock, irq_flags);
+			reader = authority->active;
+			authority->reader = reader;
+			source = authority->buffers[reader];
+			if (atomic64_read(&authority->sequence))
+				output_sequence_consumed =
+					atomic64_read(&authority->sequence);
+			spin_unlock_irqrestore(&authority->lock, irq_flags);
+		}
+		if (!domain->size || !domain->data)
+			continue;
+		if (source) {
+			for (i = 0; i < domain->size; i++) {
+				u8 output = source[i];
+
+				domain->data[i] =
+					(domain->data[i] &
+					 ~authority->mask[i]) |
+					(output & authority->mask[i]);
+			}
+			spin_lock_irqsave(&authority->lock, irq_flags);
+			authority->reader = -1;
+			spin_unlock_irqrestore(&authority->lock, irq_flags);
+			if (output_sequence_consumed &&
+			    output_sequence_consumed ==
+				    authority->last_sequence_consumed)
+				authority->stale_cycles++;
+			authority->last_sequence_consumed =
+				output_sequence_consumed;
+		} else {
+			/* Disarmed or unhealthy: zero domain process data. */
+			memset(domain->data, 0, domain->size);
+		}
 	}
 	return output_sequence_consumed;
 }
@@ -763,7 +885,18 @@ static void elc_publish_cycle_info(struct elc_file *ctx, u64 cycle_index,
 				     u64 output_sequence_consumed,
 				     int cycle_result)
 {
-	struct elc_cycle_info info = {
+	struct elc_domain_node *domain;
+	u64 stale_sum = 0;
+	u8 any_armed = 0;
+	struct elc_cycle_info info;
+	unsigned long irq_flags;
+
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		stale_sum += domain->authority.stale_cycles;
+		if (atomic_read(&domain->authority.armed))
+			any_armed = 1;
+	}
+	info = (struct elc_cycle_info){
 		.struct_size = sizeof(info),
 		.api_major = ELC_API_VERSION_MAJOR,
 		.config_generation = ctx->config_generation,
@@ -776,15 +909,14 @@ static void elc_publish_cycle_info(struct elc_file *ctx, u64 cycle_index,
 		.output_sequence_consumed = output_sequence_consumed,
 		.missed_deadlines =
 			atomic64_read(&ctx->cycle_overrun_count),
-		.stale_output_cycles = ctx->compat_output.stale_cycles,
+		.stale_output_cycles = stale_sum,
 		.working_counter = atomic_read(&ctx->working_counter),
 		.working_counter_state =
 			atomic_read(&ctx->working_counter_state),
-		.outputs_armed = atomic_read(&ctx->compat_output.armed),
+		.outputs_armed = any_armed,
 		.bus_healthy = atomic_read(&ctx->io_bus_healthy),
 		.cycle_result = cycle_result,
 	};
-	unsigned long irq_flags;
 
 	spin_lock_irqsave(&ctx->cycle_info_lock, irq_flags);
 	ctx->cycle_info = info;
@@ -927,17 +1059,8 @@ static int elc_cycle_thread(void *data)
 			   aggregate_state.working_counter);
 		atomic_set(&ctx->working_counter_state,
 			   aggregate_state.wc_state);
-		elc_update_io_health(ctx, &aggregate_state);
+		elc_update_io_health(ctx);
 		output_sequence_consumed = elc_apply_outputs(ctx);
-		/* Zero means the safety gate selected zeros, so disarmed cycles are
-		 * deliberately excluded from stale output reuse accounting.
-		 */
-		if (output_sequence_consumed &&
-		    output_sequence_consumed ==
-			    ctx->compat_output.last_sequence_consumed)
-			ctx->compat_output.stale_cycles++;
-		ctx->compat_output.last_sequence_consumed =
-			output_sequence_consumed;
 		if (ctx->config_dc_count) {
 			operation_result = elc_dc_prepare_send(ctx);
 		} else {
@@ -956,13 +1079,21 @@ static int elc_cycle_thread(void *data)
 		operation_result = ecrt_master_send(ctx->master);
 		if (operation_result && !cycle_result)
 			cycle_result = operation_result;
-		if (!operation_result &&
-		    atomic64_read(&ctx->compat_output.gate_applied) !=
-		    atomic64_read(&ctx->compat_output.gate_request)) {
-			atomic64_set(&ctx->compat_output.gate_applied,
-				     atomic64_read(
-					     &ctx->compat_output.gate_request));
-			wake_up_interruptible(&ctx->compat_output.gate_wait);
+		if (!operation_result) {
+			list_for_each_entry(domain, &ctx->config_domains,
+					    common.node) {
+				struct elc_output_authority *auth =
+					&domain->authority;
+
+				if (atomic64_read(&auth->gate_applied) !=
+				    atomic64_read(&auth->gate_request)) {
+					atomic64_set(
+						&auth->gate_applied,
+						atomic64_read(
+							&auth->gate_request));
+					wake_up_interruptible(&auth->gate_wait);
+				}
+			}
 		}
 		if (cycle_result)
 			atomic64_inc(&ctx->cycle_error_count);
@@ -1033,28 +1164,23 @@ static int elc_wait_configured_slaves_settled(struct elc_file *ctx)
 
 static int elc_wait_output_gate(struct elc_file *ctx, u64 request)
 {
-	struct elc_output_authority *authority = &ctx->compat_output;
-	unsigned long timeout;
-	long wait_result;
+	struct elc_domain_node *domain;
+	int ret = 0;
 
-	timeout = msecs_to_jiffies(
-		2U * DIV_ROUND_UP(ctx->cycle_period_ns, 1000000U) + 100U);
-	wait_result = wait_event_killable_timeout(
-		authority->gate_wait,
-		atomic64_read(&authority->gate_applied) >= request,
-		timeout);
-	if (wait_result < 0)
-		return wait_result;
-	if (!wait_result)
-		return -ETIMEDOUT;
-	return 0;
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		int one = elc_wait_authority_gate(&domain->authority, request,
+						    ctx->cycle_period_ns);
+
+		if (one && !ret)
+			ret = one;
+	}
+	return ret;
 }
 
 static int elc_deactivate_locked(struct elc_file *ctx)
 {
-	struct elc_output_authority *authority = &ctx->compat_output;
 	struct elc_domain_node *domain;
-	u64 gate_request;
+	u64 gate_request = 0;
 	int gate_ret;
 	int process_ret;
 	int receive_ret;
@@ -1064,9 +1190,13 @@ static int elc_deactivate_locked(struct elc_file *ctx)
 	if (!ctx->active)
 		return -EINVAL;
 
-	atomic_set(&authority->armed, 0);
-	atomic_set(&authority->lease_remaining_cycles, 0);
-	gate_request = atomic64_inc_return(&authority->gate_request);
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		struct elc_output_authority *authority = &domain->authority;
+
+		atomic_set(&authority->armed, 0);
+		atomic_set(&authority->lease_remaining_cycles, 0);
+		gate_request = atomic64_inc_return(&authority->gate_request);
+	}
 	gate_ret = elc_wait_output_gate(ctx, gate_request);
 	kthread_stop(ctx->cycle_thread);
 	ctx->cycle_thread = NULL;
@@ -1131,14 +1261,11 @@ static int elc_open(struct inode *inode, struct file *file)
 		atomic_set(&elc_test_allocation_count, 0);
 	mutex_init(&ctx->lock);
 	spin_lock_init(&ctx->input_lock);
-	spin_lock_init(&ctx->compat_output.lock);
 	spin_lock_init(&ctx->cycle_info_lock);
 	spin_lock_init(&ctx->input_history.lock);
-	init_waitqueue_head(&ctx->compat_output.gate_wait);
 	init_waitqueue_head(&ctx->cycle_wait);
 	init_waitqueue_head(&ctx->period_wait);
 	ctx->input_reader = -1;
-	ctx->compat_output.reader = -1;
 	INIT_LIST_HEAD(&ctx->setup_sdos);
 	INIT_LIST_HEAD(&ctx->config_slaves);
 	INIT_LIST_HEAD(&ctx->config_syncs);
@@ -1162,8 +1289,6 @@ static int elc_open(struct inode *inode, struct file *file)
 	ctx->cycle_info.api_major = ELC_API_VERSION_MAJOR;
 	ctx->cycle_info.config_generation = ctx->config_generation;
 	ctx->cycle_info.cycle_period_ns = ctx->cycle_period_ns;
-	ctx->compat_output.last_sequence_consumed = 0;
-	ctx->compat_output.stale_cycles = 0;
 	atomic_set(&ctx->working_counter, 0);
 	atomic_set(&ctx->working_counter_state, EC_WC_ZERO);
 	atomic_set(&ctx->last_cycle_result, 0);
@@ -1184,25 +1309,13 @@ static int elc_open(struct inode *inode, struct file *file)
 	ctx->dc_published_phase_difference_ns = 0;
 	ctx->dc_published_applied_adjustment_ns = 0;
 	atomic_set(&ctx->io_bus_healthy, 0);
-	atomic_set(&ctx->compat_output.armed, 0);
-	atomic_set(&ctx->compat_output.rearm_required, 0);
-	atomic_set(&ctx->compat_output.current_faults, 0);
 	atomic_set(&ctx->io_link_up, 0);
 	atomic_set(&ctx->io_current_faults, 0);
-	atomic_set(&ctx->compat_output.last_latched_faults, 0);
 	atomic_set(&ctx->io_slaves_responding, 0);
 	atomic_set(&ctx->io_configured_slaves_online, 0);
 	atomic_set(&ctx->io_configured_slaves_operational, 0);
 	atomic64_set(&ctx->io_fault_count, 0);
-	atomic64_set(&ctx->compat_output.fault_output_sequence, 0);
-	atomic64_set(&ctx->compat_output.gate_request, 0);
-	atomic64_set(&ctx->compat_output.gate_applied, 0);
 	atomic64_set(&ctx->input_sequence, 0);
-	atomic64_set(&ctx->compat_output.sequence, 0);
-	ctx->compat_output.lease_configured_cycles = 0;
-	atomic_set(&ctx->compat_output.lease_remaining_cycles, 0);
-	atomic64_set(&ctx->compat_output.lease_renewal_count, 0);
-	atomic64_set(&ctx->compat_output.lease_expiry_count, 0);
 	file->private_data = ctx;
 	nonseekable_open(inode, file);
 
@@ -1669,7 +1782,7 @@ static long elc_domain_create(struct elc_file *ctx, void __user *argp)
 		ctx->config_domain_count = 1;
 	}
 	list_for_each_entry(domain, &ctx->config_domains, common.node) {
-		domain->output_authority = &ctx->compat_output;
+		elc_authority_init(&domain->authority);
 		domain->ec_domain = ecrt_master_create_domain(ctx->master);
 		if (!domain->ec_domain) {
 			ret = -ENOMEM;
@@ -1818,7 +1931,6 @@ out:
 
 static long elc_cycle_activate(struct elc_file *ctx, void __user *argp)
 {
-	struct elc_output_authority *authority = &ctx->compat_output;
 	struct elc_dc_node *dc;
 	struct elc_domain_node *domain;
 	struct elc_entry_node *entry;
@@ -1892,29 +2004,53 @@ static long elc_cycle_activate(struct elc_file *ctx, void __user *argp)
 		elc_free_input_buffers(ctx);
 		goto out;
 	}
-	authority->buffers[0] = elc_kvzalloc(domain_size);
-	authority->buffers[1] = elc_kvzalloc(domain_size);
-	authority->mask = elc_kvzalloc(domain_size);
-	authority->update_mask = elc_kvzalloc(domain_size);
-	if (!authority->buffers[0] || !authority->buffers[1] ||
-	    !authority->mask || !authority->update_mask) {
-		ret = -ENOMEM;
-		elc_free_input_buffers(ctx);
-		elc_free_output_buffers(ctx);
-		goto out;
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		struct elc_output_authority *authority = &domain->authority;
+
+		if (!domain->authority.initialised)
+			elc_authority_init(authority);
+		ret = elc_authority_alloc_buffers(authority, domain->size);
+		if (ret) {
+			elc_free_input_buffers(ctx);
+			elc_free_output_buffers(ctx);
+			goto out;
+		}
+		authority->last_sequence_consumed = 0;
+		authority->stale_cycles = 0;
+		authority->ever_healthy = false;
+		atomic_set(&authority->armed, 0);
+		atomic_set(&authority->rearm_required, 0);
+		atomic_set(&authority->healthy, 0);
+		atomic_set(&authority->current_faults, 0);
+		atomic_set(&authority->last_latched_faults, 0);
+		atomic64_set(&authority->fault_output_sequence, 0);
+		atomic64_set(&authority->gate_request, 0);
+		atomic64_set(&authority->gate_applied, 0);
+		atomic64_set(&authority->sequence, 0);
+		atomic_set(&authority->lease_remaining_cycles, 0);
+		/* lease_configured_cycles preserved if set pre-activation */
 	}
 	list_for_each_entry(entry, &ctx->config_entries, common.node) {
+		struct elc_output_authority *authority;
+		u32 local_offset;
+
 		if (!entry->registered)
 			continue;
 		pdo = elc_find_pdo(ctx, entry->cfg.pdo_config_id);
 		sync = pdo ? elc_find_sync(ctx,
 					     pdo->cfg.sync_config_id) : NULL;
-		if (!sync || sync->cfg.direction != ELC_DIR_OUTPUT)
+		slave = sync ?
+			elc_find_slave(ctx, sync->cfg.slave_config_id) : NULL;
+		if (!sync || !slave || !slave->domain ||
+		    sync->cfg.direction != ELC_DIR_OUTPUT)
 			continue;
-		first_bit = (u64)entry->domain_offset * 8U +
-			    entry->bit_position;
+		if (entry->domain_offset < slave->domain->base_offset)
+			continue;
+		local_offset = entry->domain_offset - slave->domain->base_offset;
+		authority = &slave->domain->authority;
+		first_bit = (u64)local_offset * 8U + entry->bit_position;
 		end_bit = first_bit + entry->cfg.bit_length;
-		if (end_bit > (u64)domain_size * 8U) {
+		if (end_bit > (u64)slave->domain->size * 8U) {
 			ret = -EOVERFLOW;
 			elc_free_input_buffers(ctx);
 			elc_free_output_buffers(ctx);
@@ -1978,8 +2114,6 @@ static long elc_cycle_activate(struct elc_file *ctx, void __user *argp)
 	ctx->cycle_info.api_major = ELC_API_VERSION_MAJOR;
 	ctx->cycle_info.config_generation = ctx->config_generation;
 	ctx->cycle_info.cycle_period_ns = ctx->cycle_period_ns;
-	authority->last_sequence_consumed = 0;
-	authority->stale_cycles = 0;
 	atomic_set(&ctx->working_counter, 0);
 	atomic_set(&ctx->working_counter_state, EC_WC_ZERO);
 	atomic_set(&ctx->last_cycle_result, 0);
@@ -2010,23 +2144,13 @@ static long elc_cycle_activate(struct elc_file *ctx, void __user *argp)
 	ctx->dc_published_phase_difference_ns = 0;
 	ctx->dc_published_applied_adjustment_ns = 0;
 	atomic_set(&ctx->io_bus_healthy, 0);
-	atomic_set(&authority->armed, 0);
-	atomic_set(&authority->rearm_required, 0);
-	atomic_set(&authority->current_faults, 0);
 	atomic_set(&ctx->io_link_up, 0);
 	atomic_set(&ctx->io_current_faults, 0);
-	atomic_set(&authority->last_latched_faults, 0);
 	atomic_set(&ctx->io_slaves_responding, 0);
 	atomic_set(&ctx->io_configured_slaves_online, 0);
 	atomic_set(&ctx->io_configured_slaves_operational, 0);
 	atomic64_set(&ctx->io_fault_count, 0);
-	atomic64_set(&authority->fault_output_sequence, 0);
-	atomic64_set(&authority->gate_request, 0);
-	atomic64_set(&authority->gate_applied, 0);
-	atomic_set(&authority->lease_remaining_cycles, 0);
-	atomic64_set(&authority->lease_renewal_count, 0);
-	atomic64_set(&authority->lease_expiry_count, 0);
-	ctx->io_ever_healthy = false;
+
 	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
 		atomic_set(&slave->state_result, -ENODATA);
 		atomic_set(&slave->state_online, 0);
@@ -2036,9 +2160,6 @@ static long elc_cycle_activate(struct elc_file *ctx, void __user *argp)
 	ctx->input_active = 0;
 	ctx->input_reader = -1;
 	atomic64_set(&ctx->input_sequence, 0);
-	authority->active = 0;
-	authority->reader = -1;
-	atomic64_set(&authority->sequence, 0);
 	if (elc_test_fail_cycle_thread)
 		ctx->cycle_thread = ERR_PTR(-ENOMEM);
 	else
@@ -2128,9 +2249,20 @@ static long elc_cycle_set_period(struct elc_file *ctx, void __user *argp)
 		ret = -EOPNOTSUPP;
 		goto out;
 	}
-	if (atomic_read(&ctx->compat_output.armed)) {
-		ret = -EBUSY;
-		goto out;
+	{
+		bool any_armed = false;
+		struct elc_domain_node *d;
+
+		list_for_each_entry(d, &ctx->config_domains, common.node) {
+			if (atomic_read(&d->authority.armed)) {
+				any_armed = true;
+				break;
+			}
+		}
+		if (any_armed) {
+			ret = -EBUSY;
+			goto out;
+		}
 	}
 	if (requested_period == READ_ONCE(ctx->cycle_period_ns)) {
 		result.applied_period_ns = requested_period;
@@ -2458,8 +2590,13 @@ static long elc_cycle_get_dc_status(struct elc_file *ctx,
 
 static long elc_get_io_status(struct elc_file *ctx, void __user *argp)
 {
-	struct elc_output_authority *authority = &ctx->compat_output;
+	struct elc_domain_node *domain;
 	struct elc_io_status result;
+	u8 any_armed = 0;
+	u8 any_rearm = 0;
+	u32 latched = 0;
+	u32 auth_faults = 0;
+	u64 max_seq = 0;
 	int ret;
 
 	if (copy_from_user(&result, argp, sizeof(result)))
@@ -2476,15 +2613,9 @@ static long elc_get_io_status(struct elc_file *ctx, void __user *argp)
 	result.api_major = ELC_API_VERSION_MAJOR;
 	mutex_lock(&ctx->lock);
 	result.bus_healthy = atomic_read(&ctx->io_bus_healthy);
-	result.outputs_armed = atomic_read(&authority->armed);
-	result.rearm_required = atomic_read(&authority->rearm_required);
 	result.link_up = atomic_read(&ctx->io_link_up);
-	result.current_faults = atomic_read(&ctx->io_current_faults) |
-		atomic_read(&authority->current_faults);
-	result.last_latched_faults =
-		atomic_read(&authority->last_latched_faults);
-	result.slaves_responding =
-		atomic_read(&ctx->io_slaves_responding);
+	result.current_faults = atomic_read(&ctx->io_current_faults);
+	result.slaves_responding = atomic_read(&ctx->io_slaves_responding);
 	result.configured_slave_count = ctx->config_slave_count;
 	result.configured_slaves_online =
 		atomic_read(&ctx->io_configured_slaves_online);
@@ -2494,7 +2625,23 @@ static long elc_get_io_status(struct elc_file *ctx, void __user *argp)
 	result.config_generation = ctx->config_generation;
 	result.fault_count = atomic64_read(&ctx->io_fault_count);
 	result.input_sequence = atomic64_read(&ctx->input_sequence);
-	result.output_sequence = atomic64_read(&authority->sequence);
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		struct elc_output_authority *a = &domain->authority;
+
+		if (atomic_read(&a->armed))
+			any_armed = 1;
+		if (atomic_read(&a->rearm_required))
+			any_rearm = 1;
+		latched |= atomic_read(&a->last_latched_faults);
+		auth_faults |= atomic_read(&a->current_faults);
+		if (atomic64_read(&a->sequence) > max_seq)
+			max_seq = atomic64_read(&a->sequence);
+	}
+	result.outputs_armed = any_armed;
+	result.rearm_required = any_rearm;
+	result.last_latched_faults = latched;
+	result.current_faults |= auth_faults;
+	result.output_sequence = max_seq;
 	mutex_unlock(&ctx->lock);
 
 	if (copy_to_user(argp, &result, sizeof(result)))
@@ -2767,19 +2914,19 @@ out_free:
 
 static long elc_publish_output(struct elc_file *ctx, void __user *argp)
 {
-	struct elc_output_authority *authority = &ctx->compat_output;
 	struct elc_output_publish result;
+	struct elc_domain_node *domain;
 	unsigned long irq_flags;
 	void __user *data_ptr;
 	void __user *mask_ptr;
-	u64 requested_ptr;
-	u64 requested_mask_ptr;
 	u64 requested_generation;
+	u64 max_sequence = 0;
 	u32 data_size;
+	u32 domain_id;
 	u32 i;
-	u8 active;
-	u8 target;
 	int ret;
+	u8 *tmp_data = NULL;
+	u8 *tmp_mask = NULL;
 
 	if (copy_from_user(&result, argp, sizeof(result)))
 		return -EFAULT;
@@ -2787,19 +2934,16 @@ static long elc_publish_output(struct elc_file *ctx, void __user *argp)
 				 sizeof(result));
 	if (ret)
 		return ret;
-	if (result.flags || result.reserved || !result.data_ptr ||
-	    !result.mask_ptr)
+	if (result.flags || !result.data_ptr || !result.mask_ptr)
 		return -EINVAL;
-	requested_ptr = result.data_ptr;
-	requested_mask_ptr = result.mask_ptr;
+	domain_id = result.domain_config_id;
 	requested_generation = result.config_generation;
 	data_size = result.data_size;
-	data_ptr = u64_to_user_ptr(requested_ptr);
-	mask_ptr = u64_to_user_ptr(requested_mask_ptr);
+	data_ptr = u64_to_user_ptr(result.data_ptr);
+	mask_ptr = u64_to_user_ptr(result.mask_ptr);
 
 	mutex_lock(&ctx->lock);
-	if (!ctx->active || !authority->buffers[0] ||
-	    !authority->buffers[1] || !authority->mask) {
+	if (!ctx->active) {
 		ret = -EINVAL;
 		goto out;
 	}
@@ -2807,57 +2951,118 @@ static long elc_publish_output(struct elc_file *ctx, void __user *argp)
 		ret = -ESTALE;
 		goto out;
 	}
-	if (data_size != ctx->domain_size) {
-		ret = -EMSGSIZE;
-		goto out;
-	}
 
-	spin_lock_irqsave(&authority->lock, irq_flags);
-	active = authority->active;
-	target = active ^ 1U;
-	if (authority->reader == target) {
+	if (!domain_id) {
+		if (data_size != ctx->domain_size) {
+			ret = -EMSGSIZE;
+			goto out;
+		}
+		tmp_data = kvzalloc(data_size, GFP_KERNEL);
+		tmp_mask = kvzalloc(data_size, GFP_KERNEL);
+		if (!tmp_data || !tmp_mask) {
+			ret = -ENOMEM;
+			goto out;
+		}
+		if (copy_from_user(tmp_data, data_ptr, data_size) ||
+		    copy_from_user(tmp_mask, mask_ptr, data_size)) {
+			ret = -EFAULT;
+			goto out;
+		}
+		list_for_each_entry(domain, &ctx->config_domains, common.node) {
+			struct elc_output_authority *authority =
+				&domain->authority;
+			u8 active, target;
+
+			if (!authority->buffers[0] || !domain->size)
+				continue;
+			spin_lock_irqsave(&authority->lock, irq_flags);
+			active = authority->active;
+			target = active ^ 1U;
+			if (authority->reader == target) {
+				spin_unlock_irqrestore(&authority->lock,
+						       irq_flags);
+				ret = -EBUSY;
+				goto out;
+			}
+			spin_unlock_irqrestore(&authority->lock, irq_flags);
+			for (i = 0; i < domain->size; i++) {
+				u32 g = domain->base_offset + i;
+				u8 mask = tmp_mask[g] & authority->mask[i];
+				u8 old = authority->buffers[active][i];
+				u8 neu = tmp_data[g];
+
+				authority->buffers[target][i] =
+					(neu & mask) | (old & ~mask);
+			}
+			spin_lock_irqsave(&authority->lock, irq_flags);
+			authority->active = target;
+			max_sequence =
+				atomic64_inc_return(&authority->sequence);
+			spin_unlock_irqrestore(&authority->lock, irq_flags);
+		}
+	} else {
+		struct elc_output_authority *authority;
+		u8 active, target;
+
+		domain = elc_find_domain(ctx, domain_id);
+		if (!domain || !domain->authority.buffers[0]) {
+			ret = -ENOENT;
+			goto out;
+		}
+		if (data_size != domain->size) {
+			ret = -EMSGSIZE;
+			goto out;
+		}
+		authority = &domain->authority;
+		spin_lock_irqsave(&authority->lock, irq_flags);
+		active = authority->active;
+		target = active ^ 1U;
+		if (authority->reader == target) {
+			spin_unlock_irqrestore(&authority->lock, irq_flags);
+			ret = -EBUSY;
+			goto out;
+		}
 		spin_unlock_irqrestore(&authority->lock, irq_flags);
-		ret = -EBUSY;
-		goto out;
-	}
-	spin_unlock_irqrestore(&authority->lock, irq_flags);
-	if (copy_from_user(authority->buffers[target], data_ptr, data_size)) {
-		ret = -EFAULT;
-		goto out;
-	}
-	if (copy_from_user(authority->update_mask, mask_ptr, data_size)) {
-		ret = -EFAULT;
-		goto out;
-	}
-	for (i = 0; i < data_size; i++) {
-		u8 mask = authority->update_mask[i] & authority->mask[i];
-		u8 old = authority->buffers[active][i];
+		if (copy_from_user(authority->buffers[target], data_ptr,
+				   data_size) ||
+		    copy_from_user(authority->update_mask, mask_ptr,
+				   data_size)) {
+			ret = -EFAULT;
+			goto out;
+		}
+		for (i = 0; i < data_size; i++) {
+			u8 mask = authority->update_mask[i] &
+				  authority->mask[i];
+			u8 old = authority->buffers[active][i];
 
-		authority->buffers[target][i] =
-			(authority->buffers[target][i] & mask) |
-			(old & ~mask);
+			authority->buffers[target][i] =
+				(authority->buffers[target][i] & mask) |
+				(old & ~mask);
+		}
+		spin_lock_irqsave(&authority->lock, irq_flags);
+		authority->active = target;
+		max_sequence = atomic64_inc_return(&authority->sequence);
+		spin_unlock_irqrestore(&authority->lock, irq_flags);
 	}
-
-	spin_lock_irqsave(&authority->lock, irq_flags);
-	authority->active = target;
-	result.output_sequence = atomic64_inc_return(
-		&authority->sequence);
-	spin_unlock_irqrestore(&authority->lock, irq_flags);
+	result.output_sequence = max_sequence;
 	result.config_generation = ctx->config_generation;
 	ret = 0;
 out:
 	if (!ret && copy_to_user(argp, &result, sizeof(result)))
 		ret = -EFAULT;
 	mutex_unlock(&ctx->lock);
+	kvfree(tmp_data);
+	kvfree(tmp_mask);
 	return ret;
 }
 
 static long elc_arm_outputs(struct elc_file *ctx, void __user *argp)
 {
-	struct elc_output_authority *authority = &ctx->compat_output;
 	struct elc_output_arm request;
-	u64 current_sequence;
+	struct elc_domain_node *domain;
+	u32 domain_id;
 	int ret;
+	int armed_count = 0;
 
 	if (copy_from_user(&request, argp, sizeof(request)))
 		return -EFAULT;
@@ -2865,8 +3070,8 @@ static long elc_arm_outputs(struct elc_file *ctx, void __user *argp)
 				 sizeof(request));
 	if (ret)
 		return ret;
-	if (request.flags)
-		return -EINVAL;
+	/* flags: 0 = all healthy domains; non-zero = domain_config_id */
+	domain_id = request.flags;
 
 	mutex_lock(&ctx->lock);
 	if (!ctx->active) {
@@ -2877,29 +3082,54 @@ static long elc_arm_outputs(struct elc_file *ctx, void __user *argp)
 		ret = -ESTALE;
 		goto out;
 	}
-	current_sequence = atomic64_read(&authority->sequence);
-	if (!current_sequence || request.output_sequence != current_sequence) {
-		ret = -ESTALE;
-		goto out;
+
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		struct elc_output_authority *authority = &domain->authority;
+		u64 current_sequence;
+
+		if (domain_id && domain->cfg.config_id != domain_id)
+			continue;
+		current_sequence = atomic64_read(&authority->sequence);
+		if (!current_sequence ||
+		    request.output_sequence != current_sequence) {
+			if (domain_id) {
+				ret = -ESTALE;
+				goto out;
+			}
+			continue;
+		}
+		if (!atomic_read(&authority->healthy)) {
+			if (domain_id) {
+				ret = -EAGAIN;
+				goto out;
+			}
+			continue;
+		}
+		if (authority->lease_configured_cycles &&
+		    atomic_read(&authority->lease_remaining_cycles) <= 0) {
+			if (domain_id) {
+				ret = -EAGAIN;
+				goto out;
+			}
+			continue;
+		}
+		if (atomic_read(&authority->rearm_required) &&
+		    current_sequence <=
+			    atomic64_read(&authority->fault_output_sequence)) {
+			if (domain_id) {
+				ret = -EAGAIN;
+				goto out;
+			}
+			continue;
+		}
+		atomic_set(&authority->rearm_required, 0);
+		atomic_set(&authority->armed, 1);
+		armed_count++;
 	}
-	if (!atomic_read(&ctx->io_bus_healthy)) {
-		ret = -EAGAIN;
-		goto out;
-	}
-	if (authority->lease_configured_cycles &&
-	    atomic_read(&authority->lease_remaining_cycles) <= 0) {
-		ret = -EAGAIN;
-		goto out;
-	}
-	if (atomic_read(&authority->rearm_required) &&
-	    current_sequence <=
-		    atomic64_read(&authority->fault_output_sequence)) {
-		ret = -EAGAIN;
-		goto out;
-	}
-	atomic_set(&authority->rearm_required, 0);
-	atomic_set(&authority->armed, 1);
-	ret = 0;
+	if (!armed_count)
+		ret = domain_id ? -ENOENT : -EAGAIN;
+	else
+		ret = 0;
 out:
 	mutex_unlock(&ctx->lock);
 	return ret;
@@ -2907,10 +3137,12 @@ out:
 
 static long elc_disarm_outputs(struct elc_file *ctx, void __user *argp)
 {
-	struct elc_output_authority *authority = &ctx->compat_output;
 	struct elc_output_disarm request;
-	u64 gate_request;
+	struct elc_domain_node *domain;
+	u32 domain_id;
+	u64 gate_request = 0;
 	int ret;
+	int count = 0;
 
 	if (copy_from_user(&request, argp, sizeof(request)))
 		return -EFAULT;
@@ -2918,8 +3150,7 @@ static long elc_disarm_outputs(struct elc_file *ctx, void __user *argp)
 				 sizeof(request));
 	if (ret)
 		return ret;
-	if (request.flags)
-		return -EINVAL;
+	domain_id = request.flags;
 
 	mutex_lock(&ctx->lock);
 	if (!ctx->active) {
@@ -2930,14 +3161,23 @@ static long elc_disarm_outputs(struct elc_file *ctx, void __user *argp)
 		ret = -ESTALE;
 		goto out;
 	}
-	atomic_set(&authority->armed, 0);
-	atomic_set(&authority->rearm_required, 1);
-	atomic64_set(&authority->fault_output_sequence,
-		     atomic64_read(&authority->sequence));
-	gate_request = atomic64_inc_return(&authority->gate_request);
-	ret = elc_wait_output_gate(ctx, gate_request);
-	if (ret)
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		struct elc_output_authority *authority = &domain->authority;
+
+		if (domain_id && domain->cfg.config_id != domain_id)
+			continue;
+		count++;
+		atomic_set(&authority->armed, 0);
+		atomic_set(&authority->rearm_required, 1);
+		atomic64_set(&authority->fault_output_sequence,
+			     atomic64_read(&authority->sequence));
+		gate_request = atomic64_inc_return(&authority->gate_request);
+	}
+	if (!count) {
+		ret = -ENOENT;
 		goto out;
+	}
+	ret = elc_wait_output_gate(ctx, gate_request);
 out:
 	mutex_unlock(&ctx->lock);
 	return ret;
@@ -2946,7 +3186,7 @@ out:
 static long
 elc_configure_output_lease(struct elc_file *ctx, void __user *argp)
 {
-	struct elc_output_authority *authority = &ctx->compat_output;
+	struct elc_domain_node *domain;
 	struct elc_output_lease_config request;
 	int ret;
 
@@ -2969,11 +3209,16 @@ elc_configure_output_lease(struct elc_file *ctx, void __user *argp)
 		ret = -ESTALE;
 		goto out;
 	}
-	authority->lease_configured_cycles = request.cycle_budget;
-	atomic_set(&authority->lease_remaining_cycles, 0);
-	atomic_set(&authority->current_faults, 0);
-	atomic64_set(&authority->lease_renewal_count, 0);
-	atomic64_set(&authority->lease_expiry_count, 0);
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		struct elc_output_authority *authority = &domain->authority;
+
+		if (!authority->initialised)
+			elc_authority_init(authority);
+		authority->lease_configured_cycles = request.cycle_budget;
+		atomic_set(&authority->lease_remaining_cycles, 0);
+		atomic64_set(&authority->lease_renewal_count, 0);
+		atomic64_set(&authority->lease_expiry_count, 0);
+	}
 	ret = 0;
 out:
 	mutex_unlock(&ctx->lock);
@@ -2983,9 +3228,12 @@ out:
 static long
 elc_renew_output_lease(struct elc_file *ctx, void __user *argp)
 {
-	struct elc_output_authority *authority = &ctx->compat_output;
+	struct elc_domain_node *domain;
 	struct elc_output_lease_renew result;
 	u64 generation;
+	u64 renewals = 0;
+	u32 budget = 0;
+	bool any = false;
 	int ret;
 
 	if (copy_from_user(&result, argp, sizeof(result)))
@@ -2998,9 +3246,8 @@ elc_renew_output_lease(struct elc_file *ctx, void __user *argp)
 	    result.renewal_count)
 		return -EINVAL;
 	generation = result.config_generation;
-
 	mutex_lock(&ctx->lock);
-	if (!ctx->active || !authority->lease_configured_cycles) {
+	if (!ctx->active) {
 		ret = -EINVAL;
 		goto out;
 	}
@@ -3008,17 +3255,28 @@ elc_renew_output_lease(struct elc_file *ctx, void __user *argp)
 		ret = -ESTALE;
 		goto out;
 	}
-	atomic_set(&authority->lease_remaining_cycles,
-		   authority->lease_configured_cycles);
-	atomic_and(~ELC_IO_FAULT_CONTROLLER_STALE,
-		   &authority->current_faults);
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		struct elc_output_authority *authority = &domain->authority;
+
+		if (!authority->lease_configured_cycles)
+			continue;
+		any = true;
+		budget = authority->lease_configured_cycles;
+		atomic_set(&authority->lease_remaining_cycles, budget);
+		atomic_and(~ELC_IO_FAULT_CONTROLLER_STALE,
+			   &authority->current_faults);
+		renewals = atomic64_inc_return(&authority->lease_renewal_count);
+	}
+	if (!any) {
+		ret = -EINVAL;
+		goto out;
+	}
 	memset(&result, 0, sizeof(result));
 	result.struct_size = sizeof(result);
 	result.api_major = ELC_API_VERSION_MAJOR;
 	result.config_generation = ctx->config_generation;
-	result.remaining_cycles = authority->lease_configured_cycles;
-	result.renewal_count =
-		atomic64_inc_return(&authority->lease_renewal_count);
+	result.remaining_cycles = budget;
+	result.renewal_count = renewals;
 	ret = 0;
 out:
 	if (!ret && copy_to_user(argp, &result, sizeof(result)))
@@ -3030,10 +3288,14 @@ out:
 static long
 elc_get_output_lease_status(struct elc_file *ctx, void __user *argp)
 {
-	struct elc_output_authority *authority = &ctx->compat_output;
+	struct elc_domain_node *domain;
 	struct elc_output_lease_status result;
 	u64 generation;
-	int remaining;
+	int remaining = 0;
+	u32 configured = 0;
+	u64 renewals = 0;
+	u64 expiries = 0;
+	bool enabled = false;
 	int ret;
 
 	if (copy_from_user(&result, argp, sizeof(result)))
@@ -3049,26 +3311,35 @@ elc_get_output_lease_status(struct elc_file *ctx, void __user *argp)
 	    result.expiry_count)
 		return -EINVAL;
 	generation = result.config_generation;
-
 	mutex_lock(&ctx->lock);
-	if (!ctx->config_validated ||
-	    generation != ctx->config_generation) {
+	if (!ctx->config_validated || generation != ctx->config_generation) {
 		ret = -ESTALE;
 		goto out;
 	}
-	remaining = atomic_read(&authority->lease_remaining_cycles);
+	list_for_each_entry(domain, &ctx->config_domains, common.node) {
+		struct elc_output_authority *authority = &domain->authority;
+		int rem;
+
+		if (!authority->lease_configured_cycles)
+			continue;
+		enabled = true;
+		configured = authority->lease_configured_cycles;
+		rem = atomic_read(&authority->lease_remaining_cycles);
+		if (rem > remaining)
+			remaining = rem;
+		renewals = atomic64_read(&authority->lease_renewal_count);
+		expiries = atomic64_read(&authority->lease_expiry_count);
+	}
 	memset(&result, 0, sizeof(result));
 	result.struct_size = sizeof(result);
 	result.api_major = ELC_API_VERSION_MAJOR;
 	result.config_generation = ctx->config_generation;
-	result.configured_cycles = authority->lease_configured_cycles;
+	result.configured_cycles = configured;
 	result.remaining_cycles = max(remaining, 0);
-	result.enabled = !!authority->lease_configured_cycles;
-	result.valid = ctx->active && result.enabled && remaining > 0;
-	result.renewal_count =
-		atomic64_read(&authority->lease_renewal_count);
-	result.expiry_count =
-		atomic64_read(&authority->lease_expiry_count);
+	result.enabled = enabled;
+	result.valid = ctx->active && enabled && remaining > 0;
+	result.renewal_count = renewals;
+	result.expiry_count = expiries;
 	ret = 0;
 out:
 	if (!ret && copy_to_user(argp, &result, sizeof(result)))
@@ -3143,7 +3414,7 @@ out:
 
 static long elc_get_domain_status(struct elc_file *ctx, void __user *argp)
 {
-	struct elc_output_authority *authority = &ctx->compat_output;
+	struct elc_output_authority *authority;
 	struct elc_domain_status result;
 	struct elc_domain_node *domain;
 	struct elc_slave_node *slave;
@@ -3173,6 +3444,7 @@ static long elc_get_domain_status(struct elc_file *ctx, void __user *argp)
 		ret = -ENOENT;
 		goto out;
 	}
+	authority = &domain->authority;
 	if (ctx->active) {
 		if (!atomic_read(&ctx->io_link_up))
 			faults |= ELC_IO_FAULT_LINK_DOWN;
@@ -3207,9 +3479,9 @@ static long elc_get_domain_status(struct elc_file *ctx, void __user *argp)
 		atomic_read(&domain->working_counter_state);
 	result.cycle_count = atomic64_read(&ctx->cycle_count);
 	result.input_sequence = atomic64_read(&ctx->input_sequence);
-	result.data_valid = ctx->active && !faults &&
+	result.data_valid = ctx->active &&
+		atomic_read(&authority->healthy) &&
 		result.input_sequence;
-	/* API 0.12 output control remains conservatively global. */
 	result.outputs_armed = atomic_read(&authority->armed);
 	result.rearm_required = atomic_read(&authority->rearm_required);
 	ret = 0;
@@ -3826,7 +4098,8 @@ static long elc_get_capabilities(void __user *argp)
 			ELC_CAP_OUTPUT_LEASE |
 			ELC_CAP_CYCLE_PERIOD_UPDATE |
 			ELC_CAP_INPUT_HISTORY |
-			ELC_CAP_CYCLE_DC_INFO,
+			ELC_CAP_CYCLE_DC_INFO |
+			ELC_CAP_DOMAIN_OUTPUT_AUTHORITY,
 	};
 	int ret;
 

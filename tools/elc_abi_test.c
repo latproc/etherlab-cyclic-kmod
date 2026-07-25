@@ -308,7 +308,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "FAIL: required capability bits missing\n");
 		failures++;
 	} else {
-		printf("PASS: API 0.16 capabilities reported\n");
+		printf("PASS: API 0.17 capabilities reported\n");
 	}
 
 	cycle_info.flags = 1;
@@ -1218,12 +1218,12 @@ int main(int argc, char **argv)
 				 ioctl(fd, ELC_IOC_PUBLISH_OUTPUT, &output),
 				 EINVAL);
 	output.flags = 0;
-	output.reserved = 1;
+	output.domain_config_id = 1;
 	errno = 0;
 	failures += expect_errno("output publish reserved field",
 				 ioctl(fd, ELC_IOC_PUBLISH_OUTPUT, &output),
 				 EINVAL);
-	output.reserved = 0;
+	output.domain_config_id = 0;
 	errno = 0;
 	failures += expect_errno("output publish while inactive",
 				 ioctl(fd, ELC_IOC_PUBLISH_OUTPUT, &output),

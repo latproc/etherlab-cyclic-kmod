@@ -11,7 +11,7 @@
 #endif
 
 #define ELC_API_VERSION_MAJOR 0U
-#define ELC_API_VERSION_MINOR 16U
+#define ELC_API_VERSION_MINOR 17U
 
 #define ELC_CYCLE_PERIOD_MIN_NS 100000U
 #define ELC_CYCLE_PERIOD_MAX_NS 1000000000U
@@ -41,6 +41,7 @@
 #define ELC_CAP_CYCLE_PERIOD_UPDATE (1ULL << 5)
 #define ELC_CAP_INPUT_HISTORY (1ULL << 6)
 #define ELC_CAP_CYCLE_DC_INFO (1ULL << 7)
+#define ELC_CAP_DOMAIN_OUTPUT_AUTHORITY (1ULL << 8)
 
 enum elc_sdo_type {
 	ELC_SDO_U8 = 1,
@@ -534,7 +535,11 @@ struct elc_output_publish {
 	__u64 data_ptr;
 	__u64 mask_ptr;
 	__u32 data_size;
-	__u32 reserved;
+	/*
+	 * 0 = all domains (global image size). Non-zero = domain_config_id;
+	 * then data_size must equal that domain segment size.
+	 */
+	__u32 domain_config_id;
 	__u64 config_generation;
 	__u64 output_sequence;
 };
@@ -542,6 +547,10 @@ struct elc_output_publish {
 struct elc_output_arm {
 	__u16 struct_size;
 	__u16 api_major;
+	/*
+	 * 0 = arm every healthy domain with matching sequence.
+	 * Non-zero = domain_config_id for that domain only.
+	 */
 	__u32 flags;
 	__u64 config_generation;
 	__u64 output_sequence;
@@ -550,6 +559,10 @@ struct elc_output_arm {
 struct elc_output_disarm {
 	__u16 struct_size;
 	__u16 api_major;
+	/*
+	 * 0 = disarm all domains.
+	 * Non-zero = domain_config_id for that domain only.
+	 */
 	__u32 flags;
 	__u64 config_generation;
 };

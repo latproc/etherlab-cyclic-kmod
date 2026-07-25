@@ -16,7 +16,7 @@ decisions, risks, commands, or next steps change.
 
 - Current phase: standalone Phase 3 hardening after the first architecture
   review. IOD integration remains blocked.
-- Current UAPI is 0.16. It covers discovery, ordered setup SDOs, declarative
+- Current UAPI is 0.17. It covers discovery, ordered setup SDOs, declarative
   PDO/DC configuration, domain registration, cyclic pumping, copied input and
   masked output images, explicit arm/disarm, health, timing/DC statistics, and
   per-configured-slave validity, coherent cycle timing, capability discovery,
@@ -275,7 +275,7 @@ Keep this section concise. Historical milestones and validation evidence are in
 `docs/project-history.md`; focused details belong in the relevant design,
 testing, safety, and build documents.
 
-- Current API: 0.16.
+- Current API: 0.17.
 - Deactivation synchronously gates outputs and joins the cyclic thread, then
   waits for configured slaves to leave SAFEOP/OP before invalidating
   EtherLab-owned pointers. The public EtherLab lifecycle can still expose
@@ -493,6 +493,12 @@ testing, safety, and build documents.
   claiming that EtherLab's operation-FSM interval was changed.
 - Do not begin IOD integration before the standalone architecture and
   acceptance review required by `Implementation_Plan.md`.
+- API 0.17: per-domain output authority. Each domain has independent
+  arm/rearm/healthy state and process-image output buffers. Global publish
+  (domain_config_id=0) fans out to all domains; arm/disarm flags=0 apply to
+  all domains, non-zero flags select domain_config_id. A unhealthy drive
+  domain disarms only that domain; a healthy I/O domain can remain armed.
+  Capability ELC_CAP_DOMAIN_OUTPUT_AUTHORITY is advertised.
 - Phase 7 `libelcethercat` is implemented under `lib/` with public header
   `include/elc_ethercat.h` (GPL-2.0-only, SONAME major tracks UAPI major).
   Build/install: `make lib`, `make install-lib PREFIX=...`, pkg-config

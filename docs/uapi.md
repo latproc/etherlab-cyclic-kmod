@@ -2,7 +2,7 @@
 
 ## Status
 
-The current experimental API is version 0.16. It supports discovery, a
+The current experimental API is version 0.17. It supports discovery, a
 provisional bounded commissioning SDO batch, transactional
 slave/Sync/PDO/entry/DC configuration, domain registration, configurable
 cyclic pumping, copied process images, distributed clocks, health/fault
@@ -54,7 +54,10 @@ Minor versions add:
 - 0.15: acknowledged cycle-boundary period changes while outputs are disarmed
   and distributed clocks are not configured; and
 - 0.16: optional preactivation bounded input-image history and ordered batched
-  reads with explicit record-gap and capture-contention reporting.
+  reads with explicit record-gap and capture-contention reporting; and
+- 0.17: per-domain output authority (independent arm/health per domain;
+  publish/arm/disarm may target domain_config_id; capability bit
+  ELC_CAP_DOMAIN_OUTPUT_AUTHORITY).
 
 Input/output structures that accept caller fields include `struct_size` and
 `api_major`. The kernel rejects an unexpected size with `EINVAL` and an
@@ -70,7 +73,7 @@ Returns `struct elc_api_version`.
 
 ### `ELC_IOC_GET_CAPABILITIES`
 
-Returns `struct elc_capabilities`. API 0.16 reports only implemented,
+Returns `struct elc_capabilities`. API 0.17 reports only implemented,
 documented features: coherent copied process images, cycle timing,
 wait-for-cycle, DC diagnostics, output leases, cycle-period updates, and
 bounded input history.
