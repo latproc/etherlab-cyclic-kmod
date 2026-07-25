@@ -1,6 +1,6 @@
 # Architecture
 
-## Current API 0.16 boundary
+## Current API 0.17 boundary
 
 ```text
 standalone controller
@@ -14,7 +14,7 @@ standalone controller
 elc_ethercat.ko
     |
     | validated configuration, domains, cyclic/DC thread,
-    | copied images, health and output gate
+    | copied images, per-domain health and output authorities
     v
 EtherLab master 0
 ```
@@ -42,10 +42,10 @@ attach context to file
 ```
 
 Every failure frees the context, releases the token, and returns an error.
-Close first closes the output gate, waits for a zero-gated send, joins the
-cyclic thread, deactivates EtherLab, invalidates EtherLab-owned pointers, frees
-all pending metadata and copied buffers, releases the master, and releases the
-exclusive token.
+Close first closes every domain output authority, waits for a zero-gated send,
+joins the cyclic thread, deactivates EtherLab, invalidates EtherLab-owned
+pointers, frees all pending metadata and copied buffers, releases the master,
+and releases the exclusive token.
 
 The module-global misc device is registered during module initialization and
 deregistered during module exit. An open fd holds the module reference through
@@ -100,10 +100,11 @@ DEVICE_AVAILABLE -- open/claim succeeds --> CONTROL_OPEN
 
 An open while IOD/direct libethercat owns master 0 returns `EBUSY`. A second
 control open also returns `EBUSY`. Configuration is immutable while active.
-Any health loss closes the output gate and latches a fresh-publication
-requirement. Deactivation returns to close/release because EtherLab destroys
-domains and slave configurations; reconfiguration currently requires a new
-control session.
+Master/link loss closes every domain output authority and latches a
+fresh-publication requirement on each. A domain WC or assigned-slave fault
+disarms only that domain's authority; other healthy domains may remain armed.
+Deactivation returns to close/release because EtherLab destroys domains and
+slave configurations; reconfiguration currently requires a new control session.
 
 ## Process image, domains, and DC
 
@@ -137,10 +138,13 @@ application-time/slave synchronization; queue every domain; and send once.
 Application policy and object interpretation never enter the kernel.
 
 API 0.12 independently reports domain WC, validity, current faults, and image
-segments. Output publication, masking, arm/disarm, latched faults, and fresh
-publication epochs remain conservatively global. Domain status mirrors that
-global output gate and does not claim independent output availability.
-Per-domain output safety state requires a later explicit ABI increment.
+segments. API 0.17 places an independent `elc_output_authority` on each
+configured domain: publication buffers and masks, sequence, arm/re-arm,
+latched fault epoch, lease, and per-domain health for output selection.
+`domain_config_id` / arm-disarm `flags` of zero retain full-image and
+all-domain compatibility; non-zero selects one domain. Aggregate IO status
+reports any-armed / any-rearm across authorities. Domain status reports that
+domain's own arm and re-arm fields. Master/link still gates every authority.
 
 Detailed concurrency and recovery rules are in
 `process-image-exchange.md`; DC behavior is in `distributed-clocks.md`.
@@ -165,17 +169,18 @@ stale reuse. Disarmed zero-image cycles do not. This latest-output path remains
 separate from a future cycle-addressed scheduled-output queue. Capability
 discovery reports only the timing and wait features that are implemented.
 
-## API 0.14 output-authority lease
+## API 0.14 / 0.17 output-authority lease
 
-Output state is owned by a `elc_output_authority` associated with configured
-domains. API 0.14 exposes the existing all-domain compatibility authority; the
-same internal boundary is intended for future delegated domain fds.
+Output state is owned by a per-domain `elc_output_authority` (API 0.17). API
+0.14 first exposed lease controls on the then-compatibility authority; the
+same lease fields now live on each domain authority. Future delegated domain
+fds are expected to reuse this boundary.
 
 The lease is optional and measured in armed output selections rather than wall
 time. User space configures the budget before activation and renews it while
 active. Disarmed cycles do not consume the budget. Immediately before output
 selection, the cyclic task either consumes one unit or, if none remains,
-closes that authority's gate and selects zeros for its domains.
+closes that authority's gate and selects zeros for its domain.
 
 Expiry does not stop the common cyclic task or mark the physical bus
 unhealthy. It is a distinct controller-stale output-authority fault. Inputs,

@@ -333,7 +333,7 @@ helpers.
 | Cycle | `CYCLE_ACTIVATE`, `CYCLE_DEACTIVATE`, `CYCLE_STATUS`, `CYCLE_WAIT`, `CYCLE_INFO`, `CYCLE_SET_PERIOD` |
 | Images | `GET_INPUT_SNAPSHOT`, `PUBLISH_OUTPUT`, `ARM`, `DISARM` |
 | Status | `GET_IO_STATUS`, `GET_CONFIG_SLAVE_STATUS`, `GET_DOMAIN_STATUS`, `GET_DC_STATUS` |
-| Lease / history | as in `elc_ethercat_uapi.h` for API 0.14–0.16 |
+| Lease / history / domain output | as in `elc_ethercat_uapi.h` for API 0.14–0.17 |
 
 Normative field semantics remain in [`uapi.md`](uapi.md). The library
 must zero structures and set `struct_size` / `api_major` correctly.
@@ -445,7 +445,7 @@ ioctl glue.
 | What is this project? | Generic kernel EtherCAT cyclic transport + UAPI + tools + library |
 | Who is the library for? | Any userspace controller or tool |
 | Where does it live? | `lib/` in this repository; installable headers + `libelcethercat` |
-| API language? | C wrapping UAPI 0.16 |
+| API language? | C wrapping UAPI 0.17 |
 | What stays out of the library? | Device recipes, ESI parsing, machine semantics, arm policy meaning |
 | Hard exclusivity rule? | One master-0 application owner: this control fd **or** another EtherLab client |
 

@@ -1,7 +1,7 @@
 # User-Space Controller Developer Guide
 
 This guide describes how to build a controller against the current
-experimental API 0.16. The normative structure and ioctl semantics are in
+experimental API 0.17. The normative structure and ioctl semantics are in
 [`uapi.md`](uapi.md); use the shared
 [`elc_ethercat_uapi.h`](../include/elc_ethercat_uapi.h) definitions rather than
 duplicating numeric commands or layouts.
@@ -92,9 +92,11 @@ then call `ELC_IOC_GET_CAPABILITIES`. Minor versions are additive, but a
 controller must not call an optional operation merely because it was compiled
 from a newer header.
 
-API 0.16 reports coherent copied process images, cycle timing,
-wait-for-cycle, DC diagnostics, and optional output leases. It does not report
-scheduled outputs or delegated domain connections.
+API 0.17 reports coherent copied process images, cycle timing,
+wait-for-cycle, DC diagnostics, optional output leases, input history,
+cycle-period updates, and per-domain output authority
+(`ELC_CAP_DOMAIN_OUTPUT_AUTHORITY`). It does not report scheduled outputs or
+delegated domain connections.
 
 See `get_api_version()` and `get_capabilities()` in
 [`elc_bus.c`](../tools/elc_bus.c).
@@ -203,39 +205,50 @@ because another domain is complete.
 
 ## Publish and arm outputs
 
-`ELC_IOC_PUBLISH_OUTPUT` copies a complete global shadow plus an update mask.
-The kernel intersects that mask with the topology-derived output mask, so
-input and unregistered bits cannot be written. Publication returns a new
-output sequence but does not arm it.
+`ELC_IOC_PUBLISH_OUTPUT` copies a masked output shadow. With
+`domain_config_id = 0` (default), supply the full global image size; the
+kernel fans the segments into each domain authority. With a non-zero
+`domain_config_id`, supply only that domain's segment size. The kernel
+intersects the caller mask with the topology-derived output mask, so input
+and unregistered bits cannot be written. Publication returns a new output
+sequence but does not arm it.
 
 To arm, provide:
 
 - the exact active configuration generation;
-- the exact latest nonzero output sequence;
-- a currently healthy bus; and
-- after any fault or disarm, a publication newer than the recorded fault
-  epoch.
+- the exact latest nonzero output sequence for the targeted authority;
+- a healthy master/link and a healthy target domain authority; and
+- after any fault or disarm on that authority, a publication newer than the
+  recorded fault epoch.
+
+`arm.flags = 0` arms every healthy domain that matches the sequence;
+non-zero `flags` is the `domain_config_id` to arm alone. Domain status
+reports that domain's `outputs_armed` and `rearm_required`; aggregate IO
+status reports any-armed / any-rearm.
 
 Arming retained output is a safety-relevant application decision. Publish a
 known safe shadow before the first arm.
 
-`ELC_IOC_DISARM_OUTPUTS` closes the gate and waits for the cyclic task to
-queue/send the zero-gated image. A timeout is an error, but the atomic gate
-remains closed. Always disarm during orderly shutdown even though close also
+`ELC_IOC_DISARM_OUTPUTS` closes the selected authority gates (`flags = 0`
+for all domains) and waits for the cyclic task to queue/send zero-gated
+images for those authorities. A timeout is an error, but the gates remain
+closed. Always disarm during orderly shutdown even though close also
 performs fail-safe teardown.
 
 ## Recover from faults
 
-Health loss disarms outputs and latches `rearm_required`. Cyclic receive and
-input publication continue where EtherLab permits, allowing user space to
-observe restoration. Recovery never silently reuses the old armed shadow.
+Master/link loss disarms every domain authority and latches `rearm_required`
+on each. A domain WC or assigned-slave fault disarms only that domain;
+another healthy domain may stay armed. Cyclic receive and input publication
+continue where EtherLab permits. Recovery never silently reuses a stale
+armed shadow for an affected authority.
 
-After health returns:
+After the affected domain health returns:
 
-1. verify the required domain/slave states and WC;
-2. decide in application policy that restart is safe;
-3. publish a fresh safe output generation;
-4. explicitly arm that exact generation.
+1. verify that domain's slave states and WC;
+2. decide in application policy that restart is safe for that domain;
+3. publish a fresh safe output generation (global or domain-scoped);
+4. explicitly arm that exact generation for the target domain(s).
 
 Power restoration, lease renewal, or a new planner command must never arm
 outputs by itself.

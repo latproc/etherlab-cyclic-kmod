@@ -21,36 +21,36 @@ fresh output sequence.
 
 ## Fault and recovery rule
 
-The cyclic thread evaluates:
+The cyclic thread evaluates master link state, then per-domain:
 
-- master link state;
-- online and operational state of every configured slave;
-- complete working-counter state for every configured domain.
+- online and operational state of slaves assigned to that domain;
+- complete working-counter state for that domain.
 
-Startup is unhealthy until all conditions first become true. After that first
-healthy state, any loss latches outputs disarmed and records a fault epoch.
-Restored link/slaves do not restore the old output image. Re-arm requires an
-output update newer than the fault epoch and an explicit arm operation while
-the bus is healthy.
+API 0.17 owns one `elc_output_authority` per configured domain. Master/link
+loss disarms every authority. A domain WC or assigned-slave fault disarms only
+that domain's authority and records a fault epoch on it; other healthy domains
+may remain armed. Restored link/slaves do not restore an old armed shadow.
+Re-arm of an affected authority requires an output update newer than its fault
+epoch and an explicit arm while that authority is healthy.
 
 This behavior is deterministic software containment, not a replacement for
 hardware safety.
 
-The health/latch half of this rule is hardware-proven. With the cyclic
-transport active and outputs disarmed, removing and restoring the servo supply
-returned the configured drive to OP and complete WC without restarting the
-transport. `rearm_required` remained set and the fault epoch count remained
-one after recovery.
+Earlier global-gate power-loss evidence (shared domain) still holds for the
+latched re-arm rule. Separate-domain independence under live drive power loss
+is the intended Monday commissioning check: I/O domain validity and arm must
+not depend on drive-domain WC.
 
 API 0.14 exposes each configured slave's online, operational, and AL state by
 stable `config_id`. Its `data_valid` flag additionally requires a published
 snapshot and complete WC for that slave's assigned domain. Snapshots remain
-inspectable when another domain is incomplete. Aggregate health and the output
-gate remain conservative across all configured domains.
+inspectable when another domain is incomplete. Aggregate IO status reports
+global link/counts and any-armed / any-rearm; domain status reports each
+authority's arm and re-arm fields.
 
 When the optional output lease is enabled, its armed-cycle budget is part of
-the same output authority. Expiry synchronously selects the zero image,
-disarms outputs, latches `ELC_IO_FAULT_CONTROLLER_STALE`, and requires a
+the domain's output authority. Expiry synchronously selects zeros for that
+authority, disarms it, latches `ELC_IO_FAULT_CONTROLLER_STALE`, and requires a
 renewal plus a publication newer than the fault epoch before explicit re-arm.
 Renewal never arms outputs. A zero cycle budget preserves the compatibility
 behavior without lease expiry.
@@ -61,14 +61,15 @@ Read-only snapshots use two preallocated buffers. A process-context reader reser
 the active buffer briefly under a spinlock; the cyclic thread skips publishing
 a new snapshot rather than overwriting a reserved buffer.
 
-Outputs use two preallocated buffers and a short pointer/state spinlock. A
-writer selects the inactive buffer, copies global-image-sized data and per-bit update
-mask arrays from user space without holding the spinlock, intersects that mask
-with the topology-derived output mask, and merges the selected bits over the
-previous shadow. The cyclic thread reads only the published active buffer at a
-cycle boundary, so it never waits for or copies from a buffer being modified.
-API 0.14 retains one global publication, arm gate, and lease across all
-domains.
+Each domain authority uses two preallocated segment-sized buffers and a short
+pointer/state spinlock. A global publish (`domain_config_id = 0`) fans
+segments into every authority; a domain-scoped publish writes only that
+authority. The writer selects the inactive buffer, copies data and per-bit
+update masks without holding the spinlock, intersects the mask with the
+topology-derived output mask for that segment, and merges over the previous
+shadow. The cyclic thread reads only each authority's published active buffer
+at a cycle boundary. API 0.17 keeps arm, re-arm, sequence, lease, and health
+on each authority independently.
 
 Each published input buffer also stores the exact cycle index that produced
 its bytes. `GET_INPUT_SNAPSHOT` returns that per-buffer index rather than a
@@ -112,4 +113,6 @@ depth leaves the latest-snapshot path and cost unchanged.
 4. Add explicit re-arm and prove its state machine with an all-zero
    motion-inhibited output. Completed in API 0.9. A bounded nonzero
    commissioning output remains a separate decision.
-5. Measure copy and masking cost before considering mmap.
+5. Split output authority per domain so a drive fault need not gate healthy
+   I/O. Completed in API 0.17 (global selectors remain for compatibility).
+6. Measure copy and masking cost before considering mmap.

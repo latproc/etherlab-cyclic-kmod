@@ -35,7 +35,7 @@ Transport names:
   device=/dev/elc_ethercat0
   library=libelcethercat
   headers=elc_ethercat.h and elc_ethercat_uapi.h
-  api=0.16
+  api=0.17
 
 Install library for IOD linking:
   cd /opt/etherlab-cyclic-kmod && make lib && sudo make install-lib PREFIX=/opt/elc

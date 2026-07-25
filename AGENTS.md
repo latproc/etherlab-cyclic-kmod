@@ -350,8 +350,8 @@ testing, safety, and build documents.
   resources correctly blocked module unload before controller death.
 - The API 0.12 documentation audit updated README, architecture, UAPI,
   process-image, safety, and operator guidance for explicit domains, global
-  offsets, per-domain validity, and the still-global output gate. The
-  documentation acceptance gate passes.
+  offsets, per-domain validity, and the then-global output gate (superseded by
+  API 0.17). The documentation acceptance gate passes.
 - API 0.12 deterministic copied-image failures are allocations 19-24 because
   the implicit domain owns allocation 18. All six failures and cyclic-task
   construction failure unwind cleanly; allocation 25 completed 8,000 disarmed

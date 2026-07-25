@@ -1092,10 +1092,11 @@ open EtherLab deactivation boundary.
 
 The first delegated-domain prerequisite moved all compatibility output state
 behind one internal `elc_output_authority` without changing API 0.13. Each
-configured domain explicitly points to that authority. It owns the copied
-publication buffers and mask, generation, arm/re-arm state, fault publication
-epoch, gate request/acknowledgement, and stale-generation accounting. Bus
-health, master ownership and the common cyclic task remain coordinator-wide.
+configured domain explicitly pointed at that shared authority. It owned the
+copied publication buffers and mask, generation, arm/re-arm state, fault
+publication epoch, gate request/acknowledgement, and stale-generation
+accounting. Bus health, master ownership and the common cyclic task remained
+coordinator-wide.
 
 The non-activating hostile ABI and discovery harness passed every check after
 the refactor and matched all 34 slave identities against the EtherLab CLI.
@@ -1109,6 +1110,27 @@ intermediate five-iteration run also recorded one position-11 AL-state
 datagram initialization failure and one skipped master-FSM datagram. These are
 not a clean-log acceptance result; they remain evidence for the known
 asynchronous EtherLab deactivation boundary. No nonzero output was requested.
+
+## API 0.17 per-domain output authority
+
+API 0.17 embeds an independent `elc_output_authority` on each configured
+domain and advertises `ELC_CAP_DOMAIN_OUTPUT_AUTHORITY`. Publish may use
+`domain_config_id = 0` (full global image) or a non-zero domain id (segment
+size). Arm/disarm `flags = 0` apply to all domains; non-zero is the target
+`domain_config_id`.
+
+Smoke evidence on the dual-domain 34-slave fixture
+(`tools/configs/all34_captured_topology.conf`):
+
+- bus discovery reports API 0.17 and capabilities including domain authority;
+- non-activating hostile ABI suite passes;
+- ten maximum pending create/reset stress iterations pass;
+- cycle-strict disarmed run: both domains valid, 34/34 OP, zero errors;
+- cycle-zero-arm: arm, stale rejection after disarm, fresh sequence accepted;
+- clean module unload returns master 0 idle with 34 slaves visible.
+
+Outstanding hardware check: power-off drive domain only and confirm domain 1
+(I/O) remains valid and independently armable while domain 2 is incomplete.
 
 ## API 0.14 controller output lease
 

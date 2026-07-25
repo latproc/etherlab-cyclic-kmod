@@ -183,7 +183,8 @@ commands, outputs, and design details.
   architecture, UAPI, process-image, safety/failure, and operator documentation
   now describe explicit domain declarations and assignment syntax, ordered
   global image offsets, per-domain validity, implicit compatibility behavior,
-  and the still-global output gate. The standalone documentation gate passes;
+  and the then-global output gate (superseded by API 0.17 per-domain
+  authority). The standalone documentation gate passes;
   the kernel-safety gate remains open.
 - Corrected deterministic process-image allocation indices for the API 0.12
   implicit-domain allocation. All six copied-image failures and cyclic-task
@@ -232,3 +233,11 @@ commands, outputs, and design details.
   capture drops, and never blocks or allocates in the cyclic path. Hostile ABI
   checks pass. A disarmed 34-slave 1 kHz run drained 5,003 290-byte records in
   10 ms batches with no loss, contention drop, cycle error, or overrun.
+- Added API 0.17 per-domain output authority. Each configured domain owns
+  independent publication buffers, sequence, arm/re-arm, lease, and health for
+  output selection. Global publish/arm/disarm selectors remain
+  (`domain_config_id` / `flags` = 0); non-zero targets one domain. Capability
+  `ELC_CAP_DOMAIN_OUTPUT_AUTHORITY` is advertised. Dual-domain 34-slave
+  disarmed cycle-strict and zero-arm smoke tests pass with both domains valid.
+  Live drive power-loss independence (I/O domain stays armable while drives
+  are offline) remains a pending hardware check.

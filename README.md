@@ -12,7 +12,7 @@ The transport contains no machine, servo, CiA 402, XML, or control-system
 policy. Those decisions remain in user space, so the same module can support
 different devices and control systems without recompiling kernel code.
 
-> **Development status:** experimental API 0.16. The standalone documentation
+> **Development status:** experimental API 0.17. The standalone documentation
 > gate passes, but the kernel-safety and production timing gates remain open.
 > Kernel faults can crash the host and EtherCAT outputs can move machinery.
 > Always use the site's hardware safety and commissioning procedures.
@@ -33,11 +33,15 @@ application policy in the kernel:
   enumeration order.
 - **Explicit validity domains:** always-powered I/O and switchable equipment
   can have independent working-counter and data-validity results.
+- **Per-domain output authority (API 0.17):** each domain has its own arm,
+  re-arm, publication buffers, and health gate. A drive-domain fault need not
+  disarm a healthy I/O domain; master/link loss still gates every domain.
 - **Safe copied exchange:** bounded double-buffered input and masked output
   images avoid retaining user pointers or exposing kernel memory.
 - **Fail-safe output control:** publishing data never arms it. Arming is
-  generation-bound; health loss, disarm, controller exit, and deactivation
-  select zero outputs and require fresh publication before re-arm.
+  generation-bound; domain health loss, disarm, controller exit, and
+  deactivation select zero outputs for the affected authority and require
+  fresh publication before re-arm.
 - **Controller liveness lease:** an optional armed-cycle budget prevents a
   stalled controller from retaining output authority indefinitely while still
   allowing monitoring to run without a heartbeat when outputs are disarmed.
@@ -73,7 +77,7 @@ timeline. This delegation is planned, not part of API 0.14.
 
 ## What is implemented?
 
-API 0.16 currently includes:
+API 0.17 currently includes:
 
 - exclusive EtherLab master lifecycle and raw bus discovery;
 - ordered typed setup SDOs;
@@ -82,7 +86,8 @@ API 0.16 currently includes:
 - configurable cyclic pumping, copied process-image exchange, and optional
   bounded per-cycle input history with batched reads;
 - aggregate, per-domain, and per-configured-slave health/validity;
-- masked output publication with explicit arm and synchronous disarm;
+- per-domain output authority with masked publication, explicit arm, and
+  synchronous disarm (global or domain-scoped selectors);
 - optional authority-scoped output leases with explicit renewal and
   deterministic zero-gating on expiry;
 - coherent timing/generation records and blocking wait-for-cycle; and

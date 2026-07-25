@@ -2,15 +2,18 @@
 
 ## Status
 
-API 0.12 implements global configured-bus health, sticky fault/re-arm status,
-topology-derived output ownership, copied output shadows, and an explicit
-generation/sequence arm gate. A position-29 servo power-loss/restoration test
-recovered without restarting the controller while outputs remained disarmed.
+API 0.12 implements configured-bus health reporting, sticky fault/re-arm
+status, topology-derived output ownership, copied output shadows, and an
+explicit generation/sequence arm gate. A position-29 servo
+power-loss/restoration test recovered without restarting the controller while
+outputs remained disarmed.
 
 Per-domain WC/validity and per-configured-slave online/operational/AL state and
-data validity are available by stable configuration ID. Output gating remains
-global. This is experimental evidence, not production safety certification;
-acceptance and debug-kernel gates remain open.
+data validity are available by stable configuration ID. API 0.17 makes output
+gating per-domain: each domain has its own authority for publication, arm,
+re-arm, and lease. Master/link loss still gates every domain. This is
+experimental evidence, not production safety certification; acceptance and
+debug-kernel gates remain open.
 
 ## Servo power observation
 
@@ -42,14 +45,20 @@ startup policy belongs in user space.
 
 ## Required power-loss behavior
 
-When a configured drive disappears, the current implementation:
+When a configured drive disappears under a split-domain layout (API 0.17):
 
 1. keeps the cyclic thread running;
 2. reports aggregate configured online/operational counts and fault bits;
-3. closes the global output arm gate;
-4. latches `rearm_required` and the fault epoch;
-5. continues publishing snapshots and counters;
-6. permits EtherLab to reconfigure the returning slave without process restart.
+3. closes the **drive domain's** output authority only (master/link loss still
+   closes every domain);
+4. latches `rearm_required` and the fault epoch on that authority;
+5. continues publishing snapshots and counters, including healthy I/O domains;
+6. permits EtherLab to reconfigure the returning slave without process restart;
+7. leaves a healthy I/O domain armable independently once policy and sequence
+   requirements are met.
+
+Shared-domain historical tests closed a single global gate on the same fault;
+that remains the behavior of a one-domain configuration.
 
 API 0.12 reports each configured slave separately. Its `data_valid` requires
 that slave online and OP, at least one input snapshot, and complete WC for its
@@ -105,17 +114,20 @@ offline. Blindly applying that image when the drive returns could replay a
 CiA-402 enable/control word or nonzero target velocity.
 
 A returning slave does not automatically consume stale ordinary outputs. API
-0.9 implements a conservative global gate. Arm requires the exact active
-configuration generation and latest output-publication sequence while the bus
-is healthy. After a fault or manual disarm, the sequence must be newer than the
-fault/disarm epoch. Disarm and orderly deactivation wait until the cyclic
-thread has sent a zero-gated image.
+0.9 introduced a generation/sequence arm gate. API 0.17 scopes that gate per
+domain authority. Arm requires the exact active configuration generation and
+the latest output-publication sequence for the targeted authority while
+master/link and that domain are healthy. After a fault or manual disarm on an
+authority, the sequence must be newer than that authority's fault/disarm
+epoch. Disarm and orderly deactivation wait until the cyclic thread has sent
+a zero-gated image for the affected authorities.
 
-This safely sacrifices availability: one configured-slave fault disarms all
-outputs. Per-slave gating may be considered later, but is not required to
-weaken this baseline. The kernel does not embed ED3L or CiA-402 meaning.
+Master/link loss still disarms every domain. A domain WC or assigned-slave
+fault disarms only that domain, so always-on I/O can remain armed while a
+drive domain is offline. The kernel does not embed ED3L or CiA-402 meaning;
+application policy still decides whether a healthy domain is safe to arm.
 
-Clockwork owns the decision that machine state is safe to re-arm. Hardware
+User space owns the decision that machine state is safe to re-arm. Hardware
 safety remains responsible for personnel protection.
 
 ## Consequences for setup SDO design

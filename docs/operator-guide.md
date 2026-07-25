@@ -146,10 +146,15 @@ sudo rmmod elc_ethercat
 ethercat master
 ```
 
-The command prints cycle/WC/DC status, global I/O status,
+The command prints cycle/WC/DC status, global I/O status, per-domain status
+(WC, validity, and that domain's arm/re-arm under API 0.17),
 per-configured-slave status, publication sequence, and a copied input
 snapshot. `cycle` leaves outputs disarmed. The all-ones shadow it publishes is
-not allowed through the kernel output gate.
+not allowed through the kernel output gate until an explicit arm.
+
+API 0.17 may publish/arm a single domain (`domain_config_id` / arm `flags`) or
+all domains (`0`). Current standalone tools use the global selectors by
+default.
 
 Expected functional evidence for the current position-29 fixture includes:
 

@@ -9,7 +9,8 @@ cyclic pumping, copied process images, distributed clocks, health/fault
 status, explicit output arm/disarm, per-configured-slave validity, mandatory
 PDO padding, explicit multiple validity domains, coherent per-cycle timing,
 capability discovery, interruptible cycle notification, and optional
-authority-scoped output leases, and disarmed cycle-boundary period updates.
+authority-scoped output leases, disarmed cycle-boundary period updates, and
+per-domain output authority (independent arm/health and scoped publish).
 
 ## Ownership and lifecycle
 
@@ -75,8 +76,9 @@ Returns `struct elc_api_version`.
 
 Returns `struct elc_capabilities`. API 0.17 reports only implemented,
 documented features: coherent copied process images, cycle timing,
-wait-for-cycle, DC diagnostics, output leases, cycle-period updates, and
-bounded input history.
+wait-for-cycle, DC diagnostics, output leases, cycle-period updates,
+bounded input history, and per-domain output authority
+(`ELC_CAP_DOMAIN_OUTPUT_AUTHORITY`).
 Scheduled output and delegated domain connections are not currently reported.
 
 ### Input history
@@ -297,15 +299,19 @@ assignment is invalid. This preserves existing API 0.11 configuration files
 and tools without making inferred grouping part of the new policy.
 
 Each domain status exposes its global segment base and size, WC and WC state,
-current health faults, validity, cycle/input sequence, and the current global
-output arm/re-arm state. Per-slave `data_valid` depends on the WC of the
-slave's assigned domain. Aggregate status remains conservative for callers
-using the legacy global status API.
+current health faults, validity, cycle/input sequence, and that domain's own
+output arm/re-arm state (API 0.17). Per-slave `data_valid` depends on the WC
+of the slave's assigned domain. Aggregate `GET_IO_STATUS` remains available
+and reports any-armed / any-rearm across domain authorities; master/link and
+full-bus counts stay global.
 
-API 0.12 deliberately retains global output publication, arm, disarm, latched
-fault, and re-arm epochs. The domain status does not claim an independent
-output gate: its output fields reflect that global gate. Per-domain output
-gating and fresh-publication epochs require a later explicit ABI increment.
+API 0.17 places an independent output authority on each configured domain.
+Publication may target the full global image (`domain_config_id = 0`) or one
+domain segment (non-zero id, size must match the segment). Arm and disarm use
+`flags = 0` for all domains or a non-zero `domain_config_id` for one domain.
+Master/link faults still disarm every authority; a domain WC or assigned-slave
+fault disarms only that domain. Capability bit
+`ELC_CAP_DOMAIN_OUTPUT_AUTHORITY` is set when this model is present.
 
 ## Initial cyclic lifecycle
 
@@ -407,44 +413,49 @@ spinlock. A process-context reader reserves the current buffer during
 or overwriting that reader. Deactivation joins the cyclic thread before freeing
 the buffers.
 
-API 0.8 adds `ELC_IOC_PUBLISH_OUTPUT`. The caller supplies complete
-domain-sized data and per-bit update-mask arrays plus the exact active
-configuration generation. A stale generation returns `ESTALE`; a size other
-than the active domain returns `EMSGSIZE`; unsupported flags/reserved fields
-return `EINVAL`.
+API 0.8 adds `ELC_IOC_PUBLISH_OUTPUT`. The caller supplies data and per-bit
+update-mask arrays plus the exact active configuration generation. API 0.17
+extends the request with `domain_config_id`: zero means the full global image
+(size must match the concatenated image); non-zero targets that domain
+segment (size must match the segment). A stale generation returns `ESTALE`; a
+size mismatch returns `EMSGSIZE`; unsupported flags return `EINVAL`; an
+unknown domain id returns `ENOENT`.
 
-The kernel copies into the inactive preallocated output buffer, intersects the
-caller mask with the topology-derived output mask, and merges only those bits
-with the previous published shadow. It then atomically publishes the buffer
-and increments `output_sequence`. The returned sequence is also visible through
+The kernel copies into each targeted authority's inactive preallocated output
+buffer, intersects the caller mask with the topology-derived output mask, and
+merges only those bits with the previous published shadow. It then atomically
+publishes the buffer and increments that authority's `output_sequence`. The
+returned sequence (max when fanning out) is visible through
 `ELC_IOC_GET_IO_STATUS`.
 
-Publication is intentionally not activation. API 0.8 has no arm operation,
-`outputs_armed` remains false, and the cyclic thread clears every configured
-output bit in domain memory before every queue/send. This makes publication and
-masking independently testable without transmitting the requested values.
+Publication is intentionally not activation. Without a successful arm,
+`outputs_armed` remains false for each authority, and the cyclic thread
+clears topology-derived output bits for disarmed authorities before every
+queue/send.
 
-API 0.9 adds `ELC_IOC_ARM_OUTPUTS` and `ELC_IOC_DISARM_OUTPUTS`. Arm
-requires:
+API 0.9 adds `ELC_IOC_ARM_OUTPUTS` and `ELC_IOC_DISARM_OUTPUTS`. API 0.17
+uses `flags = 0` for all domains or non-zero `flags` as `domain_config_id`.
+Arm requires, for each targeted authority:
 
-- an active cycle and healthy bus;
+- an active cycle, healthy master/link, and healthy domain authority;
 - the exact active configuration generation;
-- the exact latest nonzero output-publication sequence;
-- after a fault or manual disarm, a sequence newer than the sequence recorded
-  at that epoch.
+- the exact latest nonzero output-publication sequence for that authority;
+- after a fault or manual disarm on that authority, a sequence newer than the
+  sequence recorded at that epoch.
 
-Generation or sequence mismatch returns `ESTALE`; an unhealthy bus or
-not-new-enough recovery publication returns `EAGAIN`. A successful arm clears
-`rearm_required`. Each cycle applies the retained output shadow only when both
-health and arm are true; otherwise it clears all topology-derived output bits.
+Generation or sequence mismatch returns `ESTALE`; an unhealthy target domain
+or not-new-enough recovery publication returns `EAGAIN`; an unknown domain id
+returns `ENOENT`. A successful arm clears that authority's `rearm_required`.
+Each cycle applies a domain's retained output shadow only when that authority
+is healthy and armed; otherwise it clears that domain's topology-derived
+output bits.
 
-Disarm immediately closes the atomic output gate, latches
+Disarm immediately closes the selected authority gates, latches
 `rearm_required`, records the current publication sequence, and waits for a
 bounded acknowledgement made only after the cyclic thread has queued and sent
-the zero-gated image. Deactivation performs the same handshake before stopping
-the cyclic thread. This prevents a successful disarm ioctl or orderly
-deactivation from leaving a previously selected shadow as the last application
-datagram. Timeout returns `ETIMEDOUT` but leaves the gate disarmed.
+the zero-gated image for those authorities. Deactivation and close perform the
+same handshake for every authority before stopping the cyclic thread. Timeout
+returns `ETIMEDOUT` but leaves the gates disarmed.
 
 API 0.14 adds `ELC_IOC_CONFIGURE_OUTPUT_LEASE`,
 `ELC_IOC_RENEW_OUTPUT_LEASE`, and
