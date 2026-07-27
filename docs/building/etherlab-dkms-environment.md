@@ -58,6 +58,26 @@ distinguish those causes programmatically.
 application configuration, releases device-module references, and clears the
 master reservation. It must not run in real-time context.
 
+## Older kernels (for example 4.19 RT)
+
+The recorded production target remains Debian RT **6.1**. The module sources
+include small compatibility shims so a **source EtherLab** tree on **4.19 RT**
+can compile (explicit `linux/slab.h` / `linux/mm.h`, pre-5.0 `compat_ioctl`,
+pre-5.9 FIFO via `sched_setscheduler_nocheck`). That is build portability only:
+hardware acceptance and timing claims stay on the documented 6.1 target until
+re-proven.
+
+Manual EtherLab example:
+
+```sh
+make \
+  ETHERLAB_INCLUDE=/usr/src/ethercat-stable/include \
+  ETHERLAB_SYMVERS=/usr/src/ethercat-stable/Module.symvers
+```
+
+`ETHERLAB_INCLUDE` is the directory that **contains** `ecrt.h` (usually
+`.../include`), not the tree root.
+
 ## Build contract
 
 The top-level build resolves and validates:
