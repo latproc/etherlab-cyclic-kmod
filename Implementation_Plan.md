@@ -4443,9 +4443,17 @@ Do not remove third-party copyright or license notices.
 
 ### License scope of user-space components
 
-The initial implementation may use GPL-2.0-only for the entire repository for simplicity.
+Kernel modules, tools, and the default tree remain **GPL-2.0-only**.
 
-If the user-space library or UAPI headers later need a different license, that must be an explicit, documented licensing decision. Do not silently mix licenses.
+**Documented decision:** `libelcethercat` (`lib/elc_ethercat.c`,
+`include/elc_ethercat.h`) is **LGPL-2.1-or-later** so non-public applications
+may link the library without placing their own code under GPL. The shared UAPI
+header (`include/elc_ethercat_uapi.h`) is dual-licensed
+**GPL-2.0-only OR LGPL-2.1-or-later**. Full texts: `LICENSE`,
+`LICENSE.LGPL-2.1`. README and `docs/libelcethercat.md` describe the split.
+
+Do not silently mix licenses on new files; set SPDX identifiers and update the
+docs when the split changes.
 
 ## Additional documentation files
 

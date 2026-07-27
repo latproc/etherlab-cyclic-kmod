@@ -1,7 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: LGPL-2.1-or-later
 /*
  * libelcethercat — thin ioctl client for the elc_ethercat transport.
  * No machine policy, XML, or product identities.
+ *
+ * Licensed under the GNU Lesser General Public License v2.1 or later so that
+ * non-public / proprietary applications may link this library (typically
+ * dynamically). See LICENSE.LGPL-2.1 and the repository README.
  */
 
 #define _GNU_SOURCE

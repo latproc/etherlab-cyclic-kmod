@@ -254,8 +254,14 @@ unrecoverable EtherLab master.
   accurate as their subjects appear.
 - Record tested versions and observed results; never claim untested
   compatibility.
-- Repository licensing is GPL-2.0-only unless an explicit documented decision
-  changes user-space component licensing.
+- Default repository licensing is GPL-2.0-only for the kernel, tools, and
+  documentation unless a file’s SPDX says otherwise.
+- **`libelcethercat` is LGPL-2.1-or-later** (`lib/elc_ethercat.c`,
+  `include/elc_ethercat.h`) so non-public applications may link the library.
+  The shared UAPI header is dual-licensed
+  `GPL-2.0-only OR LGPL-2.1-or-later`. Full texts: `LICENSE`,
+  `LICENSE.LGPL-2.1`. Document this split in README and
+  `docs/libelcethercat.md` when it changes.
 - Kernel C files use `// SPDX-License-Identifier: GPL-2.0-only` and the module
   declares `MODULE_LICENSE("GPL")`.
 - Preserve third-party notices and document any adapted EtherLab-derived code.
@@ -513,7 +519,7 @@ testing, safety, and build documents.
   d1-valid/d2-incomplete is proven at elc; presentation and re-activate policy
   fix in iod-elc/CW only. Do not weaken elc isolation for IOD poll quirks.
 - Phase 7 `libelcethercat` is implemented under `lib/` with public header
-  `include/elc_ethercat.h` (GPL-2.0-only, SONAME major tracks UAPI major).
+  `include/elc_ethercat.h` (LGPL-2.1-or-later; SONAME major tracks UAPI major).
   Build/install: `make lib`, `make install-lib PREFIX=...`, pkg-config
   `elcethercat`. Feature tools use the generic `elc_*` prefix (EtherLab
   Cyclic): `elc_bus`, `elc_sdo`, `elc_config`, `elc_config_stress`; harness

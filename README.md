@@ -279,4 +279,18 @@ layout is stable across a changed configuration.
 
 ## License
 
-GPL-2.0-only. See [LICENSE](LICENSE).
+Licensing is split so the kernel stays GPL while applications can link the
+userspace library without opening their own code:
+
+| Component | License |
+|-----------|---------|
+| Kernel modules (`kernel/`) | **GPL-2.0-only** — [LICENSE](LICENSE) |
+| Tools and most of the tree | **GPL-2.0-only** — [LICENSE](LICENSE) |
+| `libelcethercat` (`lib/elc_ethercat.c`, `include/elc_ethercat.h`) | **LGPL-2.1-or-later** — [LICENSE.LGPL-2.1](LICENSE.LGPL-2.1) |
+| Shared UAPI header (`include/elc_ethercat_uapi.h`) | **GPL-2.0-only OR LGPL-2.1-or-later** (dual) |
+
+Proprietary or other non-public software may **dynamically link**
+`libelcethercat` and include the public headers under the LGPL terms. Static
+linking is also permitted under LGPL-2.1 if you meet its relink requirements
+(typically ship object files or an equivalent way to relink against a modified
+library). The kernel module and GPL tools remain under GPL-2.0-only.

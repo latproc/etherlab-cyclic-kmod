@@ -1,10 +1,14 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
  * Public C API for libelcethercat — thin, policy-free userspace client for
  * the elc_ethercat kernel transport UAPI.
  *
  * Normative wire structures and ioctls: elc_ethercat_uapi.h
  * Design contract: docs/libelcethercat.md
+ *
+ * Licensed under LGPL-2.1-or-later (see LICENSE.LGPL-2.1) so non-public
+ * applications may link libelcethercat without adopting GPL for their own
+ * code. The kernel module remains GPL-2.0-only.
  */
 
 #ifndef ELC_ETHERCAT_H

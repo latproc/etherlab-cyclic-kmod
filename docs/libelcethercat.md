@@ -118,10 +118,20 @@ before using optional features.
 
 ### 2.4 Licensing
 
-The kernel module is GPL-2.0-only. The initial `libelcethercat` sources and
-public headers use **GPL-2.0-only** to match the repository default. A
-different userspace license (for example LGPL) requires an explicit
-documented decision before broader proprietary linking is claimed.
+| Component | License |
+|-----------|---------|
+| Kernel module | **GPL-2.0-only** |
+| In-tree tools | **GPL-2.0-only** |
+| `lib/elc_ethercat.c`, `include/elc_ethercat.h` | **LGPL-2.1-or-later** |
+| `include/elc_ethercat_uapi.h` | **GPL-2.0-only OR LGPL-2.1-or-later** |
+
+This is an explicit project decision so **non-public / proprietary
+applications may link `libelcethercat`** (prefer dynamic linking) and include
+the public headers under LGPL without placing their own source under GPL.
+Obligations still apply to the library itself: if you distribute a modified
+`libelcethercat`, you must provide LGPL source for those modifications, and
+static linkers must meet LGPL-2.1 relink requirements. See
+[`LICENSE.LGPL-2.1`](../LICENSE.LGPL-2.1) and the repository README.
 
 ---
 
@@ -423,7 +433,8 @@ ioctl glue.
 - [x] Migrate `tools/elc_bus` to the library
 - [x] Migrate `tools/elc_sdo`, `tools/elc_config`, `tools/elc_config_stress`
 - [x] Keep `tools/elc_abi_test` on raw ioctls for hostile UAPI checks
-- [x] Document package version and library license decision (GPL-2.0-only v1)
+- [x] Document package version and library license decision (LGPL-2.1-or-later
+      for lib + dual UAPI; kernel/tools remain GPL-2.0-only)
 - [x] Keep this document updated when the public API ships
 
 ---

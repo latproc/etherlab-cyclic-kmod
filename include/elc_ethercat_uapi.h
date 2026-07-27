@@ -1,4 +1,11 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * SPDX-License-Identifier: GPL-2.0-only OR LGPL-2.1-or-later
+ *
+ * Dual-licensed so the kernel module may use this header under GPL-2.0-only
+ * while userspace (including proprietary) clients may include it under
+ * LGPL-2.1-or-later when linking libelcethercat or speaking the ioctl ABI.
+ * See LICENSE and LICENSE.LGPL-2.1.
+ */
 #ifndef ELC_ETHERCAT_UAPI_H
 #define ELC_ETHERCAT_UAPI_H
 

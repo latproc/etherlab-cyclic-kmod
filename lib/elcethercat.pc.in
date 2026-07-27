@@ -6,5 +6,6 @@ includedir=${prefix}/include
 Name: elcethercat
 Description: Generic userspace library for the elc_ethercat EtherCAT cyclic transport
 Version: @VERSION@
+# Library sources: LGPL-2.1-or-later; UAPI header dual GPL-2.0-only OR LGPL-2.1-or-later
 Libs: -L${libdir} -lelcethercat
 Cflags: -I${includedir}
