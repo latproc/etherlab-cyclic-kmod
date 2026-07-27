@@ -1167,6 +1167,28 @@ software firewalls cannot invent a path. Ring/redundant Ethernet for true
 bus-split survival is a future development item with delegated multi-client
 domains (see architecture and Implementation Plan Section 13C).
 
+### IOD Stage 4 CW re-prove vs transport isolation
+
+A Clockwork/`iod-elc` Stage 4 log (`stage4_cw_domain_reprove.log`, servo control
+power only) must not be read as an elc isolation failure:
+
+| Observation | Owner | Notes |
+|-------------|--------|--------|
+| Restore → both domains COMPLETE and stay | Both (already OK) | elc re-heals WC; IOD mirrors it |
+| Drive loss clear on transitions, not sustained 1 Hz COMPLETE/INCOMPLETE | **iod** | elc already holds d2 incomplete + d1 valid for the power-off window; IOD rate-limits / edge-logs |
+| Both INVALID + `domain_size=0` + “activation requested” | **iod lifecycle** | Activate path zeros domain slots until next successful status; session re-wait, not domain-1 bus fault |
+| Sustained `d1=COMPLETE` while `d2=INCOMPLETE` under CW | **iod** presentation | Proven at elc; CW needs property-edge logging and must not map re-activate → dual INVALID as bus health |
+
+**Do not change elc** to accommodate IOD sampling: do not weaken dual-domain
+WC/`data_valid` rules; do not teach the kernel API that master re-open or
+activate means both domains faulted.
+
+**Fix in iod-elc / CW** (when worked): tag or suppress dual INVALID while
+activation is requested / sizes are zero / not yet active; hold last known
+healthy domain status across brief polls; log property edges (`valid`,
+`wc_state`, `faults`); avoid unsolicited re-activate mid power-off if that
+causes the dual-INVALID blip.
+
 ## API 0.14 controller output lease
 
 The expanded non-activating hostile ABI/topology harness passed with all 34

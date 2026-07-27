@@ -508,6 +508,10 @@ testing, safety, and build documents.
 - Future (with Section 13C multi-client domain fds): also plan ring/redundant
   Ethernet (out one NIC, in another) so mid-bus cable splits can be handled
   physically; software domains alone cannot invent a path past a line break.
+- IOD Stage 4 CW domain re-prove: dual INVALID + domain_size=0 during power
+  loss is **iod lifecycle / sampling**, not an elc WC-firewall bug. Sustained
+  d1-valid/d2-incomplete is proven at elc; presentation and re-activate policy
+  fix in iod-elc/CW only. Do not weaken elc isolation for IOD poll quirks.
 - Phase 7 `libelcethercat` is implemented under `lib/` with public header
   `include/elc_ethercat.h` (GPL-2.0-only, SONAME major tracks UAPI major).
   Build/install: `make lib`, `make install-lib PREFIX=...`, pkg-config
