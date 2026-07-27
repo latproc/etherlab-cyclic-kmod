@@ -297,8 +297,10 @@ layout is stable across a changed configuration.
 - [Kernel support policy](docs/building/kernel-support.md) — multi-kernel
   floor, kcompat rules, how to add features.
 - [EtherLab build environment](docs/building/etherlab-dkms-environment.md) —
-  target paths and build contract.
+  target paths, source EtherLab, and `local.mk` / `save-build-env`.
 - [elc DKMS packaging](docs/building/elc-dkms.md) — install modules via DKMS.
+- [`local.mk.example`](local.mk.example) — site path template (copy or
+  `make save-build-env`).
 - [Architecture](docs/architecture.md) — ownership, lifecycle, domains, and
   cycle timeline.
 - [UAPI](docs/uapi.md) — ioctl structures, validation, and exact semantics.

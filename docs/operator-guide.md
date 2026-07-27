@@ -36,8 +36,24 @@ make -j6
 `Module.symvers` from the same kernel/EtherLab build. Do not continue through
 an ambiguous or mismatched result.
 
+**Source / manual EtherLab (no `ethercat-dkms`):** auto-detect fails. Set paths
+once and save them into gitignored `local.mk`:
+
+```sh
+make \
+  ETHERLAB_INCLUDE=/path/to/etherlab/include \
+  ETHERLAB_SYMVERS=/path/to/etherlab/Module.symvers \
+  save-build-env
+make check-build-env
+make -j6
+sudo make install
+```
+
+After that, plain `make` / `make install` reuse `local.mk`. Template:
+`local.mk.example`. Details: `docs/building/etherlab-dkms-environment.md`.
+
 To install the kernel modules via DKMS (rebuild on kernel upgrade; requires
-EtherLab already built for that kernel):
+EtherLab already built for that kernel; uses the same `local.mk` if present):
 
 ```sh
 sudo make dkms-install

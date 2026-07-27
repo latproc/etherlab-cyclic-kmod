@@ -24,19 +24,30 @@ keeps symbols via its `POST_BUILD=save_module_symvers` hook:
 
 `make modules` (and therefore DKMS) fails closed if those paths are missing,
 lack `ecrt_request_master`, or multiple EtherLab DKMS source trees make
-auto-detection ambiguous. Override with:
+auto-detection ambiguous.
+
+**Remember paths on the machine** (preferred for source EtherLab):
+
+```sh
+make \
+  ETHERLAB_INCLUDE=/path/to/include \
+  ETHERLAB_SYMVERS=/path/to/Module.symvers \
+  save-build-env
+sudo make dkms-install
+```
+
+That writes gitignored `local.mk` (see `local.mk.example`). Later
+`make dkms-install` needs no path arguments. One-shot without saving:
 
 ```sh
 export ETHERLAB_INCLUDE=/path/to/include
 export ETHERLAB_SYMVERS=/path/to/Module.symvers
 # optional: ETHERLAB_VERSION=1.6.9
+sudo -E make dkms-install
 ```
 
-DKMS build inherits those environment variables if you export them before
-`dkms install` / `make dkms-install`.
-
-Install **ethercat-dkms for the target kernel first**. This package does not
-embed EtherLab; it only consumes its headers and symbols.
+Install **EtherLab for the target kernel first** (DKMS or source). This package
+does not embed EtherLab; it only consumes its headers and symbols.
 
 ## Install from a source checkout
 
