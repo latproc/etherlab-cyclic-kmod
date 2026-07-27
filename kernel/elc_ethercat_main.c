@@ -9,6 +9,7 @@
 #include <linux/init.h>
 #include <linux/kthread.h>
 #include <linux/list.h>
+#include <linux/math64.h>
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -58,6 +59,7 @@ struct elc_output_authority {
 	atomic64_t sequence;
 	u32 image_size;
 	u32 lease_configured_cycles;
+	u32 lease_timeout_ms;
 	atomic_t lease_remaining_cycles;
 	atomic64_t lease_renewal_count;
 	atomic64_t lease_expiry_count;
@@ -817,6 +819,56 @@ static bool elc_publish_input_snapshot(struct elc_file *ctx,
 	atomic64_inc(&ctx->input_sequence);
 	spin_unlock_irqrestore(&ctx->input_lock, irq_flags);
 	return true;
+}
+
+/*
+ * Refill hang-failsafe budget. Successful publish and arm call this so
+ * userspace need not issue a high-rate renew ioctl. No-op renews (already
+ * full) do not bump renewal_count.
+ */
+static void elc_authority_refill_lease(struct elc_output_authority *authority)
+{
+	u32 budget;
+	int remaining;
+
+	if (!authority || !authority->lease_configured_cycles)
+		return;
+	budget = authority->lease_configured_cycles;
+	remaining = atomic_read(&authority->lease_remaining_cycles);
+	if (remaining < (int)budget) {
+		atomic_set(&authority->lease_remaining_cycles, budget);
+		atomic64_inc(&authority->lease_renewal_count);
+	} else {
+		atomic_set(&authority->lease_remaining_cycles, budget);
+	}
+	atomic_and(~ELC_IO_FAULT_CONTROLLER_STALE,
+		   &authority->current_faults);
+}
+
+static u32 elc_lease_budget_from_request(struct elc_file *ctx,
+					   u32 cycle_budget, u32 timeout_ms)
+{
+	u32 period_ns;
+	u64 derived;
+
+	if (timeout_ms) {
+		period_ns = READ_ONCE(ctx->cycle_period_ns);
+		if (!period_ns) {
+			/* Pre-activate: require an explicit cycle_budget. */
+			if (!cycle_budget)
+				return U32_MAX; /* signal EINVAL to caller */
+			return cycle_budget;
+		}
+		derived = div_u64((u64)timeout_ms * 1000000ULL, period_ns);
+		if (!derived)
+			derived = 1;
+		if (derived > ELC_OUTPUT_LEASE_CYCLES_MAX)
+			derived = ELC_OUTPUT_LEASE_CYCLES_MAX;
+		if (cycle_budget && cycle_budget < derived)
+			return cycle_budget;
+		return (u32)derived;
+	}
+	return cycle_budget;
 }
 
 static void
@@ -3094,6 +3146,7 @@ static long elc_publish_output(struct elc_file *ctx, void __user *argp)
 			max_sequence =
 				atomic64_inc_return(&authority->sequence);
 			spin_unlock_irqrestore(&authority->lock, irq_flags);
+			elc_authority_refill_lease(authority);
 		}
 	} else {
 		struct elc_output_authority *authority;
@@ -3138,6 +3191,7 @@ static long elc_publish_output(struct elc_file *ctx, void __user *argp)
 		authority->active = target;
 		max_sequence = atomic64_inc_return(&authority->sequence);
 		spin_unlock_irqrestore(&authority->lock, irq_flags);
+		elc_authority_refill_lease(authority);
 	}
 	result.output_sequence = max_sequence;
 	result.config_generation = ctx->config_generation;
@@ -3200,14 +3254,6 @@ static long elc_arm_outputs(struct elc_file *ctx, void __user *argp)
 			}
 			continue;
 		}
-		if (authority->lease_configured_cycles &&
-		    atomic_read(&authority->lease_remaining_cycles) <= 0) {
-			if (domain_id) {
-				ret = -EAGAIN;
-				goto out;
-			}
-			continue;
-		}
 		if (atomic_read(&authority->rearm_required) &&
 		    current_sequence <=
 			    atomic64_read(&authority->fault_output_sequence)) {
@@ -3217,6 +3263,8 @@ static long elc_arm_outputs(struct elc_file *ctx, void __user *argp)
 			}
 			continue;
 		}
+		/* Seed/refill lease so arm never needs a prior renew ioctl. */
+		elc_authority_refill_lease(authority);
 		atomic_set(&authority->rearm_required, 0);
 		atomic_set(&authority->armed, 1);
 		armed_count++;
@@ -3283,6 +3331,9 @@ elc_configure_output_lease(struct elc_file *ctx, void __user *argp)
 {
 	struct elc_domain_node *domain;
 	struct elc_output_lease_config request;
+	u32 domain_id;
+	u32 budget;
+	int matched = 0;
 	int ret;
 
 	if (copy_from_user(&request, argp, sizeof(request)))
@@ -3291,12 +3342,24 @@ elc_configure_output_lease(struct elc_file *ctx, void __user *argp)
 				 sizeof(request));
 	if (ret)
 		return ret;
-	if (request.flags || request.reserved0 || request.reserved1 ||
-	    request.cycle_budget > ELC_OUTPUT_LEASE_CYCLES_MAX)
+	/* flags: 0 = all domains; non-zero = domain_config_id. */
+	if (request.reserved1 ||
+	    request.cycle_budget > ELC_OUTPUT_LEASE_CYCLES_MAX ||
+	    request.timeout_ms > ELC_OUTPUT_LEASE_TIMEOUT_MS_MAX)
 		return -EINVAL;
+	if (!request.cycle_budget && !request.timeout_ms) {
+		/* Disable lease on the selected domain(s). */
+		budget = 0;
+	} else {
+		budget = elc_lease_budget_from_request(ctx, request.cycle_budget,
+						       request.timeout_ms);
+		if (budget == U32_MAX)
+			return -EINVAL;
+	}
+	domain_id = request.flags;
 
 	mutex_lock(&ctx->lock);
-	if (!ctx->domain_registered || ctx->active) {
+	if (!ctx->domain_registered) {
 		ret = -EINVAL;
 		goto out;
 	}
@@ -3304,15 +3367,29 @@ elc_configure_output_lease(struct elc_file *ctx, void __user *argp)
 		ret = -ESTALE;
 		goto out;
 	}
+	/*
+	 * API 0.18: configure is allowed while cycling so hang-failsafe can
+	 * be enabled after a clean OP bring-up. Disabling (budget 0) is also
+	 * allowed while active.
+	 */
 	list_for_each_entry(domain, &ctx->config_domains, common.node) {
 		struct elc_output_authority *authority = &domain->authority;
 
+		if (domain_id && domain->cfg.config_id != domain_id)
+			continue;
 		if (!authority->initialised)
 			elc_authority_init(authority);
-		authority->lease_configured_cycles = request.cycle_budget;
-		atomic_set(&authority->lease_remaining_cycles, 0);
+		authority->lease_timeout_ms = request.timeout_ms;
+		authority->lease_configured_cycles = budget;
+		/* Seed remaining so arm does not require a prior renew. */
+		atomic_set(&authority->lease_remaining_cycles, budget);
 		atomic64_set(&authority->lease_renewal_count, 0);
 		atomic64_set(&authority->lease_expiry_count, 0);
+		matched++;
+	}
+	if (!matched) {
+		ret = -ENOENT;
+		goto out;
 	}
 	ret = 0;
 out:
@@ -3328,6 +3405,7 @@ elc_renew_output_lease(struct elc_file *ctx, void __user *argp)
 	u64 generation;
 	u64 renewals = 0;
 	u32 budget = 0;
+	u32 domain_id;
 	bool any = false;
 	int ret;
 
@@ -3337,9 +3415,10 @@ elc_renew_output_lease(struct elc_file *ctx, void __user *argp)
 				 sizeof(result));
 	if (ret)
 		return ret;
-	if (result.flags || result.reserved0 || result.remaining_cycles ||
+	if (result.reserved0 || result.remaining_cycles ||
 	    result.renewal_count)
 		return -EINVAL;
+	domain_id = result.flags;
 	generation = result.config_generation;
 	mutex_lock(&ctx->lock);
 	if (!ctx->active) {
@@ -3353,17 +3432,17 @@ elc_renew_output_lease(struct elc_file *ctx, void __user *argp)
 	list_for_each_entry(domain, &ctx->config_domains, common.node) {
 		struct elc_output_authority *authority = &domain->authority;
 
+		if (domain_id && domain->cfg.config_id != domain_id)
+			continue;
 		if (!authority->lease_configured_cycles)
 			continue;
 		any = true;
+		elc_authority_refill_lease(authority);
 		budget = authority->lease_configured_cycles;
-		atomic_set(&authority->lease_remaining_cycles, budget);
-		atomic_and(~ELC_IO_FAULT_CONTROLLER_STALE,
-			   &authority->current_faults);
-		renewals = atomic64_inc_return(&authority->lease_renewal_count);
+		renewals = atomic64_read(&authority->lease_renewal_count);
 	}
 	if (!any) {
-		ret = -EINVAL;
+		ret = domain_id ? -ENOENT : -EINVAL;
 		goto out;
 	}
 	memset(&result, 0, sizeof(result));
@@ -3386,11 +3465,14 @@ elc_get_output_lease_status(struct elc_file *ctx, void __user *argp)
 	struct elc_domain_node *domain;
 	struct elc_output_lease_status result;
 	u64 generation;
+	u32 domain_id;
 	int remaining = 0;
 	u32 configured = 0;
+	u32 timeout_ms = 0;
 	u64 renewals = 0;
 	u64 expiries = 0;
 	bool enabled = false;
+	int matched = 0;
 	int ret;
 
 	if (copy_from_user(&result, argp, sizeof(result)))
@@ -3399,12 +3481,12 @@ elc_get_output_lease_status(struct elc_file *ctx, void __user *argp)
 				 sizeof(result));
 	if (ret)
 		return ret;
-	if (result.flags ||
-	    memchr_inv(result.reserved0, 0, sizeof(result.reserved0)) ||
+	if (memchr_inv(result.reserved0, 0, sizeof(result.reserved0)) ||
 	    result.configured_cycles || result.remaining_cycles ||
-	    result.enabled || result.valid || result.renewal_count ||
-	    result.expiry_count)
+	    result.enabled || result.valid || result.timeout_ms ||
+	    result.renewal_count || result.expiry_count)
 		return -EINVAL;
+	domain_id = result.flags;
 	generation = result.config_generation;
 	mutex_lock(&ctx->lock);
 	if (!ctx->config_validated || generation != ctx->config_generation) {
@@ -3415,15 +3497,33 @@ elc_get_output_lease_status(struct elc_file *ctx, void __user *argp)
 		struct elc_output_authority *authority = &domain->authority;
 		int rem;
 
+		if (domain_id && domain->cfg.config_id != domain_id)
+			continue;
+		matched++;
 		if (!authority->lease_configured_cycles)
 			continue;
 		enabled = true;
 		configured = authority->lease_configured_cycles;
+		timeout_ms = authority->lease_timeout_ms;
 		rem = atomic_read(&authority->lease_remaining_cycles);
-		if (rem > remaining)
+		if (domain_id) {
 			remaining = rem;
-		renewals = atomic64_read(&authority->lease_renewal_count);
-		expiries = atomic64_read(&authority->lease_expiry_count);
+			renewals =
+				atomic64_read(&authority->lease_renewal_count);
+			expiries =
+				atomic64_read(&authority->lease_expiry_count);
+		} else {
+			if (rem > remaining)
+				remaining = rem;
+			renewals =
+				atomic64_read(&authority->lease_renewal_count);
+			expiries =
+				atomic64_read(&authority->lease_expiry_count);
+		}
+	}
+	if (domain_id && !matched) {
+		ret = -ENOENT;
+		goto out;
 	}
 	memset(&result, 0, sizeof(result));
 	result.struct_size = sizeof(result);
@@ -3431,6 +3531,7 @@ elc_get_output_lease_status(struct elc_file *ctx, void __user *argp)
 	result.config_generation = ctx->config_generation;
 	result.configured_cycles = configured;
 	result.remaining_cycles = max(remaining, 0);
+	result.timeout_ms = timeout_ms;
 	result.enabled = enabled;
 	result.valid = ctx->active && enabled && remaining > 0;
 	result.renewal_count = renewals;
@@ -4183,6 +4284,7 @@ static long elc_get_capabilities(void __user *argp)
 			ELC_CAP_CYCLE_WAIT |
 			ELC_CAP_DC_DIAGNOSTICS |
 			ELC_CAP_OUTPUT_LEASE |
+			ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW |
 			ELC_CAP_CYCLE_PERIOD_UPDATE |
 			ELC_CAP_INPUT_HISTORY |
 			ELC_CAP_CYCLE_DC_INFO |

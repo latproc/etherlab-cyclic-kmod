@@ -253,6 +253,9 @@ commands, outputs, and design details.
   valid without transport restart. Documented requirement: no interruption to
   healthy domains when another domain fails. Future 13C multi-client domain
   work must also plan ring/redundant Ethernet for true cable-split survival.
+- API 0.18 hang-failsafe lease: seed remaining on configure; refill on
+  successful publish/arm; optional timeout_ms; configure while active;
+  per-domain lease selection. Capability ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW.
 - Relicensed `libelcethercat` to **LGPL-2.1-or-later** and dual-licensed
   `elc_ethercat_uapi.h` as GPL-2.0-only OR LGPL-2.1-or-later so non-public
   applications may link the library. Kernel modules and tools remain

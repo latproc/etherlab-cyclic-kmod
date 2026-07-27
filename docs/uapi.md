@@ -2,15 +2,16 @@
 
 ## Status
 
-The current experimental API is version 0.17. It supports discovery, a
+The current experimental API is version 0.18. It supports discovery, a
 provisional bounded commissioning SDO batch, transactional
 slave/Sync/PDO/entry/DC configuration, domain registration, configurable
 cyclic pumping, copied process images, distributed clocks, health/fault
 status, explicit output arm/disarm, per-configured-slave validity, mandatory
 PDO padding, explicit multiple validity domains, coherent per-cycle timing,
 capability discovery, interruptible cycle notification, and optional
-authority-scoped output leases, disarmed cycle-boundary period updates, and
-per-domain output authority (independent arm/health and scoped publish).
+authority-scoped output leases (publish/arm renew and optional timeout_ms),
+disarmed cycle-boundary period updates, and per-domain output authority
+(independent arm/health and scoped publish).
 
 ## Ownership and lifecycle
 
@@ -59,7 +60,11 @@ Minor versions add:
   coherent DC motion-clock records (`ELC_IOC_CYCLE_GET_DC_INFO`); and
 - 0.17: per-domain output authority (independent arm/health per domain;
   publish/arm/disarm may target domain_config_id; capability bit
-  `ELC_CAP_DOMAIN_OUTPUT_AUTHORITY`).
+  `ELC_CAP_DOMAIN_OUTPUT_AUTHORITY`);
+- 0.18: hang-failsafe lease improvements — remaining seeded on configure,
+  successful publish/arm refill the budget (`ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW`),
+  optional `timeout_ms` wall-time budget, configure while cycling, and
+  per-domain lease via `flags` = domain_config_id.
 
 Input/output structures that accept caller fields include `struct_size` and
 `api_major`. The kernel rejects an unexpected size with `EINVAL` and an
@@ -75,11 +80,12 @@ Returns `struct elc_api_version`.
 
 ### `ELC_IOC_GET_CAPABILITIES`
 
-Returns `struct elc_capabilities`. API 0.17 reports only implemented,
+Returns `struct elc_capabilities`. API 0.18 reports only implemented,
 documented features: coherent copied process images, cycle timing,
-wait-for-cycle, DC diagnostics, output leases, cycle-period updates,
-bounded input history, and per-domain output authority
-(`ELC_CAP_DOMAIN_OUTPUT_AUTHORITY`).
+wait-for-cycle, DC diagnostics, output leases (including publish/arm renew
+and `timeout_ms`), cycle-period updates, bounded input history, and
+per-domain output authority (`ELC_CAP_DOMAIN_OUTPUT_AUTHORITY`,
+`ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW`).
 Scheduled output and delegated domain connections are not currently reported.
 
 ### Input history
@@ -471,31 +477,40 @@ returns `ETIMEDOUT` but leaves the gates disarmed.
 
 API 0.14 adds `ELC_IOC_CONFIGURE_OUTPUT_LEASE`,
 `ELC_IOC_RENEW_OUTPUT_LEASE`, and
-`ELC_IOC_GET_OUTPUT_LEASE_STATUS`.
+`ELC_IOC_GET_OUTPUT_LEASE_STATUS`. API 0.18 extends the hang-failsafe model
+for multi-ms userspace controllers (capability
+`ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW`).
 
-Lease configuration is permitted only after domain creation and before
-activation, and is bound to the exact configuration generation. A
-`cycle_budget` of zero disables the feature for compatibility. Otherwise the
-accepted range is 1 through `ELC_OUTPUT_LEASE_CYCLES_MAX` (1,000,000).
+Lease configuration is permitted after domain creation (including while the
+cycle is active in 0.18) and is bound to the exact configuration generation.
+`flags` is 0 for all domains or a non-zero `domain_config_id` for one domain.
 
-Each activation begins with zero remaining cycles. Renewal while active loads
-the configured budget and increments `renewal_count`; it never publishes or
-arms output. Arm returns `EAGAIN` when a configured lease has no remaining
-budget.
+Budget selection:
 
-The cyclic task decrements the budget once immediately before each armed
-output selection. A renewed budget of N therefore permits exactly N
-selections. The budget does not decrease while disarmed. When no budget
-remains at the next selection, the cyclic task atomically disarms, selects
-zeros, records the current publication sequence, latches
-`ELC_IO_FAULT_CONTROLLER_STALE` and `rearm_required`, and increments
-`expiry_count`. Input exchange and the EtherCAT cycle continue.
+- `timeout_ms` (0.18): wall-time hang; converted to bus cycles as
+  `max(1, timeout_ms * 1e6 / cycle_period_ns)`, clamped to
+  `ELC_OUTPUT_LEASE_CYCLES_MAX`. Pre-activate use requires an explicit
+  `cycle_budget` when the period is not yet known.
+- `cycle_budget`: explicit cycle count, or a max when combined with
+  `timeout_ms`. Both zero disables the lease on the target domain(s).
+- Recommended plant values: `timeout_ms` 500–2000 (longer than worst
+  legitimate mailbox stall, short enough for hang failsafe).
 
-Renewal after expiry clears the current stale-controller bit but not the
-latched recovery epoch. The old output publication remains ineligible.
-Recovery requires renewal, a publication newer than the expiry sequence, and
-an explicit successful arm. Orderly disarm, deactivation, and close are not
-lease expiries.
+Configure **seeds** `remaining` to the resolved budget (arm no longer requires
+a prior renew). While armed, the cyclic task decrements remaining once per
+armed selection; at zero it expires (disarm, zero domain PDO image,
+`ELC_IO_FAULT_CONTROLLER_STALE`, `rearm_required`). Remaining does not
+decrease while disarmed.
+
+**Publish renew (0.18):** a successful `ELC_IOC_PUBLISH_OUTPUT` that updates a
+leased authority refills remaining (and clears the current stale bit).
+Successful **arm** also refills. Explicit `RENEW` remains supported; a no-op
+renew when already full does not bump `renewal_count`. Userspace that only
+publishes at its ecat rate needs no separate high-rate renew ioctl.
+
+Recovery after expiry: a publication newer than the fault sequence and an
+explicit arm (publish itself refills the budget). Orderly disarm,
+deactivation, and close are not lease expiries.
 
 API 0.10 adds `ELC_IOC_GET_CONFIG_SLAVE_STATUS`, keyed by the stable
 user-supplied slave `config_id` and exact configuration generation. A stale

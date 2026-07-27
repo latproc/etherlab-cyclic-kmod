@@ -18,7 +18,7 @@
 #endif
 
 #define ELC_API_VERSION_MAJOR 0U
-#define ELC_API_VERSION_MINOR 17U
+#define ELC_API_VERSION_MINOR 18U
 
 #define ELC_CYCLE_PERIOD_MIN_NS 100000U
 #define ELC_CYCLE_PERIOD_MAX_NS 1000000000U
@@ -36,6 +36,7 @@
 #define ELC_PROCESS_IMAGE_MAX (64U * 1024U)
 #define ELC_CYCLE_WAIT_TIMEOUT_MAX_MS 60000U
 #define ELC_OUTPUT_LEASE_CYCLES_MAX 1000000U
+#define ELC_OUTPUT_LEASE_TIMEOUT_MS_MAX 600000U
 #define ELC_INPUT_HISTORY_DEPTH_MAX 4096U
 #define ELC_INPUT_HISTORY_BATCH_MAX 256U
 #define ELC_INPUT_HISTORY_BYTES_MAX (16U * 1024U * 1024U)
@@ -49,6 +50,8 @@
 #define ELC_CAP_INPUT_HISTORY (1ULL << 6)
 #define ELC_CAP_CYCLE_DC_INFO (1ULL << 7)
 #define ELC_CAP_DOMAIN_OUTPUT_AUTHORITY (1ULL << 8)
+/* API 0.18: publish/arm refill lease; timeout_ms; configure while active. */
+#define ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW (1ULL << 9)
 
 enum elc_sdo_type {
 	ELC_SDO_U8 = 1,
@@ -574,19 +577,34 @@ struct elc_output_disarm {
 	__u64 config_generation;
 };
 
+/*
+ * Output lease (hang failsafe). Budget is in bus cycles once resolved.
+ *
+ * flags: 0 = all domains; non-zero = domain_config_id for one domain.
+ *
+ * cycle_budget: explicit cycle count. 0 with timeout_ms = derive from period.
+ *               0 with timeout_ms = 0 disables the lease on the target domain(s).
+ * timeout_ms: wall-time hang (API 0.18). 0 = use cycle_budget only.
+ * When both set, cycles = min(derived_from_timeout, cycle_budget).
+ *
+ * remaining is seeded to the budget on configure. Successful publish (and arm)
+ * refill remaining when ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW is set. Explicit
+ * renew remains supported.
+ */
 struct elc_output_lease_config {
 	__u16 struct_size;
 	__u16 api_major;
 	__u32 flags;
 	__u64 config_generation;
 	__u32 cycle_budget;
-	__u32 reserved0;
+	__u32 timeout_ms;
 	__u64 reserved1;
 };
 
 struct elc_output_lease_renew {
 	__u16 struct_size;
 	__u16 api_major;
+	/* 0 = all leased domains; non-zero = domain_config_id. */
 	__u32 flags;
 	__u64 config_generation;
 	__u32 remaining_cycles;
@@ -597,13 +615,15 @@ struct elc_output_lease_renew {
 struct elc_output_lease_status {
 	__u16 struct_size;
 	__u16 api_major;
+	/* 0 = aggregate across leased domains; non-zero = domain_config_id. */
 	__u32 flags;
 	__u64 config_generation;
 	__u32 configured_cycles;
 	__u32 remaining_cycles;
 	__u8 enabled;
 	__u8 valid;
-	__u8 reserved0[6];
+	__u8 reserved0[2];
+	__u32 timeout_ms;
 	__u64 renewal_count;
 	__u64 expiry_count;
 };

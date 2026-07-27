@@ -297,18 +297,22 @@ int main(int argc, char **argv)
 		     ELC_CAP_CYCLE_TIMING | ELC_CAP_CYCLE_WAIT |
 		     ELC_CAP_DC_DIAGNOSTICS |
 		     ELC_CAP_OUTPUT_LEASE |
+		     ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW |
 		     ELC_CAP_CYCLE_PERIOD_UPDATE |
-		     ELC_CAP_INPUT_HISTORY)) !=
+		     ELC_CAP_INPUT_HISTORY |
+		     ELC_CAP_DOMAIN_OUTPUT_AUTHORITY)) !=
 		   (ELC_CAP_COHERENT_PROCESS_IMAGE |
 		    ELC_CAP_CYCLE_TIMING | ELC_CAP_CYCLE_WAIT |
 		    ELC_CAP_DC_DIAGNOSTICS |
 		    ELC_CAP_OUTPUT_LEASE |
+		    ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW |
 		    ELC_CAP_CYCLE_PERIOD_UPDATE |
-		    ELC_CAP_INPUT_HISTORY)) {
+		    ELC_CAP_INPUT_HISTORY |
+		    ELC_CAP_DOMAIN_OUTPUT_AUTHORITY)) {
 		fprintf(stderr, "FAIL: required capability bits missing\n");
 		failures++;
 	} else {
-		printf("PASS: API 0.17 capabilities reported\n");
+		printf("PASS: API 0.18 capabilities reported\n");
 	}
 
 	cycle_info.flags = 1;
@@ -1066,14 +1070,14 @@ int main(int argc, char **argv)
 				       &history_batch),
 				 EINVAL);
 	lease_config.config_generation = io_status.config_generation;
-	lease_config.flags = 1;
+	lease_config.reserved1 = 1;
 	errno = 0;
-	failures += expect_errno("output lease config flags",
+	failures += expect_errno("output lease config reserved1",
 				 ioctl(fd,
 				       ELC_IOC_CONFIGURE_OUTPUT_LEASE,
 				       &lease_config),
 				 EINVAL);
-	lease_config.flags = 0;
+	lease_config.reserved1 = 0;
 	lease_config.cycle_budget = ELC_OUTPUT_LEASE_CYCLES_MAX + 1U;
 	errno = 0;
 	failures += expect_errno("output lease cycle limit",
@@ -1082,6 +1086,14 @@ int main(int argc, char **argv)
 				       &lease_config),
 				 EINVAL);
 	lease_config.cycle_budget = 3;
+	lease_config.timeout_ms = ELC_OUTPUT_LEASE_TIMEOUT_MS_MAX + 1U;
+	errno = 0;
+	failures += expect_errno("output lease timeout limit",
+				 ioctl(fd,
+				       ELC_IOC_CONFIGURE_OUTPUT_LEASE,
+				       &lease_config),
+				 EINVAL);
+	lease_config.timeout_ms = 0;
 	lease_config.config_generation++;
 	errno = 0;
 	failures += expect_errno("stale output lease configuration",
@@ -1099,14 +1111,14 @@ int main(int argc, char **argv)
 		printf("PASS: configured three-cycle output lease\n");
 	}
 	lease_status.config_generation = io_status.config_generation;
-	lease_status.flags = 1;
+	lease_status.timeout_ms = 1;
 	errno = 0;
-	failures += expect_errno("output lease status flags",
+	failures += expect_errno("output lease status reserved timeout",
 				 ioctl(fd,
 				       ELC_IOC_GET_OUTPUT_LEASE_STATUS,
 				       &lease_status),
 				 EINVAL);
-	lease_status.flags = 0;
+	lease_status.timeout_ms = 0;
 	if (ioctl(fd, ELC_IOC_GET_OUTPUT_LEASE_STATUS,
 		  &lease_status) < 0) {
 		fprintf(stderr, "FAIL: inactive output lease status: %s\n",
@@ -1114,13 +1126,17 @@ int main(int argc, char **argv)
 		failures++;
 	} else if (!lease_status.enabled || lease_status.valid ||
 		   lease_status.configured_cycles != 3 ||
-		   lease_status.remaining_cycles ||
+		   lease_status.remaining_cycles != 3 ||
 		   lease_status.renewal_count || lease_status.expiry_count) {
 		fprintf(stderr,
-			"FAIL: inactive output lease status is inconsistent\n");
+			"FAIL: inactive output lease status is inconsistent "
+			"(enabled=%u valid=%u cfg=%u rem=%u)\n",
+			lease_status.enabled, lease_status.valid,
+			lease_status.configured_cycles,
+			lease_status.remaining_cycles);
 		failures++;
 	} else {
-		printf("PASS: inactive output lease is enabled and invalid\n");
+		printf("PASS: inactive output lease is enabled, seeded, invalid while inactive\n");
 	}
 	lease_renew.config_generation = io_status.config_generation;
 	errno = 0;

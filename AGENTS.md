@@ -16,11 +16,12 @@ decisions, risks, commands, or next steps change.
 
 - Current phase: standalone Phase 3 hardening after the first architecture
   review. IOD integration remains blocked.
-- Current UAPI is 0.17. It covers discovery, ordered setup SDOs, declarative
+- Current UAPI is 0.18. It covers discovery, ordered setup SDOs, declarative
   PDO/DC configuration, domain registration, cyclic pumping, copied input and
   masked output images, explicit arm/disarm, health, timing/DC statistics, and
   per-configured-slave validity, coherent cycle timing, capability discovery,
-  interruptible cycle notification, and acknowledged disarmed period updates.
+  interruptible cycle notification, acknowledged disarmed period updates, and
+  hang-failsafe output leases with publish/arm renew and optional timeout_ms.
 - Target is Debian RT kernel `6.1.0-49-rt-amd64` with EtherLab DKMS 1.6.9.
   Exact build artifacts are documented. Multi-kernel policy: support kernels
   where EtherLab builds (compile floor ≥ 4.19); keep shims only in
@@ -286,7 +287,7 @@ Keep this section concise. Historical milestones and validation evidence are in
 `docs/project-history.md`; focused details belong in the relevant design,
 testing, safety, and build documents.
 
-- Current API: 0.17.
+- Current API: 0.18.
 - Deactivation synchronously gates outputs and joins the cyclic thread, then
   waits for configured slaves to leave SAFEOP/OP before invalidating
   EtherLab-owned pointers. The public EtherLab lifecycle can still expose
@@ -521,6 +522,12 @@ testing, safety, and build documents.
   loss is **iod lifecycle / sampling**, not an elc WC-firewall bug. Sustained
   d1-valid/d2-incomplete is proven at elc; presentation and re-activate policy
   fix in iod-elc/CW only. Do not weaken elc isolation for IOD poll quirks.
+- API 0.18 output lease hang-failsafe for iod-elc: remaining seeded on
+  configure; successful publish/arm refill the budget (no high-rate renew);
+  optional `timeout_ms` wall-time budget; configure allowed while cycling;
+  per-domain via flags=domain_config_id; capability
+  `ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW`. Target semantics: no successful
+  publish for N ms while armed → disarm/zero/CONTROLLER_STALE.
 - Phase 7 `libelcethercat` is implemented under `lib/` with public header
   `include/elc_ethercat.h` (LGPL-2.1-or-later; SONAME major tracks UAPI major).
   Build/install: `make lib`, `make install-lib PREFIX=...`, pkg-config
