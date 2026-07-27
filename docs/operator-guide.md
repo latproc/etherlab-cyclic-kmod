@@ -36,6 +36,16 @@ make -j6
 `Module.symvers` from the same kernel/EtherLab build. Do not continue through
 an ambiguous or mismatched result.
 
+To install the kernel modules via DKMS (rebuild on kernel upgrade; requires
+EtherLab already built for that kernel):
+
+```sh
+sudo make dkms-install
+```
+
+See `docs/building/elc-dkms.md`. Use either DKMS or `sudo make install` for
+the `.ko` files, not both without cleaning the other up.
+
 ## Discovery-only check
 
 ```sh

@@ -1,0 +1,22 @@
+# Generated from dkms.conf.in — do not hand-edit dkms.conf.
+# PACKAGE_VERSION is substituted from Makefile LIB_VERSION.
+
+PACKAGE_NAME="elc-ethercat"
+PACKAGE_VERSION="@VERSION@"
+AUTOINSTALL="yes"
+
+# Rebuilds against the running/target kernel using the same contract as
+# `make modules`: matching EtherLab ecrt.h + Module.symvers (usually from
+# ethercat-dkms). See docs/building/elc-dkms.md.
+
+BUILT_MODULE_NAME[0]="elc_ethercat"
+BUILT_MODULE_LOCATION[0]="kernel/"
+DEST_MODULE_LOCATION[0]="/extra/elc_ethercat"
+
+BUILT_MODULE_NAME[1]="elc_ethercat_probe"
+BUILT_MODULE_LOCATION[1]="kernel/"
+DEST_MODULE_LOCATION[1]="/extra/elc_ethercat"
+
+# DKMS expands $kernelver and $kernel_source_dir before invoking make.
+MAKE[0]="make modules KERNEL_RELEASE=${kernelver} KERNEL_BUILD=${kernel_source_dir}"
+CLEAN[0]="make clean KERNEL_RELEASE=${kernelver} KERNEL_BUILD=${kernel_source_dir}"

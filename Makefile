@@ -18,8 +18,14 @@ LIB_VERSION_MINOR := 17
 LIB_VERSION := $(LIB_VERSION_MAJOR).$(LIB_VERSION_MINOR).0
 SONAME := libelcethercat.so.$(LIB_VERSION_MAJOR)
 
+# DKMS package identity (must match dkms.conf PACKAGE_* after generation).
+ELC_DKMS_PACKAGE := elc-ethercat
+ELC_DKMS_VERSION := $(LIB_VERSION)
+ELC_DKMS_SRC := /usr/src/$(ELC_DKMS_PACKAGE)-$(ELC_DKMS_VERSION)
+
 .PHONY: all modules lib tools check-build-env test-build-contract \
-	install install-lib uninstall uninstall-lib clean
+	install install-lib uninstall uninstall-lib clean \
+	dkms.conf dkms-stage dkms-install dkms-uninstall
 
 MODULE_INSTALL_DIR := $(DESTDIR)/lib/modules/$(KERNEL_RELEASE)/extra/elc_ethercat
 MODULE_FILES := kernel/elc_ethercat.ko kernel/elc_ethercat_probe.ko
@@ -169,3 +175,40 @@ clean:
 		tools/elc_config tools/elc_config_stress
 	$(RM) $(LIB_OBJS) $(LIB_STATIC) $(LIB_SHARED) $(LIB_SONAME_LINK) \
 		$(LIB_LINK) $(PKGCONFIG)
+	$(RM) dkms.conf
+
+# --- DKMS (kernel modules only; does not install lib/tools) ---
+
+dkms.conf: dkms.conf.in Makefile
+	sed -e 's|@VERSION@|$(ELC_DKMS_VERSION)|g' "$<" > "$@"
+
+# Stage a minimal source tree for DKMS (no tools, docs, or .git).
+dkms-stage: dkms.conf
+	@test -f dkms.conf
+	install -d "$(ELC_DKMS_SRC)/kernel" "$(ELC_DKMS_SRC)/include"
+	install -m 0644 Makefile dkms.conf "$(ELC_DKMS_SRC)/"
+	install -m 0644 kernel/Kbuild kernel/*.c "$(ELC_DKMS_SRC)/kernel/"
+	install -m 0644 include/elc_ethercat_uapi.h "$(ELC_DKMS_SRC)/include/"
+	@printf 'staged %s\n' "$(ELC_DKMS_SRC)"
+
+dkms-install: check-build-env dkms-stage
+	@if ! command -v dkms >/dev/null 2>&1; then \
+		echo "error: dkms not installed" >&2; \
+		exit 1; \
+	fi
+	@if dkms status -m $(ELC_DKMS_PACKAGE) -v $(ELC_DKMS_VERSION) 2>/dev/null | \
+		grep -q "$(ELC_DKMS_PACKAGE)/$(ELC_DKMS_VERSION)"; then \
+		echo "dkms: removing existing $(ELC_DKMS_PACKAGE)/$(ELC_DKMS_VERSION)"; \
+		dkms remove -m $(ELC_DKMS_PACKAGE) -v $(ELC_DKMS_VERSION) --all || true; \
+	fi
+	dkms add -m $(ELC_DKMS_PACKAGE) -v $(ELC_DKMS_VERSION)
+	dkms install -m $(ELC_DKMS_PACKAGE) -v $(ELC_DKMS_VERSION) -k "$(KERNEL_RELEASE)"
+	@dkms status -m $(ELC_DKMS_PACKAGE) -v $(ELC_DKMS_VERSION)
+
+dkms-uninstall:
+	@if ! command -v dkms >/dev/null 2>&1; then \
+		echo "error: dkms not installed" >&2; \
+		exit 1; \
+	fi
+	-dkms remove -m $(ELC_DKMS_PACKAGE) -v $(ELC_DKMS_VERSION) --all
+	$(RM) -r "$(ELC_DKMS_SRC)"

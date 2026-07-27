@@ -234,6 +234,18 @@ sudo ELC_TEST_REPEAT=10 tools/elc_test_master.sh
 
 The script refuses to disturb a probe module that was already loaded.
 
+## DKMS packaging for this module
+
+`elc_ethercat` can be registered as DKMS package `elc-ethercat` so it rebuilds
+on kernel upgrades. That packaging still depends on this EtherLab header and
+symbol contract (it does not replace EtherLab DKMS). See
+[`elc-dkms.md`](elc-dkms.md).
+
+```sh
+sudo make dkms-install
+sudo make dkms-uninstall
+```
+
 ## Open items
 
 - Both the minimal probe and Phase 2 character-device open contention tests

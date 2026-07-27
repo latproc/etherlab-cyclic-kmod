@@ -4189,9 +4189,16 @@ other generated EtherLab build artifacts if required
 
 The kernel-module source itself should not care whether those artifacts originated from DKMS or a manual EtherLab build.
 
-## Consider DKMS for the new module
+## DKMS for the new module
 
-After the standalone module is proven, consider providing a DKMS package for `elc_ethercat.ko` on newer systems.
+DKMS packaging for `elc_ethercat.ko` and `elc_ethercat_probe.ko` is implemented
+as package `elc-ethercat` (`dkms.conf.in`, `make dkms-install` /
+`make dkms-uninstall`, `docs/building/elc-dkms.md`). It rebuilds against a
+target kernel using the same EtherLab header/`Module.symvers` contract as
+`make modules` and does not install the userspace library or tools.
+
+After the standalone module is proven on a site, prefer DKMS on systems that
+already use EtherLab DKMS:
 
 Conceptually:
 

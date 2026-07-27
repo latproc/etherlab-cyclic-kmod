@@ -178,6 +178,23 @@ Uninstall the installed kernel modules with:
 sudo make uninstall
 ```
 
+### DKMS (kernel modules)
+
+To rebuild the modules automatically when the kernel is updated, use DKMS
+instead of (or after removing) a plain `make install` of the `.ko` files.
+EtherLab must already be built for that kernel with a matching
+`Module.symvers` (typically `ethercat-dkms`):
+
+```sh
+make check-build-env
+sudo make dkms-install
+dkms status
+```
+
+Remove with `sudo make dkms-uninstall`. Details:
+[docs/building/elc-dkms.md](docs/building/elc-dkms.md). DKMS does not install
+`libelcethercat` or the userspace tools.
+
 For the complete build, load, scheduler-option, teardown, and recovery
 sequence, follow the [standalone operator guide](docs/operator-guide.md).
 
@@ -256,6 +273,9 @@ layout is stable across a changed configuration.
 
 ## Documentation map
 
+- [EtherLab build environment](docs/building/etherlab-dkms-environment.md) —
+  target paths and build contract.
+- [elc DKMS packaging](docs/building/elc-dkms.md) — install modules via DKMS.
 - [Architecture](docs/architecture.md) — ownership, lifecycle, domains, and
   cycle timeline.
 - [UAPI](docs/uapi.md) — ioctl structures, validation, and exact semantics.

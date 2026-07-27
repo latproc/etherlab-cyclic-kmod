@@ -257,3 +257,7 @@ commands, outputs, and design details.
   `elc_ethercat_uapi.h` as GPL-2.0-only OR LGPL-2.1-or-later so non-public
   applications may link the library. Kernel modules and tools remain
   GPL-2.0-only.
+- Added DKMS packaging for the kernel modules (`elc-ethercat` package,
+  `make dkms-install` / `dkms-uninstall`). Build still requires matching
+  EtherLab headers/`Module.symvers` (typically `ethercat-dkms`). Proven
+  install on the target RT kernel; userspace lib/tools stay outside DKMS.
