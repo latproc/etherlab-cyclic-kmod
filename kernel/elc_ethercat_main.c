@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 #include <linux/atomic.h>
-#include <linux/compat.h>
 #include <linux/cpu.h>
 #include <linux/delay.h>
 #include <linux/errno.h>
@@ -10,35 +9,21 @@
 #include <linux/init.h>
 #include <linux/kthread.h>
 #include <linux/list.h>
-#include <linux/math64.h>
 #include <linux/miscdevice.h>
-#include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/overflow.h>
 #include <linux/sched.h>
-#include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/string.h>
 #include <linux/timekeeping.h>
 #include <linux/uaccess.h>
-#include <linux/version.h>
-#include <linux/vmalloc.h>
 #include <linux/wait.h>
-/*
- * 5.9+: sched_attr lives in uapi/linux/sched/types.h (needed for
- * sched_setattr_nocheck). 4.19: that UAPI header is incomplete for our use;
- * linux/sched/types.h provides struct sched_param for setscheduler.
- */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
-#include <uapi/linux/sched/types.h>
-#else
-#include <linux/sched/types.h>
-#endif
 
 #include <ecrt.h>
 
 #include "elc_ethercat_uapi.h"
+#include "elc_kcompat.h"
 
 #define ELC_NAME "elc_ethercat"
 #define ELC_DEACTIVATE_SETTLE_MS 5000U
@@ -2293,23 +2278,8 @@ static long elc_cycle_activate(struct elc_file *ctx, void __user *argp)
 			goto thread_config_failed;
 	}
 	if (elc_cycle_fifo_priority) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
-		struct sched_attr attr = {
-			.size = sizeof(attr),
-			.sched_policy = SCHED_FIFO,
-			.sched_priority = elc_cycle_fifo_priority,
-		};
-
-		ret = sched_setattr_nocheck(ctx->cycle_thread, &attr);
-#else
-		/* 4.19 and similar: FIFO via classic setscheduler. */
-		struct sched_param param = {
-			.sched_priority = elc_cycle_fifo_priority,
-		};
-
-		ret = sched_setscheduler_nocheck(ctx->cycle_thread, SCHED_FIFO,
-						&param);
-#endif
+		ret = elc_set_fifo_priority(ctx->cycle_thread,
+					    elc_cycle_fifo_priority);
 		if (ret)
 			goto thread_config_failed;
 	}
@@ -4411,32 +4381,14 @@ static long elc_ioctl(struct file *file, unsigned int cmd,
 	}
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
-/*
- * compat_ptr_ioctl() arrived in 5.0. On 4.19, map the pointer the same way
- * for fixed-size ioctl structures (no pointer arguments in the UAPI).
- */
-static long elc_compat_ioctl(struct file *file, unsigned int cmd,
-			     unsigned long arg)
-{
-#ifdef CONFIG_COMPAT
-	return elc_ioctl(file, cmd, (unsigned long)compat_ptr(arg));
-#else
-	return -ENOIOCTLCMD;
-#endif
-}
-#endif
+ELC_DEFINE_COMPAT_IOCTL(elc_ioctl)
 
 static const struct file_operations elc_fops = {
 	.owner = THIS_MODULE,
 	.open = elc_open,
 	.release = elc_release,
 	.unlocked_ioctl = elc_ioctl,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
-	.compat_ioctl = compat_ptr_ioctl,
-#elif defined(CONFIG_COMPAT)
-	.compat_ioctl = elc_compat_ioctl,
-#endif
+	ELC_FOP_COMPAT_IOCTL
 	.llseek = no_llseek,
 };
 

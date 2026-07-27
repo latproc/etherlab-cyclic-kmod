@@ -127,7 +127,8 @@ acceptance gaps.
 
 You need:
 
-- a Linux kernel build tree matching the running target kernel;
+- a Linux kernel build tree matching the running target kernel (**≥ 4.19**;
+  see [kernel support](docs/building/kernel-support.md));
 - an EtherLab master built for that same kernel;
 - EtherLab `ecrt.h`;
 - the exact `Module.symvers` from that EtherLab build; and
@@ -137,9 +138,11 @@ Do not combine a header or symbol file from another EtherLab or kernel build.
 The build deliberately fails when paths are missing or automatic DKMS
 detection is ambiguous.
 
-The recorded target is Debian RT kernel `6.1.0-49-rt-amd64` with EtherLab DKMS
-1.6.9. Other combinations are not claimed until tested. Exact paths and manual
-build overrides are documented in the
+**Kernel policy:** if EtherLab builds on a kernel, this transport aims to
+support it. Version differences go in `kernel/elc_kcompat.h`. The recorded
+**hardware acceptance** target is still Debian RT `6.1.0-49-rt-amd64` with
+EtherLab DKMS 1.6.9; older RT (for example 4.19 + source EtherLab) is
+supported for build and is validated progressively. Exact paths and overrides:
 [EtherLab build environment](docs/building/etherlab-dkms-environment.md).
 
 ## Build and install
@@ -273,6 +276,8 @@ layout is stable across a changed configuration.
 
 ## Documentation map
 
+- [Kernel support policy](docs/building/kernel-support.md) — multi-kernel
+  floor, kcompat rules, how to add features.
 - [EtherLab build environment](docs/building/etherlab-dkms-environment.md) —
   target paths and build contract.
 - [elc DKMS packaging](docs/building/elc-dkms.md) — install modules via DKMS.

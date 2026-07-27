@@ -261,3 +261,7 @@ commands, outputs, and design details.
   `make dkms-install` / `dkms-uninstall`). Build still requires matching
   EtherLab headers/`Module.symvers` (typically `ethercat-dkms`). Proven
   install on the target RT kernel; userspace lib/tools stay outside DKMS.
+- Multi-kernel support policy: compile floor Linux ≥ 4.19; central shims in
+  `kernel/elc_kcompat.h`; document that kernels where EtherLab builds are in
+  scope. FIFO and compat ioctl helpers extracted from main; primary acceptance
+  remains 6.1 RT.

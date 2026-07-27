@@ -51,7 +51,7 @@ modinfo elc_ethercat
 
 1. writes `dkms.conf` from `dkms.conf.in` (version = library/UAPI `0.x.0`);
 2. stages a minimal source tree under `/usr/src/elc-ethercat-<version>/`
-   (`Makefile`, `dkms.conf`, `kernel/`, `include/`);
+   (`Makefile`, `dkms.conf`, `kernel/` including `elc_kcompat.h`, `include/`);
 3. runs `dkms add` (if needed) and `dkms install -k $(uname -r)`.
 
 Modules are registered as package **`elc-ethercat`**. Built objects:

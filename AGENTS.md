@@ -22,7 +22,10 @@ decisions, risks, commands, or next steps change.
   per-configured-slave validity, coherent cycle timing, capability discovery,
   interruptible cycle notification, and acknowledged disarmed period updates.
 - Target is Debian RT kernel `6.1.0-49-rt-amd64` with EtherLab DKMS 1.6.9.
-  Exact build artifacts are documented.
+  Exact build artifacts are documented. Multi-kernel policy: support kernels
+  where EtherLab builds (compile floor ≥ 4.19); keep shims only in
+  `kernel/elc_kcompat.h` (see `docs/building/kernel-support.md`). Primary
+  hardware acceptance remains 6.1 until re-proven elsewhere.
 - Master contention, discovery, lifecycle, declarative PDO mapping, DC,
   zero-output cycling, live servo power loss/restoration, stale-output
   re-arming, and controller-death teardown have hardware evidence.

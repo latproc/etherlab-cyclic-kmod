@@ -199,7 +199,7 @@ dkms-stage: dkms.conf
 	@test -f dkms.conf
 	install -d "$(ELC_DKMS_SRC)/kernel" "$(ELC_DKMS_SRC)/include"
 	install -m 0644 Makefile dkms.conf "$(ELC_DKMS_SRC)/"
-	install -m 0644 kernel/Kbuild kernel/*.c "$(ELC_DKMS_SRC)/kernel/"
+	install -m 0644 kernel/Kbuild kernel/*.c kernel/*.h "$(ELC_DKMS_SRC)/kernel/"
 	install -m 0644 include/elc_ethercat_uapi.h "$(ELC_DKMS_SRC)/include/"
 	@printf 'staged %s\n' "$(ELC_DKMS_SRC)"
 
