@@ -62,6 +62,67 @@ sudo make dkms-install
 See `docs/building/elc-dkms.md`. Use either DKMS or `sudo make install` for
 the `.ko` files, not both without cleaning the other up.
 
+## Main link without control ownership
+
+Opening `/dev/elc_ethercat0` (or running `tools/elc_bus`) **claims master 0
+exclusively**. That is correct for a real controller session and wrong for a
+boot script that only wants “is the EtherCAT cable up?” — the extra open/close
+shows up in kernel logs as a second control-owner acquire/release before the
+application starts.
+
+**Supported interface for non-owner link state:** EtherLab userspace
+
+```sh
+ethercat master
+```
+
+Inspect the **Main** Ethernet device block:
+
+```text
+Master0
+  Phase: Idle | Operation
+  ...
+  Ethernet devices:
+    Main: aa:bb:cc:dd:ee:ff (attached)
+      Link: UP
+```
+
+```sh
+# one-shot parse
+link=$(ethercat master 2>/dev/null | awk '
+  /Main:/{m=1}
+  m && /Link:/{print toupper($2); exit}
+')
+[ "$link" = "UP" ] && echo "EC main link up"
+```
+
+This works when the master is idle **and** when another application (including
+an elc controller) already owns master 0. It does **not** open
+`/dev/elc_ethercat0` and must not thrash `elc_ethercat: control owner …`.
+
+**Do not** use ordinary netdev carrier on management NICs as a substitute: the
+EC main MAC is the value in
+
+```sh
+cat /sys/module/ec_master/parameters/main_devices
+```
+
+and is typically owned by the EtherLab NIC driver, not a normal IP interface.
+
+**Do not** poll `elc_bus` in a wait loop before `iod` / a production controller
+unless you deliberately want exclusive opens (lab only).
+
+Controller start pattern:
+
+```text
+1. ensure elc_ethercat (and ec_master) are loaded
+2. wait until: ethercat master → Main Link: UP   # optional, no elc open
+3. open /dev/elc_ethercat0 once (real control owner)
+4. configure / activate / cycle
+```
+
+UAPI ownership notes: [uapi.md](uapi.md#ownership-and-lifecycle).
+
 ## Discovery-only check
 
 ```sh
@@ -72,6 +133,9 @@ ethercat master
 ```
 
 After release, `ethercat master` must report `Phase: Idle` and `Active: no`.
+`ethercat master` itself never required the elc open; it is listed so you can
+confirm the master returned to idle after `elc_bus` closed.
+
 For the repeatable ABI and identity comparison:
 
 ```sh

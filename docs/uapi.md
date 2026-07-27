@@ -25,8 +25,56 @@ state associated with this owner. The file operations hold a module reference,
 so normal module unload cannot race an open file.
 
 This initial API intentionally supports one controller and no diagnostic-only
-opens. A future status interface must not bypass EtherLab's exclusive
-application ownership rules.
+opens on `/dev/elc_ethercat*`. **Do not use `elc_open` / `tools/elc_bus` only
+to poll link before a controller starts** — each open is a full control-owner
+claim (`ecrt_request_master`) and appears in `dmesg` as acquire/release
+thrash next to the real application open.
+
+### Main link without claiming the elc control device
+
+EtherLab already exposes main-device link state without opening
+`/dev/elc_ethercat0`. Use the EtherLab userspace tool (same stack the master
+module uses):
+
+```sh
+# While master is Idle, or while another app (including elc) owns it:
+ethercat master
+```
+
+Under the main Ethernet device block, look for:
+
+```text
+Ethernet devices:
+  Main: <mac> (attached)
+    Link: UP
+```
+
+Parse example (shell):
+
+```sh
+ethercat master 2>/dev/null | awk '
+  /Main:/{m=1}
+  m && /Link:/{print toupper($2); exit}
+'
+# prints UP or DOWN
+```
+
+| Method | Claims `/dev/elc_ethercat0`? | Claims master as application? | Use for pre-start wait? |
+|--------|-----------------------------|-------------------------------|-------------------------|
+| `ethercat master` → Main `Link:` | no | no (status via EtherLab master path) | **yes** (recommended) |
+| `tools/elc_bus` / `elc_open` | **yes** | **yes** (exclusive) | **no** (extra open/close) |
+| `ELC_IOC_GET_MASTER_INFO` | only after exclusive open | yes | no (same owner as control) |
+| Netdev `carrier` / `operstate` on ordinary NICs | no | no | **unreliable** for the EC main port: `ec_master` `main_devices` MAC is bound by the EtherLab NIC driver and is often **not** a normal UP interface |
+
+After the control application has opened elc, link remains available on
+`ELC_IOC_GET_MASTER_INFO` / cycle IO status for that owner. Pre-start and
+“is the cable up before we become the owner?” belong to **`ethercat master`**,
+not a second elc open.
+
+A future optional elc **status-only** open (if added) must not call
+`ecrt_request_master` or take control ownership; until then the supported
+non-owner link interface is EtherLab’s `ethercat master` Main Link field.
+See also [operator guide — link without control ownership](operator-guide.md#main-link-without-control-ownership).
 
 ## Versioning
 

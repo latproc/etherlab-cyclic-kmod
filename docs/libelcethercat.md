@@ -214,16 +214,30 @@ typedef uint32_t elc_entry_id;
 EtherLab application that has requested master 0 (including direct
 `ecrt_request_master(0)` clients). Only one application owner at a time.
 
+**Pre-start link (no handle):** `elc_open` is the wrong tool if you only need
+“is Main link up?” before the controller becomes owner. Each open claims
+master 0 and produces a control-owner acquire/release pair in `dmesg`.
+Use EtherLab’s non-owner status path instead:
+
+```sh
+ethercat master   # Main device block → Link: UP | DOWN
+```
+
+See [operator guide — main link without control ownership](operator-guide.md#main-link-without-control-ownership)
+and [uapi ownership](uapi.md#ownership-and-lifecycle). After you hold an
+`elc_handle`, `elc_get_master_info` / IO status report link for that session.
+
 ### 4.3 Discovery
 
 | Function | Behaviour |
 |----------|-----------|
-| `elc_get_master_info(h, struct elc_master_info *info)` | Link, scan busy, slave count. |
+| `elc_get_master_info(h, struct elc_master_info *info)` | Link, scan busy, slave count (**requires open handle**). |
 | `elc_get_slave_info(h, uint16_t position, struct elc_slave_info *info)` | One position. |
 | `elc_list_slaves(h, elc_slave_summary *buf, size_t cap, size_t *count)` | Convenience: fill summaries for `0..slave_count-1`. Caller chooses whether to wait while `scan_busy`. |
 
 Discovery returns raw bus identity. Matching policy (required topology,
 revision rules, alias use) is entirely the controller’s responsibility.
+Pre-open cable check is not a library call; use `ethercat master` as above.
 
 ### 4.4 Ordered setup SDOs (pre-activation)
 
@@ -421,7 +435,8 @@ integrations:
 
 | Tool | Library? | Coverage |
 |------|----------|----------|
-| `elc_bus` | yes | open, negotiate, discovery |
+| `elc_bus` | yes | open, negotiate, discovery (**exclusive**; not for pre-start link poll loops) |
+| EtherLab `ethercat master` | n/a | Main **Link** without elc open (recommended pre-start wait) |
 | `elc_sdo` | yes | setup / upload / recipes |
 | `elc_config` | yes | full config, cycle, images, timing; hostile active checks still use raw ioctl via `elc_fd` so wrong `struct_size` is not papered over |
 | `elc_config_stress` | yes | maximum pending create/reset limits |

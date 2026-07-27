@@ -113,4 +113,18 @@ Phase 11 cyclic path: wait, snapshot, publish, arm
 - Prefer object selectors; no silent fallback from object to flat pos
 - Motion inhibited for first cyclic tests
 - Kernel path stays opt-in until an explicit production decision
+- Pre-start link wait: use `ethercat master` Main Link (no elc_open / elc_bus poll)
+- Do not open /dev/elc_ethercat0 only to check cable; that is exclusive control
 ```
+
+## Pre-start link (no elc open)
+
+```text
+ethercat master
+  → Ethernet devices / Main / Link: UP
+
+Not: tools/elc_bus in a loop (exclusive open/close thrash in dmesg)
+Not: ordinary netdev carrier on management NICs (wrong MAC vs main_devices)
+```
+
+Docs: operator-guide.md § Main link without control ownership; uapi.md § Ownership.

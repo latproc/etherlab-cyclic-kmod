@@ -93,6 +93,23 @@ timeline. This delegation is planned, not part of API 0.18.
                        EtherCAT network
 ```
 
+## Main link without opening the elc device
+
+`/dev/elc_ethercat0` is an **exclusive** application owner. Do not open it
+(or run `tools/elc_bus`) only to wait for cable/link before a controller
+starts — that double-claims the master and clutters kernel logs.
+
+**Non-owner link check** (EtherLab userspace; works idle or while another app
+owns master 0):
+
+```sh
+ethercat master
+# under Main: … → Link: UP
+```
+
+Details: [operator guide](docs/operator-guide.md#main-link-without-control-ownership),
+[UAPI ownership](docs/uapi.md#ownership-and-lifecycle).
+
 ## What is implemented?
 
 API 0.18 currently includes:
