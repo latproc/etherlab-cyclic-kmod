@@ -498,11 +498,16 @@ testing, safety, and build documents.
   arm/rearm/healthy state and process-image output buffers. Global publish
   (domain_config_id=0) fans out to all domains; arm/disarm flags=0 apply to
   all domains, non-zero flags select domain_config_id. Domain bus firewall:
-  complete domain WC keeps that domain healthy/valid; incomplete WC and that
-  domain's slaves only affect that domain. Transient slave_config offline
-  during re-scan must not invalidate a domain with complete WC (live: drive
-  power loss left domain 1 WC complete while domain 2 died). Capability
+  complete domain WC keeps that domain healthy/valid with no interruption when
+  another domain fails (power loss, cable damage, module failure on that
+  segment); incomplete WC fails only that domain. Transient slave_config
+  offline during re-scan must not invalidate a complete-WC domain. Live
+  dual-domain drive control power loss/restore: domain 1 stayed valid through
+  re-scan; domain 2 failed and recovered; no transport restart. Capability
   ELC_CAP_DOMAIN_OUTPUT_AUTHORITY is advertised.
+- Future (with Section 13C multi-client domain fds): also plan ring/redundant
+  Ethernet (out one NIC, in another) so mid-bus cable splits can be handled
+  physically; software domains alone cannot invent a path past a line break.
 - Phase 7 `libelcethercat` is implemented under `lib/` with public header
   `include/elc_ethercat.h` (GPL-2.0-only, SONAME major tracks UAPI major).
   Build/install: `make lib`, `make install-lib PREFIX=...`, pkg-config

@@ -126,10 +126,10 @@ one bounded snapshot and one stable entry-ID namespace while allowing each
 domain to report its own WC and validity.
 
 Per-configured-slave status is keyed by stable configuration ID. In explicit
-mode its conservative `data_valid` requires that slave online and operational,
-a published input snapshot, and complete WC for that slave's assigned domain.
-One incomplete switchable-drive domain must not invalidate an independently
-complete always-powered-I/O domain.
+mode, bus `data_valid` follows the assigned domain's complete WC and a
+published input snapshot. `online` / `operational` remain separate. One
+incomplete switchable-drive domain must not interrupt an independently
+complete always-powered I/O domain (domain bus firewall).
 
 The master still has one cyclic task and one datagram cadence. The cyclic order
 is receive; process every domain; assemble the input snapshot; reference/DC
@@ -145,6 +145,9 @@ latched fault epoch, lease, and per-domain health for output selection.
 all-domain compatibility; non-zero selects one domain. Aggregate IO status
 reports any-armed / any-rearm across authorities. Domain status reports that
 domain's own arm and re-arm fields. Master/link still gates every authority.
+Domain WC isolates domain health: power loss, cable damage, or module failure
+on one domain must not clear validity or gate outputs for domains that still
+have complete WC.
 
 Detailed concurrency and recovery rules are in
 `process-image-exchange.md`; DC behavior is in `distributed-clocks.md`.
@@ -220,6 +223,33 @@ All connections observe the same global cycle identity and notification
 timeline. Domain output generations can advance independently, but this does
 not provide atomic cross-domain commits. A future group-commit facility would
 need explicit cycle-addressed semantics.
+
+### Cable-level bus splits and ring Ethernet (development requirement)
+
+Software domain isolation assumes the physical segment for a healthy domain
+still has a path to the master. On a **line** topology, a break or power loss
+at a mid-chain device can black out every slave after the fault even if those
+slaves are in a different software domain. Domain grouping should place
+always-on I/O **before** switchable equipment in the physical order when
+possible, but that is not enough for true cable-split survival.
+
+When the project adds **extra domain ownership on extra user-space interfaces**
+(Section 13C delegated domain fds), it shall **also** plan support for
+**redundant Ethernet / loop (ring) master configuration**: traffic out one
+Ethernet port and in on another so a single cable break or mid-bus failure
+can be handled without losing the entire run. That work includes:
+
+- documenting the target EtherLab multi-device / redundant-link model for the
+  installed master version;
+- UAPI or build-time configuration for primary and secondary NICs and ring
+  policy;
+- validation that domains on the surviving path keep complete WC and remain
+  independently armable across a deliberate split;
+- interaction with delegated domain fds (which controller sees which segment
+  after a split).
+
+Do not implement ring support ad hoc outside that design; it is a planned
+companion to multi-client domain interfaces, not a silent kernel default.
 
 Closing or expiring a delegated controller gates its domains while the common
 cycle and unrelated authorities continue. Closing the coordinator gates all

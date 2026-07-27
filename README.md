@@ -36,6 +36,10 @@ application policy in the kernel:
 - **Per-domain output authority (API 0.17):** each domain has its own arm,
   re-arm, publication buffers, and health gate. A drive-domain fault need not
   disarm a healthy I/O domain; master/link loss still gates every domain.
+- **Domain bus firewall:** complete domain WC keeps that domain valid with no
+  interruption when another domain fails (power loss, cable damage, module
+  failure). Ring/redundant Ethernet for mid-bus cable splits is a planned
+  companion to multi-client domain interfaces.
 - **Safe copied exchange:** bounded double-buffered input and masked output
   images avoid retaining user pointers or exposing kernel memory.
 - **Fail-safe output control:** publishing data never arms it. Arming is

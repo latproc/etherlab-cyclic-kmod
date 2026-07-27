@@ -27,30 +27,45 @@ The cyclic thread evaluates master link state, then per-domain:
 - complete working-counter state for that domain.
 
 API 0.17 owns one `elc_output_authority` per configured domain. Master/link
-loss disarms every authority. Beyond that, domains are isolated by a bus
-firewall: each domain's working counter is the primary boundary. A complete
-domain WC keeps that domain healthy and `data_valid` even if EtherLab briefly
-reports slave_config offline during a topology re-scan when another domain
-drops (e.g. drives powered off). Incomplete WC fails only that domain and
-then includes that domain's offline/not-OP slave bits for diagnosis. Restored
-link/slaves do not restore an old armed shadow. Re-arm of an affected
-authority requires an output update newer than its fault epoch and an explicit
-arm while that authority is healthy.
+loss disarms every authority. Beyond that, domains are isolated by a **domain
+bus firewall**:
+
+1. **Working counter is the domain isolation boundary.** A complete domain WC
+   keeps that domain healthy and `data_valid`. Incomplete WC fails only that
+   domain.
+2. **No interruption to healthy domains “upstream” of a failed segment.**
+   Power loss, cable damage, or module failure on a later domain must not
+   invalidate or gate a domain that still has complete WC. Domains earlier in
+   the process-image layout / physical run that continue exchanging stay
+   valid and remain independently armable.
+3. **Transient EtherLab re-scan offline flags must not pierce the firewall.**
+   When slaves drop off the bus, EtherLab may re-scan and briefly report
+   `slave_config` offline for everyone. While a domain's WC stays complete,
+   those flags are not OR'd into that domain's health.
+4. **Per-slave `data_valid` follows the assigned domain WC** (with a published
+   input sequence). `online` / `operational` / AL remain separate fields for
+   application policy (e.g. PS1/PS2 bits can change while domain WC is fine).
+5. **When WC is incomplete**, that domain's offline/not-OP slave bits are
+   included for diagnosis only.
+
+Restored link/slaves do not restore an old armed shadow. Re-arm of an
+affected authority requires an output update newer than its fault epoch and
+an explicit arm while that authority is healthy.
 
 This behavior is deterministic software containment, not a replacement for
-hardware safety.
+hardware safety. Physical cable splits that black out devices *inside* a
+domain still fail that domain's WC; the firewall isolates *other* domains.
 
 Earlier global-gate power-loss evidence (shared domain) still holds for the
-latched re-arm rule. Separate-domain independence under live drive power loss
-is the intended Monday commissioning check: I/O domain validity and arm must
-not depend on drive-domain WC.
+latched re-arm rule on single-domain configs. Live dual-domain drive control
+power loss on the 34-slave fixture is hardware-proven: domain 1 (Beckhoff
+I/O) stayed `valid=1` with complete WC through re-scan; domain 2 (ED3L)
+went incomplete; both recovered after restore without transport restart.
 
 API 0.14 exposes each configured slave's online, operational, and AL state by
-stable `config_id`. Its `data_valid` flag additionally requires a published
-snapshot and complete WC for that slave's assigned domain. Snapshots remain
-inspectable when another domain is incomplete. Aggregate IO status reports
-global link/counts and any-armed / any-rearm; domain status reports each
-authority's arm and re-arm fields.
+stable `config_id`. Aggregate IO status reports global link/counts and
+any-armed / any-rearm; domain status reports each authority's arm and re-arm
+fields. Snapshots remain inspectable when another domain is incomplete.
 
 When the optional output lease is enabled, its armed-cycle budget is part of
 the domain's output authority. Expiry synchronously selects zeros for that

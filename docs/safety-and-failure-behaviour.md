@@ -45,36 +45,33 @@ startup policy belongs in user space.
 
 ## Required power-loss behavior
 
-When a configured drive disappears under a split-domain layout (API 0.17):
+When a configured drive domain fails under a split-domain layout (API 0.17
+domain bus firewall — power loss, cable damage, or module failure on that
+segment):
 
 1. keeps the cyclic thread running;
 2. reports aggregate configured online/operational counts and fault bits;
-3. closes the **drive domain's** output authority only (master/link loss still
+3. closes **only domains whose WC is incomplete** (master/link loss still
    closes every domain);
-4. latches `rearm_required` and the fault epoch on that authority;
-5. continues publishing snapshots and counters, including healthy I/O domains;
-6. permits EtherLab to reconfigure the returning slave without process restart;
-7. leaves a healthy I/O domain armable independently once policy and sequence
-   requirements are met.
+4. latches `rearm_required` and the fault epoch on failed authorities only;
+5. continues publishing snapshots and counters for **healthy** domains with
+   **no interruption** to those domains' validity or arm eligibility;
+6. permits EtherLab to reconfigure returning slaves without process restart;
+7. leaves a complete-WC I/O domain independently armable once policy and
+   sequence requirements are met.
+
+Healthy domains must not go invalid because another domain failed or because
+EtherLab briefly reports global `slave_config` offline during re-scan while
+their WC stays complete. Application process values (e.g. PS1/PS2) may still
+change; that is not a domain-bus failure.
 
 Shared-domain historical tests closed a single global gate on the same fault;
 that remains the behavior of a one-domain configuration.
 
-API 0.12 reports each configured slave separately. Its `data_valid` requires
-that slave online and OP, at least one input snapshot, and complete WC for its
-assigned domain. A live position-29 power cycle on the earlier shared-domain
-implementation proved `data_valid` clears first on domain-incomplete, remains
-clear while the
-slave is offline, and returns only after the slave is online and OP again.
-`rearm_required` remained latched after recovery and outputs remained
-disarmed.
-
-A later API 0.11 mixed test with a present EL5152 and absent ED3L proved the
-EL5152 still reaches OP and its bytes update while the combined domain WC is
-incomplete. EtherLab 1.6.9 exposes WC state per domain, not per slave.
-API 0.12 now provides those explicit domains and independently evaluates their
-WC. The powered-off ED3L test with separate domains is still outstanding; OP
-state alone remains insufficient evidence to weaken `data_valid`.
+API 0.12 reports each configured slave separately. Per-slave bus `data_valid`
+follows the assigned domain WC (plus a published snapshot). A live dual-domain
+drive control-power cycle on the full topology proved domain 1 stayed valid
+with complete WC while domain 2 went incomplete and later recovered.
 
 `last_latched_faults` accumulates every cause observed while that re-arm
 requirement remains set. It is not merely the first cyclic sample of the

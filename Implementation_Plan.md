@@ -3295,6 +3295,31 @@ generation handling across deactivate/reactivate
 resource limits for delegated connections
 ```
 
+## Companion requirement: ring / redundant Ethernet for bus splits
+
+Delegated multi-domain user-space interfaces alone do **not** fix physical
+cable splits on a line topology. A break or mid-chain module failure can still
+black out every device after the fault, including slaves that belong to an
+otherwise healthy software domain.
+
+When implementing extra domains on extra user-space interfaces (this
+section), the design and implementation track shall **also** include support
+for **Ethernet ring / loop configuration** (traffic out one master Ethernet
+port and in on another, or the EtherLab-supported redundant-link model for
+the target master version) so the system can handle bus splits correctly:
+
+```text
+primary and secondary NIC configuration (UAPI and/or build contract)
+EtherLab multi-device / redundant link semantics for the installed version
+surviving-path domain WC and independent arm after a deliberate split
+interaction of ring recovery with delegated domain fds
+operator documentation and acceptance tests for cable break / restore
+```
+
+Software domain isolation (per-domain WC firewall) remains mandatory and is
+already hardware-proven for end-of-chain drive power loss. Ring support is
+the physical complement for mid-bus cable damage and similar splits.
+
 No Clockwork, CiA 402, servo, axis or motion-planner policy may enter this API.
 
 ---

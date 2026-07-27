@@ -1143,8 +1143,29 @@ Smoke evidence on the dual-domain 34-slave fixture
 - cycle-zero-arm: arm, stale rejection after disarm, fresh sequence accepted;
 - clean module unload returns master 0 idle with 34 slaves visible.
 
-Outstanding hardware check: power-off drive domain only and confirm domain 1
-(I/O) remains valid and independently armable while domain 2 is incomplete.
+### Live domain bus firewall (drive control power loss)
+
+Disarmed `cycle-monitor` on the dual-domain full topology, with domain 1 =
+Beckhoff I/O (pos 0–28) and domain 2 = five ED3L drives (pos 29–33):
+
+1. **Baseline:** 34/34 OP; both domains `valid=1`, complete WC.
+2. **Servo control power off** (application PS1/PS2 may also change; that is
+   process data, not domain WC): EtherLab re-scans to 29 responding slaves.
+   Domain 1 **stays** `valid=1`, WC complete, `faults=0` through the re-scan
+   blip. Domain 2 `valid=0`, WC incomplete, faults include offline / not-OP /
+   incomplete (`0x38`). Aggregate `healthy=0`, `rearm_required` latched on the
+   drive authority path. Cyclic task continues; no transport restart.
+3. **Restore:** drives return to OP; domain 2 WC recovers to complete;
+   `healthy=1`, both domains `valid=1`. Domain 1 never lost validity.
+
+Requirement: **no interruption to domains that still have complete WC** when
+another domain fails (power loss, cable damage, module failure on that
+segment). Healthy domains must remain independently status-valid and armable.
+
+Physical line topology can still black out devices *after* a hard cable break;
+software firewalls cannot invent a path. Ring/redundant Ethernet for true
+bus-split survival is a future development item with delegated multi-client
+domains (see architecture and Implementation Plan Section 13C).
 
 ## API 0.14 controller output lease
 

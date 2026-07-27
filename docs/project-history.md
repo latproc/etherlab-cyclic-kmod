@@ -239,11 +239,17 @@ commands, outputs, and design details.
   (`domain_config_id` / `flags` = 0); non-zero targets one domain. Capability
   `ELC_CAP_DOMAIN_OUTPUT_AUTHORITY` is advertised. Dual-domain 34-slave
   disarmed cycle-strict and zero-arm smoke tests pass with both domains valid.
-  Live drive power-loss independence (I/O domain stays armable while drives
-  are offline) remains a pending hardware check.
+  Live drive power-loss independence was then hardware-proven and hardened.
 - Completed DC period-update contract while disarmed: host period, matching
   SYNC0 config rewrite, and DC filter reset at a cycle boundary. Live ED3L
   1 ms→500 us screen completed with zero overruns and valid DC reference.
   DC motion-clock fields are published under the same lock as cycle_info.
   EL5152 dual-revision fixed-map: transport fixture matches live CoE maps;
   IOD `modules.lpc` `EL5152_03` revision corrected to `0x00120000`.
+- Domain bus firewall: domain health follows complete WC; transient EtherLab
+  re-scan offline flags no longer invalidate complete-WC domains. Live
+  dual-domain servo control power loss: domain 1 (I/O) stayed valid through
+  re-scan; domain 2 incomplete; restore returned 34/34 and both domains
+  valid without transport restart. Documented requirement: no interruption to
+  healthy domains when another domain fails. Future 13C multi-client domain
+  work must also plan ring/redundant Ethernet for true cable-split survival.
