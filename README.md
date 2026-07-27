@@ -160,13 +160,31 @@ sudo make install
 under `/lib/modules/$(uname -r)/extra/elc_ethercat/` and runs `depmod`.
 User-space tools remain in `tools/`.
 
-For a manually built EtherLab tree, provide the matching artifacts explicitly:
+For a manually built EtherLab tree, provide the matching artifacts once, then
+**remember** them in a gitignored `local.mk`:
+
+```sh
+make \
+  ETHERLAB_INCLUDE=/path/to/etherlab/include \
+  ETHERLAB_SYMVERS=/path/to/etherlab/Module.symvers \
+  save-build-env
+
+make -j6
+sudo make install
+```
+
+`save-build-env` writes `local.mk` (see `local.mk.example`). After that, plain
+`make` / `make install` / `make dkms-install` reuse those paths. Command-line
+`VAR=...` still overrides. Delete `local.mk` to return to EtherLab DKMS
+auto-detection.
+
+One-shot without saving:
 
 ```sh
 make \
   KERNEL_BUILD=/path/to/kernel/build \
   ETHERLAB_INCLUDE=/path/to/etherlab/include \
-  ETHERLAB_SYMVERS=/path/to/etherlab/build/Module.symvers
+  ETHERLAB_SYMVERS=/path/to/etherlab/Module.symvers
 ```
 
 Verify that the external-path build contract fails closed as expected:

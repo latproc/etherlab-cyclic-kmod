@@ -1,0 +1,15 @@
+# Site-local EtherLab / kernel paths for this machine.
+# Copy to local.mk (gitignored) or run:
+#   make ETHERLAB_INCLUDE=... ETHERLAB_SYMVERS=... save-build-env
+#
+# Use := so these replace Makefile DKMS defaults. Command-line make VAR=...
+# still overrides local.mk.
+
+# --- source / manual EtherLab (example: 2G45) ---
+# KERNEL_RELEASE := 4.19.255-rt113-4c09-rt
+# KERNEL_BUILD := /lib/modules/4.19.255-rt113-4c09-rt/build
+# ETHERLAB_INCLUDE := /usr/src/ethercat-stable/include
+# ETHERLAB_SYMVERS := /usr/src/ethercat-stable/Module.symvers
+
+# --- EtherLab DKMS with multiple versions: pin one ---
+# ETHERLAB_VERSION := 1.6.9

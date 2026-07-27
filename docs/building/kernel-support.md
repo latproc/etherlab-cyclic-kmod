@@ -65,10 +65,14 @@ make -j"$(nproc)"
 ```sh
 make \
   ETHERLAB_INCLUDE=/path/to/etherlab/include \
-  ETHERLAB_SYMVERS=/path/to/etherlab/Module.symvers
+  ETHERLAB_SYMVERS=/path/to/etherlab/Module.symvers \
+  save-build-env
+make -j"$(nproc)"
 ```
 
-`ETHERLAB_INCLUDE` is the directory that **contains** `ecrt.h`.
+`ETHERLAB_INCLUDE` is the directory that **contains** `ecrt.h`. After
+`save-build-env`, plain `make` reads gitignored `local.mk` (see
+`local.mk.example`).
 
 See also [`etherlab-dkms-environment.md`](etherlab-dkms-environment.md) and
 [`elc-dkms.md`](elc-dkms.md).

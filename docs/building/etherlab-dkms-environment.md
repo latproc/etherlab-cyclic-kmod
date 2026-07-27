@@ -69,16 +69,21 @@ Policy and the central shim layer are documented in
   (for example 4.19 + source EtherLab) are first-class for build and grow
   hardware evidence as they are validated.
 
-Manual / source EtherLab example:
+Manual / source EtherLab example (remember paths on the machine):
 
 ```sh
 make \
   ETHERLAB_INCLUDE=/usr/src/ethercat-stable/include \
-  ETHERLAB_SYMVERS=/usr/src/ethercat-stable/Module.symvers
+  ETHERLAB_SYMVERS=/usr/src/ethercat-stable/Module.symvers \
+  save-build-env
+
+make -j"$(nproc)"
+sudo make install
 ```
 
-`ETHERLAB_INCLUDE` is the directory that **contains** `ecrt.h` (usually
-`.../include`), not the tree root.
+`save-build-env` writes gitignored `local.mk` so later builds need no path
+arguments. Template: `local.mk.example`. `ETHERLAB_INCLUDE` is the directory
+that **contains** `ecrt.h` (usually `.../include`), not the tree root.
 
 ## Build contract
 

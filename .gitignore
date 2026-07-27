@@ -59,5 +59,8 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
+# Site build paths (use local.mk.example or make save-build-env)
+local.mk
+
 # debug information files
 *.dwo
