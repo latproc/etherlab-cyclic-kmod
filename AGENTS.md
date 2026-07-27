@@ -497,9 +497,12 @@ testing, safety, and build documents.
 - API 0.17: per-domain output authority. Each domain has independent
   arm/rearm/healthy state and process-image output buffers. Global publish
   (domain_config_id=0) fans out to all domains; arm/disarm flags=0 apply to
-  all domains, non-zero flags select domain_config_id. A unhealthy drive
-  domain disarms only that domain; a healthy I/O domain can remain armed.
-  Capability ELC_CAP_DOMAIN_OUTPUT_AUTHORITY is advertised.
+  all domains, non-zero flags select domain_config_id. Domain bus firewall:
+  complete domain WC keeps that domain healthy/valid; incomplete WC and that
+  domain's slaves only affect that domain. Transient slave_config offline
+  during re-scan must not invalidate a domain with complete WC (live: drive
+  power loss left domain 1 WC complete while domain 2 died). Capability
+  ELC_CAP_DOMAIN_OUTPUT_AUTHORITY is advertised.
 - Phase 7 `libelcethercat` is implemented under `lib/` with public header
   `include/elc_ethercat.h` (GPL-2.0-only, SONAME major tracks UAPI major).
   Build/install: `make lib`, `make install-lib PREFIX=...`, pkg-config

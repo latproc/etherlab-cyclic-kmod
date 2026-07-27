@@ -27,11 +27,15 @@ The cyclic thread evaluates master link state, then per-domain:
 - complete working-counter state for that domain.
 
 API 0.17 owns one `elc_output_authority` per configured domain. Master/link
-loss disarms every authority. A domain WC or assigned-slave fault disarms only
-that domain's authority and records a fault epoch on it; other healthy domains
-may remain armed. Restored link/slaves do not restore an old armed shadow.
-Re-arm of an affected authority requires an output update newer than its fault
-epoch and an explicit arm while that authority is healthy.
+loss disarms every authority. Beyond that, domains are isolated by a bus
+firewall: each domain's working counter is the primary boundary. A complete
+domain WC keeps that domain healthy and `data_valid` even if EtherLab briefly
+reports slave_config offline during a topology re-scan when another domain
+drops (e.g. drives powered off). Incomplete WC fails only that domain and
+then includes that domain's offline/not-OP slave bits for diagnosis. Restored
+link/slaves do not restore an old armed shadow. Re-arm of an affected
+authority requires an output update newer than its fault epoch and an explicit
+arm while that authority is healthy.
 
 This behavior is deterministic software containment, not a replacement for
 hardware safety.

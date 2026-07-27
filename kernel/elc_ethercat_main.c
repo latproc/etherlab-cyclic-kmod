@@ -674,6 +674,49 @@ static int elc_dc_prepare_send(struct elc_file *ctx)
 	return ret;
 }
 
+/*
+ * Per-domain bus firewall.
+ *
+ * Master/link faults still apply to every domain. Beyond that, a domain is
+ * isolated by its own working counter:
+ *
+ * - complete WC  => domain exchange is live; do not fail the domain on
+ *   transient ecrt_slave_config_state offline during topology re-scan when
+ *   another domain (e.g. drives) drops off the bus;
+ * - incomplete WC => domain is failed; then also OR that domain's slave
+ *   online/OP bits for diagnosis.
+ *
+ * Domain 2 offline must not clear domain 1 health when domain 1 WC stays
+ * complete.
+ */
+static u32 elc_domain_bus_faults(struct elc_file *ctx,
+				   struct elc_domain_node *domain,
+				   u32 master_faults)
+{
+	struct elc_slave_node *slave;
+	u32 faults = master_faults;
+	bool wc_complete =
+		atomic_read(&domain->working_counter_state) == EC_WC_COMPLETE;
+
+	if (!wc_complete)
+		faults |= ELC_IO_FAULT_DOMAIN_INCOMPLETE;
+
+	if (wc_complete)
+		return faults;
+
+	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+		if (slave->domain != domain)
+			continue;
+		if (atomic_read(&slave->state_result))
+			faults |= ELC_IO_FAULT_SLAVE_STATE;
+		if (!atomic_read(&slave->state_online))
+			faults |= ELC_IO_FAULT_SLAVE_OFFLINE;
+		if (!atomic_read(&slave->state_operational))
+			faults |= ELC_IO_FAULT_SLAVE_NOT_OPERATIONAL;
+	}
+	return faults;
+}
+
 static void elc_update_io_health(struct elc_file *ctx)
 {
 	ec_master_state_t master_state = {};
@@ -713,29 +756,11 @@ static void elc_update_io_health(struct elc_file *ctx)
 			operational++;
 	}
 
-	/*
-	 * Master/link faults gate every domain. Domain WC and that domain's
-	 * slaves only affect that domain's authority so I/O can stay armed
-	 * while a drive domain is offline.
-	 */
 	list_for_each_entry(domain, &ctx->config_domains, common.node) {
 		struct elc_output_authority *authority = &domain->authority;
-		u32 faults = master_faults;
+		u32 faults = elc_domain_bus_faults(ctx, domain, master_faults);
 		bool was_healthy;
 
-		if (atomic_read(&domain->working_counter_state) !=
-		    EC_WC_COMPLETE)
-			faults |= ELC_IO_FAULT_DOMAIN_INCOMPLETE;
-		list_for_each_entry(slave, &ctx->config_slaves, common.node) {
-			if (slave->domain != domain)
-				continue;
-			if (atomic_read(&slave->state_result))
-				faults |= ELC_IO_FAULT_SLAVE_STATE;
-			if (!atomic_read(&slave->state_online))
-				faults |= ELC_IO_FAULT_SLAVE_OFFLINE;
-			if (!atomic_read(&slave->state_operational))
-				faults |= ELC_IO_FAULT_SLAVE_NOT_OPERATIONAL;
-		}
 		atomic_set(&authority->current_faults, faults);
 		was_healthy = atomic_read(&authority->healthy);
 		if (!faults) {
@@ -3471,10 +3496,14 @@ static long elc_get_config_slave_status(struct elc_file *ctx,
 		result.cycle_count = atomic64_read(&ctx->cycle_count);
 		result.input_sequence =
 			atomic64_read(&ctx->input_sequence);
+		/*
+		 * Bus data validity follows the assigned domain WC (domain
+		 * firewall). online/operational remain separate fields for
+		 * application policy; they must not clear validity for a
+		 * domain that is still exchanging during topology re-scan.
+		 */
 		result.data_valid =
-			!result.state_result && result.online &&
-			result.operational && result.input_sequence &&
-			slave->domain &&
+			result.input_sequence && slave->domain &&
 			atomic_read(&slave->domain->working_counter_state) ==
 				EC_WC_COMPLETE;
 	} else {
@@ -3493,7 +3522,6 @@ static long elc_get_domain_status(struct elc_file *ctx, void __user *argp)
 	struct elc_output_authority *authority;
 	struct elc_domain_status result;
 	struct elc_domain_node *domain;
-	struct elc_slave_node *slave;
 	u64 generation;
 	u32 domain_id;
 	u32 faults = 0;
@@ -3522,22 +3550,11 @@ static long elc_get_domain_status(struct elc_file *ctx, void __user *argp)
 	}
 	authority = &domain->authority;
 	if (ctx->active) {
+		u32 master_faults = 0;
+
 		if (!atomic_read(&ctx->io_link_up))
-			faults |= ELC_IO_FAULT_LINK_DOWN;
-		if (atomic_read(&domain->working_counter_state) !=
-		    EC_WC_COMPLETE)
-			faults |= ELC_IO_FAULT_DOMAIN_INCOMPLETE;
-		list_for_each_entry(slave, &ctx->config_slaves, common.node) {
-			if (slave->domain != domain)
-				continue;
-			if (atomic_read(&slave->state_result))
-				faults |= ELC_IO_FAULT_SLAVE_STATE;
-			if (!atomic_read(&slave->state_online))
-				faults |= ELC_IO_FAULT_SLAVE_OFFLINE;
-			if (!atomic_read(&slave->state_operational))
-				faults |=
-					ELC_IO_FAULT_SLAVE_NOT_OPERATIONAL;
-		}
+			master_faults |= ELC_IO_FAULT_LINK_DOWN;
+		faults = elc_domain_bus_faults(ctx, domain, master_faults);
 	}
 	faults |= atomic_read(&authority->current_faults);
 	memset(&result, 0, sizeof(result));
