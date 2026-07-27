@@ -49,6 +49,18 @@ check-build-env:
 		echo "set ETHERLAB_VERSION or explicit ETHERLAB_INCLUDE and ETHERLAB_SYMVERS" >&2; \
 		exit 1; \
 	fi
+	@if [ "$(origin ETHERLAB_INCLUDE)" = "file" ] && \
+	    [ "$(origin ETHERLAB_SYMVERS)" = "file" ] && \
+	    [ -z "$(ETHERLAB_VERSION)" ] && \
+	    [ "$(words $(ETHERLAB_DKMS_SOURCE_DIRS))" -eq 0 ]; then \
+		echo "error: no EtherLab DKMS source under /usr/src/$(ETHERLAB_DKMS_NAME)-*" >&2; \
+		echo "This host looks like a manual/source EtherLab install." >&2; \
+		echo "Set both paths from the same EtherLab build, for example:" >&2; \
+		echo "  make ETHERLAB_INCLUDE=/path/to/etherlab/include \\" >&2; \
+		echo "       ETHERLAB_SYMVERS=/path/to/etherlab/Module.symvers" >&2; \
+		echo "ecrt.h must exist; Module.symvers must list ecrt_request_master." >&2; \
+		exit 1; \
+	fi
 	@test -d "$(KERNEL_BUILD)" || { \
 		echo "error: kernel build directory not found: $(KERNEL_BUILD)" >&2; \
 		exit 1; \
