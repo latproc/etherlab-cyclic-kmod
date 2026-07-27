@@ -17,7 +17,6 @@
 #include <linux/mutex.h>
 #include <linux/overflow.h>
 #include <linux/sched.h>
-#include <linux/sched/types.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/string.h>
@@ -26,6 +25,16 @@
 #include <linux/version.h>
 #include <linux/vmalloc.h>
 #include <linux/wait.h>
+/*
+ * 5.9+: sched_attr lives in uapi/linux/sched/types.h (needed for
+ * sched_setattr_nocheck). 4.19: that UAPI header is incomplete for our use;
+ * linux/sched/types.h provides struct sched_param for setscheduler.
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
+#include <uapi/linux/sched/types.h>
+#else
+#include <linux/sched/types.h>
+#endif
 
 #include <ecrt.h>
 
