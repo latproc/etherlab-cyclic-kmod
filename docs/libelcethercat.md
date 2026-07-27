@@ -293,13 +293,15 @@ intermediate notifications.
 | `elc_disarm_output(h, struct elc_output_disarm *disarm)` | Synchronous disarm / zero gate. `disarm->flags` 0 = all domains; non-zero = one domain. |
 | `elc_get_io_status(h, struct elc_io_status *st)` | Aggregate health, any-armed, any-rearm, faults. Per-domain arm/rearm: `elc_get_domain_status`. |
 
-Optional lease (API 0.14):
+Optional lease hang-failsafe (API 0.14; **0.18 publish/arm renew**):
 
 | Function | Behaviour |
 |----------|-----------|
-| `elc_configure_output_lease(h, …)` | Armed-cycle budget when supported. |
-| `elc_renew_output_lease(h, …)` | Does not re-arm by itself. |
-| `elc_get_output_lease_status(h, …)` | |
+| `elc_configure_output_lease(h, cfg)` | Enable/disable. `timeout_ms` and/or `cycle_budget`; `flags` = domain_config_id (0 = all). Seeds remaining. Allowed while cycling (0.18). |
+| `elc_renew_output_lease(h, renew)` | Explicit refill; optional when CAP_OUTPUT_LEASE_PUBLISH_RENEW (publish/arm refill in kernel). Does not re-arm. |
+| `elc_get_output_lease_status(h, st)` | Status; preserves `st->flags` for per-domain query. |
+
+Preferred 0.18 plant path: `timeout_ms` 500–2000, publish at ecat rate only (no renew loop).
 
 ### 4.9 Status helpers
 
