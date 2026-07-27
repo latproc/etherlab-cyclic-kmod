@@ -1,7 +1,7 @@
 # User-Space Controller Developer Guide
 
 This guide describes how to build a controller against the current
-experimental API 0.17. The normative structure and ioctl semantics are in
+experimental API 0.18. The normative structure and ioctl semantics are in
 [`uapi.md`](uapi.md); use the shared
 [`elc_ethercat_uapi.h`](../include/elc_ethercat_uapi.h) definitions rather than
 duplicating numeric commands or layouts.
@@ -92,10 +92,11 @@ then call `ELC_IOC_GET_CAPABILITIES`. Minor versions are additive, but a
 controller must not call an optional operation merely because it was compiled
 from a newer header.
 
-API 0.17 reports coherent copied process images, cycle timing,
-wait-for-cycle, DC diagnostics, optional output leases, input history,
-cycle-period updates, and per-domain output authority
-(`ELC_CAP_DOMAIN_OUTPUT_AUTHORITY`). It does not report scheduled outputs or
+API 0.18 reports coherent copied process images, cycle timing,
+wait-for-cycle, DC diagnostics, optional output leases (including publish/arm
+renew and `timeout_ms`), input history, cycle-period updates, and per-domain
+output authority (`ELC_CAP_DOMAIN_OUTPUT_AUTHORITY`,
+`ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW`). It does not report scheduled outputs or
 delegated domain connections.
 
 See `get_api_version()` and `get_capabilities()` in
@@ -283,32 +284,29 @@ outputs by itself.
 
 ## Use an output lease
 
-API 0.14 can optionally require controller liveness while outputs are armed.
-Before activation, configure an armed-cycle budget from 1 through 1,000,000
-with `ELC_IOC_CONFIGURE_OUTPUT_LEASE`. A budget of zero preserves the
-lease-disabled compatibility behavior.
+API 0.14+ can require controller liveness while outputs are armed. API 0.18
+makes the hang-failsafe usable for multi-ms userspace loops (e.g. iod-elc):
 
-Each activation starts with the enabled lease invalid. After activation,
-`ELC_IOC_RENEW_OUTPUT_LEASE` loads the configured budget. The cyclic task
-decrements it exactly once for every armed output selection. The budget pauses
-while disarmed, so a monitoring-only controller need not send heartbeats.
+- Prefer `timeout_ms` (500–2000 recommended) so you need not convert bus
+  periods yourself; optional `cycle_budget` remains.
+- `flags` = 0 for all domains, or a `domain_config_id` for one domain (e.g.
+  servos only).
+- Configure after domain create; **0.18 allows configure while cycling** so
+  you can reach OP first, then enable the lease.
+- Remaining is **seeded** on configure. Successful **publish** and **arm**
+  refill the budget in the kernel when
+  `ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW` is set — no high-rate renew ioctl.
+- Explicit `ELC_IOC_RENEW_OUTPUT_LEASE` still works; a no-op full refill does
+  not bump the renewal counter.
 
-When the budget is exhausted, the next cycle:
+While armed, the cyclic task decrements remaining once per armed selection.
+When remaining hits zero it disarms, zeros that domain's outputs, latches
+`ELC_IO_FAULT_CONTROLLER_STALE` and `rearm_required`, and keeps cycling
+inputs. Recovery needs a newer publication and explicit arm (publish itself
+refills the budget). Orderly disarm/deactivate/close are not lease expiries.
 
-- selects zero outputs;
-- clears the authority's arm state;
-- latches `ELC_IO_FAULT_CONTROLLER_STALE` and `rearm_required`;
-- records the current publication sequence; and
-- continues cyclic input exchange.
-
-Renewal clears the current stale-controller condition but never clears the
-latched recovery epoch or arms output. Recovery requires renewal, a newer safe
-output publication, and explicit arm. Query configured/remaining cycles and
-renewal/expiry counters with `ELC_IOC_GET_OUTPUT_LEASE_STATUS`.
-
-The lease detects a controller that remains alive but stops renewing. It does
-not interpret why upstream control was lost, and it does not replace a
-hardware watchdog or safety system.
+The lease detects a controller that is still open but stops publishing. It
+does not replace STO, E-stop, or other hardware safety.
 
 `tools/elc_io` is the interactive reference controller for inspecting this
 lifecycle. It resolves stable entry IDs to global offsets, decodes scalar

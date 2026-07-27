@@ -1,6 +1,6 @@
 # Architecture
 
-## Current API 0.17 boundary
+## Current API 0.18 boundary
 
 ```text
 standalone controller

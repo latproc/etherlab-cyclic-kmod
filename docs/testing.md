@@ -1131,6 +1131,23 @@ reference validity/sample, phase, applied adjustment) snapshotted under the
 same lock as the coherent cycle record. `elc_config` prints a `DC cycle info`
 line after aggregate DC status when DC is enabled.
 
+## API 0.18 hang-failsafe output lease
+
+API 0.18 advertises `ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW` and extends the 0.14
+lease model:
+
+- configure seeds remaining to the resolved budget;
+- successful publish/arm refill remaining (explicit renew optional);
+- `timeout_ms` converts to bus cycles from the active period;
+- configure is allowed while cycling;
+- `flags` selects `domain_config_id` (0 = all).
+
+Plant intent for iod-elc: `timeout_ms` ≈ 1–2 s, publish at ecat rate only; if
+userspace stops publishing while armed, that domain expires (disarm, zero,
+`CONTROLLER_STALE`, rearm_required). Hostile ABI covers reserved fields,
+budget limits, stale generation, and seeded inactive status. Live hang soak
+and SIGSTOP acceptance remain consumer-side after module reload.
+
 ## API 0.17 per-domain output authority
 
 API 0.17 embeds an independent `elc_output_authority` on each configured
@@ -1142,7 +1159,7 @@ size). Arm/disarm `flags = 0` apply to all domains; non-zero is the target
 Smoke evidence on the dual-domain 34-slave fixture
 (`tools/configs/all34_captured_topology.conf`):
 
-- bus discovery reports API 0.17 and capabilities including domain authority;
+- bus discovery reports API 0.17+ and capabilities including domain authority;
 - non-activating hostile ABI suite passes;
 - ten maximum pending create/reset stress iterations pass;
 - cycle-strict disarmed run: both domains valid, 34/34 OP, zero errors;

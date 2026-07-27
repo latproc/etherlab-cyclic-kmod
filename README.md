@@ -12,7 +12,7 @@ The transport contains no machine, servo, CiA 402, XML, or control-system
 policy. Those decisions remain in user space, so the same module can support
 different devices and control systems without recompiling kernel code.
 
-> **Development status:** experimental API 0.17. The standalone documentation
+> **Development status:** experimental API 0.18. The standalone documentation
 > gate passes, but the kernel-safety and production timing gates remain open.
 > Kernel faults can crash the host and EtherCAT outputs can move machinery.
 > Always use the site's hardware safety and commissioning procedures.
@@ -44,13 +44,16 @@ putting application policy in the kernel:
   enumeration order.
 - **Explicit validity domains:** always-powered I/O and switchable equipment
   can have independent working-counter and data-validity results.
-- **Per-domain output authority (API 0.17):** each domain has its own arm,
+- **Per-domain output authority (API 0.17+):** each domain has its own arm,
   re-arm, publication buffers, and health gate. A drive-domain fault need not
   disarm a healthy I/O domain; master/link loss still gates every domain.
 - **Domain bus firewall:** complete domain WC keeps that domain valid with no
   interruption when another domain fails (power loss, cable damage, module
   failure). Ring/redundant Ethernet for mid-bus cable splits is a planned
   companion to multi-client domain interfaces.
+- **Hang-failsafe lease (API 0.18):** optional wall-time or cycle budget;
+  successful publish/arm refill the budget so a hung controller cannot keep
+  last motion outputs without high-rate renew ioctls.
 - **Safe copied exchange:** bounded double-buffered input and masked output
   images avoid retaining user pointers or exposing kernel memory.
 - **Fail-safe output control:** publishing data never arms it. Arming is
@@ -74,7 +77,7 @@ putting application policy in the kernel:
 The design is also being prepared for optional delegated domain controllers:
 one process may own ordinary machine I/O while a dedicated motion service owns
 a drive domain. There will still be one EtherLab master and one cyclic kernel
-timeline. This delegation is planned, not part of API 0.17.
+timeline. This delegation is planned, not part of API 0.18.
 
 ```text
               user-space configuration and controllers
@@ -92,7 +95,7 @@ timeline. This delegation is planned, not part of API 0.17.
 
 ## What is implemented?
 
-API 0.17 currently includes:
+API 0.18 currently includes:
 
 - exclusive EtherLab master lifecycle and raw bus discovery;
 - ordered typed setup SDOs;
@@ -103,8 +106,8 @@ API 0.17 currently includes:
 - aggregate, per-domain, and per-configured-slave health/validity;
 - per-domain output authority with masked publication, explicit arm, and
   synchronous disarm (global or domain-scoped selectors);
-- optional authority-scoped output leases with explicit renewal and
-  deterministic zero-gating on expiry;
+- optional authority-scoped output leases with publish/arm budget refill,
+  optional `timeout_ms`, configure-while-active, and zero-gating on expiry;
 - coherent timing/generation records and blocking wait-for-cycle; and
 - bounded resource limits, hostile-input validation, and partial-failure
   unwind.
