@@ -15,6 +15,7 @@ ETHERLAB_SYMVERS ?= /var/lib/dkms/$(ETHERLAB_DKMS_NAME)/$(ETHERLAB_VERSION)/$(KE
 CPPFLAGS ?=
 CFLAGS ?= -O2 -g
 PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
 LIBDIR ?= $(PREFIX)/lib
 INCLUDEDIR ?= $(PREFIX)/include
 PKGCONFIGDIR ?= $(LIBDIR)/pkgconfig
@@ -29,7 +30,7 @@ ELC_DKMS_VERSION := $(LIB_VERSION)
 ELC_DKMS_SRC := /usr/src/$(ELC_DKMS_PACKAGE)-$(ELC_DKMS_VERSION)
 
 .PHONY: all modules lib tools check-build-env save-build-env test-build-contract \
-	install install-lib uninstall uninstall-lib clean \
+	install install-lib install-tools uninstall uninstall-lib uninstall-tools clean \
 	dkms.conf dkms-stage dkms-install dkms-uninstall
 
 MODULE_INSTALL_DIR := $(DESTDIR)/lib/modules/$(KERNEL_RELEASE)/extra/elc_ethercat
@@ -163,7 +164,9 @@ tools/elc_config_stress: tools/elc_config_stress.c include/elc_ethercat.h \
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Werror -std=c11 \
 		-I"$(CURDIR)/include" -o "$@" "$<" $(LIB_STATIC)
 
-install: modules install-lib
+# Full non-DKMS install: modules + lib + tools. Prefer dkms-install for modules
+# on plant hosts, then: make install-lib install-tools
+install: modules install-lib install-tools
 	install -d "$(MODULE_INSTALL_DIR)"
 	install -m 0644 $(MODULE_FILES) "$(MODULE_INSTALL_DIR)"
 	@if [ -z "$(DESTDIR)" ]; then depmod -a "$(KERNEL_RELEASE)"; fi
@@ -183,8 +186,18 @@ install-lib: lib
 	sed -e 's|@PREFIX@|$(PREFIX)|g' \
 		-e 's|@VERSION@|$(LIB_VERSION)|g' \
 		lib/elcethercat.pc.in > "$(DESTDIR)$(PKGCONFIGDIR)/elcethercat.pc"
+	@if [ -z "$(DESTDIR)" ] && command -v ldconfig >/dev/null 2>&1; then \
+		ldconfig || true; \
+	fi
 
-uninstall: uninstall-lib
+# Userspace tools (elc_bus/elc_sdo/…) — DKMS does not install these.
+install-tools: tools
+	install -d "$(DESTDIR)$(BINDIR)"
+	install -m 0755 tools/elc_bus tools/elc_sdo tools/elc_config \
+		tools/elc_config_stress tools/elc_abi_test \
+		"$(DESTDIR)$(BINDIR)/"
+
+uninstall: uninstall-lib uninstall-tools
 	$(RM) $(addprefix $(MODULE_INSTALL_DIR)/,$(notdir $(MODULE_FILES)))
 	@rmdir --ignore-fail-on-non-empty "$(MODULE_INSTALL_DIR)" 2>/dev/null || true
 	@if [ -z "$(DESTDIR)" ]; then depmod -a "$(KERNEL_RELEASE)"; fi
@@ -197,6 +210,13 @@ uninstall-lib:
 		"$(DESTDIR)$(LIBDIR)/libelcethercat.so.$(LIB_VERSION_MAJOR)" \
 		"$(DESTDIR)$(LIBDIR)/libelcethercat.so.$(LIB_VERSION)"
 	$(RM) "$(DESTDIR)$(PKGCONFIGDIR)/elcethercat.pc"
+
+uninstall-tools:
+	$(RM) "$(DESTDIR)$(BINDIR)/elc_bus" \
+		"$(DESTDIR)$(BINDIR)/elc_sdo" \
+		"$(DESTDIR)$(BINDIR)/elc_config" \
+		"$(DESTDIR)$(BINDIR)/elc_config_stress" \
+		"$(DESTDIR)$(BINDIR)/elc_abi_test"
 
 clean:
 	-$(MAKE) -C "$(KERNEL_BUILD)" M="$(CURDIR)/kernel" clean
