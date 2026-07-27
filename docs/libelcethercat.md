@@ -1,6 +1,6 @@
 # libelcethercat — Generic User-Space Library API
 
-**Status:** Phase 7 library tracks UAPI 0.17. Sources live under `lib/`
+**Status:** Phase 7 library tracks UAPI 0.18. Sources live under `lib/`
 and `include/elc_ethercat.h`. This document remains the public contract;
 keep it aligned when the API changes.
 
@@ -343,7 +343,7 @@ helpers.
 | Cycle | `CYCLE_ACTIVATE`, `CYCLE_DEACTIVATE`, `CYCLE_STATUS`, `CYCLE_WAIT`, `CYCLE_INFO`, `CYCLE_SET_PERIOD` |
 | Images | `GET_INPUT_SNAPSHOT`, `PUBLISH_OUTPUT`, `ARM`, `DISARM` |
 | Status | `GET_IO_STATUS`, `GET_CONFIG_SLAVE_STATUS`, `GET_DOMAIN_STATUS`, `GET_DC_STATUS` |
-| Lease / history / domain output | as in `elc_ethercat_uapi.h` for API 0.14–0.17 |
+| Lease / history / domain output | as in `elc_ethercat_uapi.h` for API 0.14–0.18 |
 
 Normative field semantics remain in [`uapi.md`](uapi.md). The library
 must zero structures and set `struct_size` / `api_major` correctly.
@@ -377,6 +377,11 @@ buffers, and health gating are independent per domain. Master/link faults
 still gate every domain; a domain WC/slave fault disarms only that domain.
 Capability bit `ELC_CAP_DOMAIN_OUTPUT_AUTHORITY` is set when the kernel
 supports this model.
+
+API 0.18 hang-failsafe: successful `elc_publish_output` / `elc_arm_output`
+refill the lease in the kernel (`ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW`). The
+library is a thin pass-through of `elc_output_lease_*` structs; it does not
+issue a separate renew on publish.
 
 When object identity `(index, subindex)` is duplicated, the controller must
 supply an additional discriminator (for example PDO index or occurrence).
@@ -456,7 +461,7 @@ ioctl glue.
 | What is this project? | Generic kernel EtherCAT cyclic transport + UAPI + tools + library |
 | Who is the library for? | Any userspace controller or tool |
 | Where does it live? | `lib/` in this repository; installable headers + `libelcethercat` |
-| API language? | C wrapping UAPI 0.17 |
+| API language? | C wrapping UAPI 0.18 |
 | What stays out of the library? | Device recipes, ESI parsing, machine semantics, arm policy meaning |
 | Hard exclusivity rule? | One master-0 application owner: this control fd **or** another EtherLab client |
 

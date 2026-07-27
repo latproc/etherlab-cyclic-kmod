@@ -561,6 +561,7 @@ int elc_configure_output_lease(elc_handle *h,
 
 	if ((ret = elc_check_ptr(cfg)))
 		return ret;
+	/* Preserve flags (domain_config_id), cycle_budget, timeout_ms. */
 	if (!cfg->struct_size)
 		cfg->struct_size = sizeof(*cfg);
 	if (!cfg->api_major)
@@ -575,6 +576,7 @@ int elc_renew_output_lease(elc_handle *h,
 
 	if ((ret = elc_check_ptr(renew)))
 		return ret;
+	/* Preserve flags (domain_config_id). */
 	if (!renew->struct_size)
 		renew->struct_size = sizeof(*renew);
 	if (!renew->api_major)
@@ -585,11 +587,21 @@ int elc_renew_output_lease(elc_handle *h,
 int elc_get_output_lease_status(elc_handle *h,
 				  struct elc_output_lease_status *st)
 {
+	uint32_t flags = 0;
+	uint64_t generation = 0;
 	int ret;
 
 	if ((ret = elc_check_ptr(st)))
 		return ret;
+	/*
+	 * API 0.18: flags selects domain_config_id (0 = aggregate). Do not
+	 * wipe caller selection via elc_init_api_header.
+	 */
+	flags = st->flags;
+	generation = st->config_generation;
 	elc_init_api_header(st, sizeof(*st));
+	st->flags = flags;
+	st->config_generation = generation;
 	return elc_ioctl(h, ELC_IOC_GET_OUTPUT_LEASE_STATUS, st);
 }
 

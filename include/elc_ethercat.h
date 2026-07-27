@@ -150,7 +150,14 @@ int elc_arm_output(elc_handle *h, struct elc_output_arm *arm);
 int elc_disarm_output(elc_handle *h, struct elc_output_disarm *disarm);
 int elc_get_io_status(elc_handle *h, struct elc_io_status *st);
 
-/* Optional output lease (API 0.14+ / CAP_OUTPUT_LEASE). */
+/*
+ * Optional output lease hang-failsafe (API 0.14+ / CAP_OUTPUT_LEASE).
+ * API 0.18+ / CAP_OUTPUT_LEASE_PUBLISH_RENEW:
+ *   - cfg->timeout_ms wall-time budget (or cycle_budget);
+ *   - cfg->flags / renew->flags / st->flags = domain_config_id (0 = all);
+ *   - remaining seeded on configure; successful publish/arm refill in kernel
+ *     (no high-rate renew required).
+ */
 int elc_configure_output_lease(elc_handle *h,
 				 struct elc_output_lease_config *cfg);
 int elc_renew_output_lease(elc_handle *h,
