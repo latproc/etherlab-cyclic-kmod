@@ -178,18 +178,20 @@ slave synchronization, and the common cycle index. A user-space controller
 must follow that published timeline rather than independently recreating or
 steering the DC clock.
 
-API 0.14 still exposes coherent monotonic cycle timing and a separate DC
-diagnostic snapshot. It does not yet expose the exact application time and DC
-sample coherently in the same cycle record, so it is not a complete
-motion-control clock contract.
-
-The planned compatible record will associate the global cycle index with the
+API 0.13 provides coherent monotonic cycle timing via
+`ELC_IOC_CYCLE_GET_INFO` / `ELC_IOC_CYCLE_WAIT`. API 0.16 adds
+`ELC_IOC_CYCLE_GET_DC_INFO`, which associates the same cycle index with the
 exact 64-bit application time passed to EtherLab, reference validity and the
-low-32-bit reference sample available from EtherLab 1.6.9, normalized phase
-difference, and applied adjustment. A controller woken after cycle N can only
-compute for a future cycle; it cannot change the datagram already sent for N.
-Tightly scheduled motion therefore also requires the planned bounded
-cycle-addressed output queue and an explicit lead/underrun policy.
+low-32-bit reference sample, normalized phase difference, and applied
+adjustment. Those DC fields are published under the same lock as the base
+cycle record. Aggregate diagnostics remain available through
+`ELC_IOC_CYCLE_GET_DC_STATUS`.
+
+A controller woken after cycle N can only compute for a future cycle; it
+cannot change the datagram already sent for N. Tightly scheduled motion
+therefore still needs a planned bounded cycle-addressed output queue and an
+explicit lead/underrun policy. Capability discovery does not advertise
+deferred scheduled outputs.
 
 ## Read coherent inputs
 

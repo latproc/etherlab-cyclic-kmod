@@ -83,7 +83,7 @@ $(PREFIX)/lib/libelcethercat.a          # optional static archive
 $(PREFIX)/lib/pkgconfig/elcethercat.pc  # recommended
 ```
 
-Suggested Make targets (to implement with the library):
+Build and install the library with:
 
 ```text
 make lib
@@ -94,9 +94,9 @@ Downstream builds should locate the package without hard-coding paths:
 
 ```cmake
 find_path(ELC_INCLUDE_DIR elc_ethercat.h
-  HINTS $ENV{CW_ETHERCAT_PREFIX}/include)
+  HINTS $ENV{ELC_PREFIX}/include $ENV{PREFIX}/include)
 find_library(ELC_LIBRARY elcethercat
-  HINTS $ENV{CW_ETHERCAT_PREFIX}/lib)
+  HINTS $ENV{ELC_PREFIX}/lib $ENV{PREFIX}/lib)
 ```
 
 Or via pkg-config:
@@ -267,7 +267,7 @@ the active configuration generation.
 | `elc_cycle_status(h, struct elc_cycle_status *st)` | |
 | `elc_cycle_wait(h, struct elc_cycle_wait *wait)` | Interruptible wait for a newer cycle record. |
 | `elc_cycle_info(h, struct elc_cycle_info *info)` | Coherent timing/generation record without waiting. |
-| `elc_cycle_set_period(h, struct elc_cycle_period_update *upd)` | Disarmed, non-DC acknowledged period change (API 0.15). |
+| `elc_cycle_set_period(h, struct elc_cycle_period_update *upd)` | Disarmed acknowledged period change (API 0.15; DC SYNC0 rewrite when configured). |
 
 The kernel owns the bus timeline. Application loop rate may be lower than
 the EtherCAT cycle rate; clients must use cycle identity and may skip

@@ -45,20 +45,21 @@ Minor versions add:
 - 0.8: masked copied output publication while hard-disarmed;
 - 0.9: generation/sequence-bound arm and synchronous disarm;
 - 0.10: stable-ID per-configured-slave state and conservative data validity;
-- 0.11: explicit mandatory PDO padding with `entry_id=0`; and
+- 0.11: explicit mandatory PDO padding with `entry_id=0`;
 - 0.12: explicit ordered domains, slave-domain assignments, and per-domain
-  status; and
+  status;
 - 0.13: capability discovery, coherent cycle timing/generation records, and
-  interruptible wait-for-cycle; and
+  interruptible wait-for-cycle;
 - 0.14: optional armed-cycle output lease configuration, renewal, status,
-  deterministic expiry, and a distinct stale-controller fault; and
+  deterministic expiry, and a distinct stale-controller fault;
 - 0.15: acknowledged cycle-boundary period changes while outputs are disarmed
-  and distributed clocks are not configured; and
+  (including rewriting matching DC SYNC0 records when DC is configured);
 - 0.16: optional preactivation bounded input-image history and ordered batched
-  reads with explicit record-gap and capture-contention reporting; and
+  reads with explicit record-gap and capture-contention reporting, plus
+  coherent DC motion-clock records (`ELC_IOC_CYCLE_GET_DC_INFO`); and
 - 0.17: per-domain output authority (independent arm/health per domain;
   publish/arm/disarm may target domain_config_id; capability bit
-  ELC_CAP_DOMAIN_OUTPUT_AUTHORITY).
+  `ELC_CAP_DOMAIN_OUTPUT_AUTHORITY`).
 
 Input/output structures that accept caller fields include `struct_size` and
 `api_major`. The kernel rejects an unexpected size with `EINVAL` and an

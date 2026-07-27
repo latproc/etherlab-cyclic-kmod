@@ -2,18 +2,18 @@
 
 ## Status
 
-API 0.12 implements configured-bus health reporting, sticky fault/re-arm
-status, topology-derived output ownership, copied output shadows, and an
-explicit generation/sequence arm gate. A position-29 servo
-power-loss/restoration test recovered without restarting the controller while
-outputs remained disarmed.
+The current experimental API is 0.17. Configured-bus health reporting, sticky
+fault/re-arm status, topology-derived output ownership, copied output shadows,
+and generation/sequence arm gates are in place. Per-domain WC/validity and
+per-configured-slave online/operational/AL state and data validity are
+available by stable configuration ID.
 
-Per-domain WC/validity and per-configured-slave online/operational/AL state and
-data validity are available by stable configuration ID. API 0.17 makes output
-gating per-domain: each domain has its own authority for publication, arm,
-re-arm, and lease. Master/link loss still gates every domain. This is
-experimental evidence, not production safety certification; acceptance and
-debug-kernel gates remain open.
+API 0.17 makes output gating per-domain: each domain has its own authority for
+publication, arm, re-arm, and lease. Master/link loss still gates every domain.
+A position-29 servo power-loss/restoration test recovered without restarting
+the controller while outputs remained disarmed. This is experimental evidence,
+not production safety certification; acceptance and debug-kernel gates remain
+open.
 
 ## Servo power observation
 
