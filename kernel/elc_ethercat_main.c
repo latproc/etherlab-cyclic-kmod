@@ -17,6 +17,7 @@
 #include <linux/mutex.h>
 #include <linux/overflow.h>
 #include <linux/sched.h>
+#include <linux/sched/types.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/string.h>
@@ -25,9 +26,6 @@
 #include <linux/version.h>
 #include <linux/vmalloc.h>
 #include <linux/wait.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
-#include <uapi/linux/sched/types.h>
-#endif
 
 #include <ecrt.h>
 
