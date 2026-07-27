@@ -19,12 +19,17 @@ different devices and control systems without recompiling kernel code.
 
 ## Why use this interface?
 
-EtherLab already provides the EtherCAT master. This module adds a small,
-generic application boundary for systems that need cyclic I/O without putting
-application policy in the kernel:
+EtherLab already provides the EtherCAT master. Getting a clean, reusable
+application boundary around it—master lifecycle, configuration, cyclic
+exchange, and teardown—is a recurring pain for people writing their own
+EtherLab clients. This module aims to make that part straightforward without
+putting application policy in the kernel:
 
 - **Runtime configuration:** one kernel binary accepts different topologies,
   PDO layouts, setup recipes, cycle periods, and DC policies.
+- **Pre-activation setup SDOs:** ordered typed SDO transactions run before
+  activation so devices that need CoE startup parameters (or other mailbox
+  setup) can be configured without embedding those recipes in the kernel.
 - **Deterministic ownership:** one kernel task performs
   receive/process/DC/queue/send for every configured domain on one cycle
   timeline.
