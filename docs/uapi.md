@@ -262,6 +262,14 @@ code, but not revision. API 0.3 therefore rejects a nonzero revision constraint
 instead of silently failing to enforce it. A future explicit revision policy
 must preserve absent-at-startup configuration.
 
+Revision still matters in **user space**: ESI/IOD recipes often key PDO and
+CoE layouts by revision. The kernel does not compare the submitted map to the
+live bus. A wrong recipe (for example two EL5152 instances with the same
+product code but different revisions, programmed with one shared map) can pass
+validate/apply and still fail at slave programming with EtherLab fixed-map
+warnings and incomplete OP/WC. Controllers must submit the map that matches
+each physical instance; see the developer guide.
+
 `ELC_IOC_DOMAIN_CREATE` creates the configured EtherLab domain set (or one
 implicit compatibility domain when none were declared). API 0.11 permits
 mandatory PDO padding only as `entry_id=0, index=0, subindex=0`; padding keeps

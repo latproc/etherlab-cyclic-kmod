@@ -1018,6 +1018,12 @@ clean rescan, the dual-revision fixture completes OP/WC without EtherLab
 `code/config/Beckhoff/modules.lpc` must declare `EL5152_03` as
 `RevisionNo:0x00120000` and `EL5152_04` as `0x00140000`.
 
+This was not a kernel “revision mismatch” rejection: elc attaches by
+position/vendor/product and rejects nonzero slave revision fields. Wrong
+IOD/XML `RevisionNo` selected the wrong map; that map was applied; EtherLab
+and the fixed-map terminals then failed OP/WC. Conceptual write-up:
+[`developer-guide.md`](developer-guide.md) (revision numbers and PDO maps).
+
 The corrected full fixture then passed five consecutive zero-output lifecycle
 iterations. Every iteration returned master 0 idle with no cyclic task leak;
 the final topology was unchanged and no new kernel warning/error appeared.

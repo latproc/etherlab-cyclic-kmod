@@ -30,6 +30,12 @@ putting application policy in the kernel:
 - **Pre-activation setup SDOs:** ordered typed SDO transactions run before
   activation so devices that need CoE startup parameters (or other mailbox
   setup) can be configured without embedding those recipes in the kernel.
+- **User-owned PDO maps:** ESI/XML and revision-specific recipes stay in user
+  space. The module applies the map you submit; it does not parse XML or
+  auto-heal a recipe that disagrees with the live CoE layout. Wrong
+  revision-selected maps (for example two EL5152s, same product, different
+  revisions) fail at slave programming, not at a kernel “revision match”
+  check—see the [developer guide](docs/developer-guide.md).
 - **Deterministic ownership:** one kernel task performs
   receive/process/DC/queue/send for every configured domain on one cycle
   timeline.

@@ -115,6 +115,32 @@ physical device at another position for an absent logical axis.
 Discovery does not parse ESI XML. Build the desired generic configuration in
 user space from reviewed XML/device data.
 
+### Revision numbers, PDO maps, and “bus not up”
+
+These are easy to confuse:
+
+1. **Kernel / EtherLab attach** uses alias, position, vendor ID, and product
+   code only. The UAPI currently **rejects** a nonzero slave
+   `revision_number` so controllers cannot pretend the transport enforces
+   revision. Fixtures therefore use revision zero.
+2. **User-space recipes** (ESI XML, IOD `modules.lpc`, product tables) often
+   use revision to select **which PDO/CoE map** to emit for that instance.
+3. **`CONFIG_VALIDATE` / `CONFIG_APPLY`** check that the submitted hierarchy is
+   self-consistent. They do **not** diff it against a live bus capture or
+   rewrite IOD’s map to match discovery.
+4. If the submitted map is wrong for the hardware, EtherLab still tries to
+   program it. Fixed-map devices then log errors such as “does not support
+   changing the PDO mapping,” and slaves may stay out of OP with incomplete
+   WC—the bus looks “not up” even though identity attach succeeded.
+
+Hardware lesson on this target: two EL5152s share product code `0x14203052`
+but report revisions `0x00120000` (position 3) and `0x00140000` (position 4).
+Diagnostic objects differ at the same bit slots. A single product-level XML
+recipe, or IOD’s requested `configured_sync_managers` view, is not enough.
+Commissioning must use the **live-reported map per position** (or XML
+selected with the correct `RevisionNo` per instance). See
+[`testing.md`](testing.md) (full captured topology) for the evidence trail.
+
 ## Submit configuration
 
 Use the `CONFIG_BEGIN`, `CONFIG_ADD_*`, `CONFIG_VALIDATE`, and `CONFIG_APPLY`
