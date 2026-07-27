@@ -300,8 +300,9 @@ and tools without making inferred grouping part of the new policy.
 
 Each domain status exposes its global segment base and size, WC and WC state,
 current health faults, validity, cycle/input sequence, and that domain's own
-output arm/re-arm state (API 0.17). Per-slave `data_valid` depends on the WC
-of the slave's assigned domain. Aggregate `GET_IO_STATUS` remains available
+output arm/re-arm state (API 0.17). Per-slave bus `data_valid` follows the
+assigned domain WC (plus a published input sequence); `online` /
+`operational` remain separate. Aggregate `GET_IO_STATUS` remains available
 and reports any-armed / any-rearm across domain authorities; master/link and
 full-bus counts stay global.
 
@@ -309,9 +310,11 @@ API 0.17 places an independent output authority on each configured domain.
 Publication may target the full global image (`domain_config_id = 0`) or one
 domain segment (non-zero id, size must match the segment). Arm and disarm use
 `flags = 0` for all domains or a non-zero `domain_config_id` for one domain.
-Master/link faults still disarm every authority; a domain WC or assigned-slave
-fault disarms only that domain. Capability bit
-`ELC_CAP_DOMAIN_OUTPUT_AUTHORITY` is set when this model is present.
+Master/link faults still disarm every authority. Domain health uses a WC
+firewall: complete WC keeps a domain valid with no interruption when another
+domain fails (power loss, cable damage, module failure); incomplete WC fails
+only that domain. Capability bit `ELC_CAP_DOMAIN_OUTPUT_AUTHORITY` is set when
+this model is present.
 
 ## Initial cyclic lifecycle
 
@@ -491,14 +494,13 @@ generation returns `ESTALE`; an unknown ID returns `ENOENT`.
 
 The result reports active, online, operational, AL state, the EtherLab
 slave-state call result, cycle count, input sequence, and `data_valid`.
-Validity is deliberately conservative: the transport must be active, the
-slave-state call must succeed, that configured slave must be online and
-operational, at least one input snapshot must have been published, and the
-assigned domain working counter must be complete. EtherLab does not expose
-per-entry working-counter validity through this configuration-state API, so
-API 0.10 did not claim that an unaffected slave's bytes were fresh while the
-shared domain was incomplete. API 0.12 resolves that limitation when user
-space assigns independent availability domains.
+Bus `data_valid` requires an active transport, a published input snapshot, and
+a complete assigned-domain working counter. `online` / `operational` are
+reported separately so application policy can still see PS rails and AL state
+without clearing domain-bus validity during EtherLab re-scan while WC remains
+complete. EtherLab does not expose per-entry WC; API 0.12 independent domains
+plus the API 0.17 WC firewall isolate domains under power loss and similar
+segment failures.
 
 Activation requires an applied configuration and registered domain set. The caller
 supplies a cycle period from 100 microseconds through one second; flags must be
