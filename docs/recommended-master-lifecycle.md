@@ -100,6 +100,11 @@ preferred final lifecycle.
 
 ## Power loss and automatic rescan
 
+Client-owned ad-hoc setup after return (debounce, PREOP gate, retry) is
+documented for **all** controllers in
+[`client-slave-recovery.md`](client-slave-recovery.md). Kernel rescan alone does
+not re-run those batches.
+
 In target EtherLab 1.6.9:
 
 - activation enables scanning after topology changes;

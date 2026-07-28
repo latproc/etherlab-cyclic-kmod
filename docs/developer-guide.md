@@ -25,6 +25,13 @@ Your controller owns:
 Do not infer device meaning from names returned by discovery. Match the
 required physical topology and identity fields explicitly.
 
+**Power-return CoE / setup recipes** are also client work. Online edges often
+fire while a drive is still INIT with identity `0:0` or AL “invalid mailbox”;
+a single early `SETUP_APPLY` fails and never runs again unless **you** debounce,
+re-queue on PREOP+, and retry with backoff. Do not expect the kernel module to
+implement that loop. Generic field guidance (any controller, not one product):
+[`client-slave-recovery.md`](client-slave-recovery.md).
+
 ## Build against the UAPI
 
 Include the repository header:

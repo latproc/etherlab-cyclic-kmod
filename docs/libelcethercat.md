@@ -14,6 +14,7 @@ an **appendix**, not part of the library design.
 
 - Normative ioctl ABI: [`uapi.md`](uapi.md)
 - Controller lifecycle (any client): [`developer-guide.md`](developer-guide.md)
+- **Slave power-return / setup CoE (any client):** [`client-slave-recovery.md`](client-slave-recovery.md)
 - Process-image rules: [`process-image-exchange.md`](process-image-exchange.md)
 - Roadmap: [`../Implementation_Plan.md`](../Implementation_Plan.md)
 - Architecture: [`architecture.md`](architecture.md)
@@ -251,6 +252,13 @@ Pre-open cable check is not a library call; use `ethercat master` as above.
 
 Use for commissioning and pre-activation parameter/PDO setup owned by the
 controller. Runtime mailbox SDO policy during OP is a separate concern.
+
+**Power loss:** the kernel does **not** replay this batch when a slave returns.
+Any controller that depends on ordered setup CoE after drive control-power loss
+must detect return, wait until the slave is mailbox-ready (not merely
+“online”/INIT), re-submit a full batch, and retry with backoff. That policy
+lives in the client — see
+[`client-slave-recovery.md`](client-slave-recovery.md).
 
 ### 4.5 Transactional configuration
 

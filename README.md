@@ -65,7 +65,10 @@ putting application policy in the kernel:
   allowing monitoring to run without a heartbeat when outputs are disarmed.
 - **Power-loss recovery:** an unavailable configured slave can recover while
   the transport continues; stale outputs remain gated until user space
-  explicitly re-arms.
+  explicitly re-arms. **Ad-hoc setup SDO batches are not replayed by the
+  kernel** after drive power loss — every controller must re-apply its own
+  recipes with a mailbox-ready gate and retries (see
+  [client slave recovery](docs/client-slave-recovery.md)).
 - **Distributed Clocks:** user space selects DC policy while the kernel owns
   application time, synchronization calls, steering, and low-overhead status.
 - **Observable timing:** coherent cycle identity, scheduled/actual wake times,
@@ -325,6 +328,7 @@ layout is stable across a changed configuration.
   cycle timeline.
 - [UAPI](docs/uapi.md) — ioctl structures, validation, and exact semantics.
 - [Developer guide](docs/developer-guide.md) — implementing a new controller.
+- [Client slave recovery](docs/client-slave-recovery.md) — power-return setup CoE for any controller (not kernel policy).
 - [libelcethercat](docs/libelcethercat.md) — generic userspace library API
   (`make lib` / `make install-lib`) and optional consumer integration notes.
 - [IOD session handoff](docs/iod-session-handoff.md) — copy-pasteable prompt

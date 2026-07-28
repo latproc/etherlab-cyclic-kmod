@@ -94,6 +94,12 @@ When a drive returns:
 4. only then is it reported operational;
 5. normal outputs remain gated until application recovery policy permits them.
 
+Steps 1–2 for **ad-hoc ordered setup SDO batches** are **controller policy**:
+wait for non-zero identity and PREOP+ (not INIT-only “online”), hold briefly
+against flaps, apply a full new batch, retry with backoff. The transport does
+not encode brand recipes or retry loops. Generic client guidance:
+[`client-slave-recovery.md`](client-slave-recovery.md).
+
 The five observed ED3Ls have identical vendor/product/revision and no usable
 serial or alias. Their current distinction is physical chain position. A
 topology change cannot be resolved by pretending these identities uniquely

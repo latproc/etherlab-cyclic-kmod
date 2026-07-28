@@ -217,6 +217,10 @@ ELC_IOC_SDO_UPLOAD
 They are deliberately separate from the persistent declarative configuration
 transaction. The batch uses `ecrt_master_sdo_download()` and therefore applies
 only to online slaves; EtherLab does not retain or replay it after power loss.
+User-space clients that need the same ordered writes after control-power loss
+must re-submit a new batch themselves (mailbox-ready gate, debounce, retry) —
+see [`client-slave-recovery.md`](client-slave-recovery.md). The kernel will not
+grow a plant-specific re-apply state machine.
 
 Limits are:
 
