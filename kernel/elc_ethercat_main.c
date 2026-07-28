@@ -4386,9 +4386,32 @@ static long elc_ioctl(struct file *file, unsigned int cmd,
 	if (_IOC_TYPE(cmd) != ELC_IOC_MAGIC)
 		return -ENOTTY;
 
+	/*
+	 * Allowed while cyclic is active: process-image/status paths, and
+	 * blocking mailbox setup/SDO (client-owned commissioning after slave
+	 * power return). Setup is NOT RT-safe — callers must run it off the
+	 * hard real-time path. Declarative config change remains EBUSY while
+	 * active (must deactivate first).
+	 */
 	switch (cmd) {
 	case ELC_IOC_GET_CAPABILITIES:
 		return elc_get_capabilities(argp);
+	case ELC_IOC_GET_API_VERSION:
+		return elc_get_api_version(argp);
+	case ELC_IOC_GET_MASTER_INFO:
+		return elc_get_master_info(ctx, argp);
+	case ELC_IOC_GET_SLAVE_INFO:
+		return elc_get_slave_info(ctx, argp);
+	case ELC_IOC_SETUP_BEGIN:
+		return elc_setup_begin(ctx, argp);
+	case ELC_IOC_SETUP_ADD_SDO:
+		return elc_setup_add_sdo(ctx, argp);
+	case ELC_IOC_SETUP_APPLY:
+		return elc_setup_apply(ctx, argp);
+	case ELC_IOC_SETUP_RESET:
+		return elc_setup_reset(ctx, argp);
+	case ELC_IOC_SDO_UPLOAD:
+		return elc_sdo_upload(ctx, argp);
 	case ELC_IOC_CYCLE_GET_STATUS:
 		return elc_cycle_get_status(ctx, argp);
 	case ELC_IOC_CYCLE_DEACTIVATE:
@@ -4434,22 +4457,6 @@ static long elc_ioctl(struct file *file, unsigned int cmd,
 		return -EBUSY;
 
 	switch (cmd) {
-	case ELC_IOC_GET_API_VERSION:
-		return elc_get_api_version(argp);
-	case ELC_IOC_GET_MASTER_INFO:
-		return elc_get_master_info(ctx, argp);
-	case ELC_IOC_GET_SLAVE_INFO:
-		return elc_get_slave_info(ctx, argp);
-	case ELC_IOC_SETUP_BEGIN:
-		return elc_setup_begin(ctx, argp);
-	case ELC_IOC_SETUP_ADD_SDO:
-		return elc_setup_add_sdo(ctx, argp);
-	case ELC_IOC_SETUP_APPLY:
-		return elc_setup_apply(ctx, argp);
-	case ELC_IOC_SETUP_RESET:
-		return elc_setup_reset(ctx, argp);
-	case ELC_IOC_SDO_UPLOAD:
-		return elc_sdo_upload(ctx, argp);
 	case ELC_IOC_CONFIG_BEGIN:
 		return elc_config_begin(ctx, argp);
 	case ELC_IOC_CONFIG_ADD_SLAVE:

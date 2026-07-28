@@ -222,6 +222,12 @@ must re-submit a new batch themselves (mailbox-ready gate, debounce, retry) —
 see [`client-slave-recovery.md`](client-slave-recovery.md). The kernel will not
 grow a plant-specific re-apply state machine.
 
+**Cyclic active:** `SETUP_*` and `SDO_UPLOAD` (and discovery status) are
+permitted while the cyclic task runs; they block in the calling context for
+mailbox completion and must not be invoked from hard RT. Declarative
+`CONFIG_*` mutation remains rejected with `EBUSY` until deactivate. Older
+builds rejected setup with `EBUSY` whenever cyclic was active.
+
 Limits are:
 
 - 256 operations;

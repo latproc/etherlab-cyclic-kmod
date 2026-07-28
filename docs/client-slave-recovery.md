@@ -86,9 +86,12 @@ apply ordered setup batch (new begin/add/apply) ◄──┘
 ### 3.1 Triggers (queue work; do not apply on the hot path)
 
 - **Offline → online** after the slave was previously known online (return),
-  not necessarily on first cold scan (cold start often uses pre-activate setup).
-- **AL enters PREOP+** from INIT/0 after a return (online alone is not enough).
-- Optional: operator “recommission” command.
+  not on first cold scan (cold start uses pre-activate setup once).
+- Keep the job queued until mailbox-ready (PREOP+ / identity); do **not**
+  fire a second apply solely on PREOP→SAFEOP→OP edges after cold start — that
+  re-runs mapping CoE while the slave is already OP and often fails.
+- Optional: operator “recommission” command (and any client-driven PREOP request
+  if a family requires map changes only in PREOP).
 
 ### 3.2 Mailbox-ready gate (before `SETUP_APPLY`)
 
@@ -116,7 +119,28 @@ changes often need PREOP.
 - Cap concurrent / rate-limit applies (e.g. ≥500 ms between batches) so a
   flapping chain does not storm the master FSM.
 - Setup is **blocking mailbox** work: run off the hard real-time cyclic path
-  (worker thread or low-priority loop).
+  (worker thread or low-priority loop). Never call setup from the kernel cycle
+  thread or a SCHED_FIFO hard-RT loop.
+
+#### While cyclic is active
+
+**Current module behaviour (field-driven):** ordered setup SDO ioctls and
+`SDO_UPLOAD` / slave discovery are **allowed while the cyclic task is
+active**. They still block in the caller for mailbox completion; the kernel
+does **not** schedule them on the cyclic RT task.
+
+Older module builds returned **`EBUSY` (`-16`)** for `SETUP_*` while
+`cycle_activate` was in force. That forced clients to tear down cycling (or
+restart the owner) only to re-run a recipe — too heavy for servo power-return.
+If you still see `setup_begin` → `EBUSY` with no other owner, upgrade the
+module.
+
+**Still EBUSY while active:** declarative `CONFIG_*` change and
+`CYCLE_ACTIVATE` (already active). Rebuild topology → deactivate first.
+
+**Client must still:** debounce, mailbox-ready gate, rebuild batch, retry.
+The kernel only **executes** the batch you submit; it does not invent recipes
+or retries.
 
 ### 3.4 What the kernel already does for you
 
