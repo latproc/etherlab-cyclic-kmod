@@ -2,13 +2,15 @@
 
 ## Status
 
-The current experimental API is 0.17. Configured-bus health reporting, sticky
+The current experimental API is 0.19. Configured-bus health reporting, sticky
 fault/re-arm status, topology-derived output ownership, copied output shadows,
 and generation/sequence arm gates are in place. Per-domain WC/validity and
 per-configured-slave online/operational/AL state and data validity are
-available by stable configuration ID.
+available by stable configuration ID. Setup-hold (0.19) can inhibit OP for
+selected slaves while cyclic is active so client-owned map CoE has a PREOP
+window; recipes remain outside the kernel.
 
-API 0.17 makes output gating per-domain: each domain has its own authority for
+API 0.17+ makes output gating per-domain: each domain has its own authority for
 publication, arm, re-arm, and lease. Master/link loss still gates every domain.
 A position-29 servo power-loss/restoration test recovered without restarting
 the controller while outputs remained disarmed. This is experimental evidence,
@@ -95,10 +97,12 @@ When a drive returns:
 5. normal outputs remain gated until application recovery policy permits them.
 
 Steps 1–2 for **ad-hoc ordered setup SDO batches** are **controller policy**:
-wait for non-zero identity and PREOP+ (not INIT-only “online”), hold briefly
-against flaps, apply a full new batch, retry with backoff. The transport does
-not encode brand recipes or retry loops. Generic client guidance:
-[`client-slave-recovery.md`](client-slave-recovery.md).
+wait for non-zero identity and PREOP/SAFEOP (not INIT-only “online”), hold
+briefly against flaps, apply a full new batch, retry with backoff. With API
+0.19 `ELC_CAP_SETUP_HOLD`, the client should also begin/release setup-hold so
+OP is not raced while map CoE runs; recipes and debounce timers stay in the
+client. Generic guidance: [`client-slave-recovery.md`](client-slave-recovery.md)
+§9.
 
 The five observed ED3Ls have identical vendor/product/revision and no usable
 serial or alias. Their current distinction is physical chain position. A

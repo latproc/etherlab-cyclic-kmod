@@ -1,6 +1,6 @@
 # Architecture
 
-## Current API 0.18 boundary
+## Current API 0.19 boundary
 
 ```text
 standalone controller
@@ -14,7 +14,8 @@ standalone controller
 elc_ethercat.ko
     |
     | validated configuration, domains, cyclic/DC thread,
-    | copied images, per-domain health and output authorities
+    | copied images, per-domain health and output authorities,
+    | optional setup-hold (PREOP/SAFEOP inhibit while cycling)
     v
 EtherLab master 0
 ```

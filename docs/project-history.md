@@ -256,6 +256,12 @@ commands, outputs, and design details.
 - API 0.18 hang-failsafe lease: seed remaining on configure; refill on
   successful publish/arm; optional timeout_ms; configure while active;
   per-domain lease selection. Capability ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW.
+- API 0.19 setup-hold: client-initiated PREOP/SAFEOP inhibit for positions,
+  domain, or all while cyclic may be active; status bit and timeout/fd
+  force-release; capability `ELC_CAP_SETUP_HOLD`. Private EtherLab layout
+  compile gate (`make test-etherlab-layout`) and hardware harness
+  `tools/elc_test_setup_hold.sh`. Client recovery docs updated from “module
+  gap” to shipped UAPI.
 - Relicensed `libelcethercat` to **LGPL-2.1-or-later** and dual-licensed
   `elc_ethercat_uapi.h` as GPL-2.0-only OR LGPL-2.1-or-later so non-public
   applications may link the library. Kernel modules and tools remain

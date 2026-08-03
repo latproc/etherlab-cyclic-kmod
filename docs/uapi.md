@@ -249,7 +249,7 @@ post-scan `request_op`, reports `setup_hold_active` on
 `ELC_IOC_GET_CONFIG_SLAVE_STATUS`, and force-releases on `timeout_ms` (default
 30 s) or control-fd close. No plant recipes, debounce timers, or brand-specific
 SDO tables live in the module — see
-[`client-slave-recovery.md` §9](client-slave-recovery.md#9-kernel--elc-requirement-hold-preopsafeop-until-setup-complete).
+[`client-slave-recovery.md` §9](client-slave-recovery.md#9-kernel--elc-setup-hold-preopsafeop-until-setup-complete).
 
 **Cyclic active:** `SETUP_*`, setup-hold, and `SDO_UPLOAD` (and discovery
 status) are permitted while the cyclic task runs; they block in the calling

@@ -1,7 +1,7 @@
 # User-Space Controller Developer Guide
 
 This guide describes how to build a controller against the current
-experimental API 0.18. The normative structure and ioctl semantics are in
+experimental API 0.19. The normative structure and ioctl semantics are in
 [`uapi.md`](uapi.md); use the shared
 [`elc_ethercat_uapi.h`](../include/elc_ethercat_uapi.h) definitions rather than
 duplicating numeric commands or layouts.
@@ -28,9 +28,11 @@ required physical topology and identity fields explicitly.
 **Power-return CoE / setup recipes** are also client work. Online edges often
 fire while a drive is still INIT with identity `0:0` or AL “invalid mailbox”;
 a single early `SETUP_APPLY` fails and never runs again unless **you** debounce,
-re-queue on PREOP+, and retry with backoff. Do not expect the kernel module to
-implement that loop. Generic field guidance (any controller, not one product):
-[`client-slave-recovery.md`](client-slave-recovery.md).
+re-queue on PREOP/SAFEOP, and retry with backoff. When the kernel reports
+`ELC_CAP_SETUP_HOLD` (API 0.19), use setup-hold begin → ordered setup → release
+so OP is not raced; do not put plant recipes or debounce timers in the module.
+Generic field guidance: [`client-slave-recovery.md`](client-slave-recovery.md)
+§9.
 
 ## Build against the UAPI
 
@@ -99,12 +101,12 @@ then call `ELC_IOC_GET_CAPABILITIES`. Minor versions are additive, but a
 controller must not call an optional operation merely because it was compiled
 from a newer header.
 
-API 0.18 reports coherent copied process images, cycle timing,
+API 0.19 reports coherent copied process images, cycle timing,
 wait-for-cycle, DC diagnostics, optional output leases (including publish/arm
-renew and `timeout_ms`), input history, cycle-period updates, and per-domain
+renew and `timeout_ms`), input history, cycle-period updates, per-domain
 output authority (`ELC_CAP_DOMAIN_OUTPUT_AUTHORITY`,
-`ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW`). It does not report scheduled outputs or
-delegated domain connections.
+`ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW`), and setup-hold (`ELC_CAP_SETUP_HOLD`).
+It does not report scheduled outputs or delegated domain connections.
 
 See `get_api_version()` and `get_capabilities()` in
 [`elc_bus.c`](../tools/elc_bus.c).

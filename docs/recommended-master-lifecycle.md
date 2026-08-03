@@ -108,9 +108,10 @@ not re-run those batches.
 
 **Field rule:** PDO mapping / SM assignment CoE must complete in PREOP or
 SAFEOP. Applying map recipes in OP fails. Clients must not treat OP as
-“setup-ready.” True **hold-in-PREOP until setup complete** while cyclic is
-active is a **module gap** — see
-[`client-slave-recovery.md` §9](client-slave-recovery.md#9-kernel--elc-requirement-hold-preopsafeop-until-setup-complete).
+“setup-ready.” **Hold-in-PREOP until setup complete** while cyclic is active
+is **API 0.19 setup-hold** (`ELC_CAP_SETUP_HOLD`) — see
+[`client-slave-recovery.md` §9](client-slave-recovery.md#9-kernel--elc-setup-hold-preopsafeop-until-setup-complete)
+and [`uapi.md`](uapi.md).
 
 In target EtherLab 1.6.9:
 

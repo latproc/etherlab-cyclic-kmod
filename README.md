@@ -83,7 +83,7 @@ putting application policy in the kernel:
 The design is also being prepared for optional delegated domain controllers:
 one process may own ordinary machine I/O while a dedicated motion service owns
 a drive domain. There will still be one EtherLab master and one cyclic kernel
-timeline. This delegation is planned, not part of API 0.18.
+timeline. This delegation is planned, not part of API 0.19.
 
 ```text
               user-space configuration and controllers

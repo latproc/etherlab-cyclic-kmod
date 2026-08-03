@@ -90,7 +90,7 @@ result:
   short hold; while OP keep `waiting_preop` without burning attempts.
 - **API 0.19 setup-hold** can keep a configured slave in PREOP/SAFEOP while
   cyclic is active until the client releases (or timeout / fd close); see
-  [`client-slave-recovery.md` §9](client-slave-recovery.md#9-kernel--elc-requirement-hold-preopsafeop-until-setup-complete)
+  [`client-slave-recovery.md` §9](client-slave-recovery.md#9-kernel--elc-setup-hold-preopsafeop-until-setup-complete)
   for the module requirement.
 
 The known-good velocity baseline still needs to be captured after deliberately

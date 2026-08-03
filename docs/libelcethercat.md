@@ -249,16 +249,21 @@ Pre-open cable check is not a library call; use `ethercat master` as above.
 | `elc_setup_apply(h, struct elc_setup_apply *result)` | Execute batch; report first failure. |
 | `elc_setup_reset(h)` | Drop pending setup. |
 | `elc_sdo_upload(h, struct elc_sdo_upload *req)` | Bounded diagnostic upload. |
+| `elc_setup_hold_begin(h, struct elc_setup_hold_begin *req)` | API 0.19: inhibit OP (PREOP/SAFEOP) for positions/domain/all while cyclic may be active. Requires `ELC_CAP_SETUP_HOLD`. |
+| `elc_setup_hold_release(h, struct elc_setup_hold_release *req)` | Release hold so OP may proceed. |
+| `elc_setup_hold_status(h, struct elc_setup_hold_status *st)` | Query hold state / counts. |
 
 Use for commissioning and pre-activation parameter/PDO setup owned by the
 controller. Runtime mailbox SDO policy during OP is a separate concern.
+**PDO map batches must not be applied in OP**; use PREOP/SAFEOP and, when
+available, setup-hold around reapply.
 
 **Power loss:** the kernel does **not** replay this batch when a slave returns.
 Any controller that depends on ordered setup CoE after drive control-power loss
-must detect return, wait until the slave is mailbox-ready (not merely
-“online”/INIT), re-submit a full batch, and retry with backoff. That policy
-lives in the client — see
-[`client-slave-recovery.md`](client-slave-recovery.md).
+must detect return, optionally **setup-hold begin**, wait until PREOP/SAFEOP +
+identity ready, re-submit a full batch, **release** hold, and retry with
+backoff. That policy lives in the client — see
+[`client-slave-recovery.md`](client-slave-recovery.md) §9.
 
 ### 4.5 Transactional configuration
 
@@ -362,12 +367,13 @@ helpers.
 | Negotiate | `GET_API_VERSION`, `GET_CAPABILITIES` |
 | Discovery | `GET_MASTER_INFO`, `GET_SLAVE_INFO` |
 | Setup SDO | `SETUP_BEGIN`, `SETUP_ADD_SDO`, `SETUP_APPLY`, `SETUP_RESET`, `SDO_UPLOAD` |
+| Setup hold (0.19) | `SETUP_HOLD_BEGIN`, `SETUP_HOLD_RELEASE`, `SETUP_HOLD_STATUS` |
 | Config | `CONFIG_BEGIN`, `CONFIG_ADD_*`, `CONFIG_VALIDATE`, `CONFIG_APPLY` |
 | Domains | `DOMAIN_CREATE`, `GET_ENTRY_OFFSET` |
 | Cycle | `CYCLE_ACTIVATE`, `CYCLE_DEACTIVATE`, `CYCLE_STATUS`, `CYCLE_WAIT`, `CYCLE_INFO`, `CYCLE_SET_PERIOD` |
 | Images | `GET_INPUT_SNAPSHOT`, `PUBLISH_OUTPUT`, `ARM`, `DISARM` |
 | Status | `GET_IO_STATUS`, `GET_CONFIG_SLAVE_STATUS`, `GET_DOMAIN_STATUS`, `GET_DC_STATUS` |
-| Lease / history / domain output | as in `elc_ethercat_uapi.h` for API 0.14–0.18 |
+| Lease / history / domain output / hold | as in `elc_ethercat_uapi.h` for API 0.14–0.19 |
 
 Normative field semantics remain in [`uapi.md`](uapi.md). The library
 must zero structures and set `struct_size` / `api_major` correctly.
@@ -486,7 +492,7 @@ ioctl glue.
 | What is this project? | Generic kernel EtherCAT cyclic transport + UAPI + tools + library |
 | Who is the library for? | Any userspace controller or tool |
 | Where does it live? | `lib/` in this repository; installable headers + `libelcethercat` |
-| API language? | C wrapping UAPI 0.18 |
+| API language? | C wrapping UAPI 0.19 |
 | What stays out of the library? | Device recipes, ESI parsing, machine semantics, arm policy meaning |
 | Hard exclusivity rule? | One master-0 application owner: this control fd **or** another EtherLab client |
 

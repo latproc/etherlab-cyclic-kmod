@@ -1131,6 +1131,29 @@ reference validity/sample, phase, applied adjustment) snapshotted under the
 same lock as the coherent cycle record. `elc_config` prints a `DC cycle info`
 line after aggregate DC status when DC is enabled.
 
+## API 0.19 setup-hold
+
+API 0.19 advertises `ELC_CAP_SETUP_HOLD` and adds
+`ELC_IOC_SETUP_HOLD_{BEGIN,RELEASE,STATUS}` plus per-slave `setup_hold_active`.
+While cyclic may be active, the client can inhibit OP for selected positions,
+a domain, or all configured slaves (target AL PREOP or SAFEOP), run ordered
+`SETUP_*`, then release. Wall-time timeout (default 30 s) and control-fd close
+force-release holds.
+
+**Layout regression (no hardware):** `make test-etherlab-layout` compile-checks
+private EtherLab `requested_state` offsets and includes a negative case
+(wrong offset must fail to build). Requires EtherLab `master/*.h` sources.
+
+**Hardware (motion inhibited):** `ELC_MOTION_INHIBITED=YES ./tools/elc_test_setup_hold.sh`
+on the console EL2034 fixture (pos 15):
+
+- explicit hold → setup begin/reset under hold → release → OP;
+- short timeout force-release → OP;
+- client death while held → master idle, no cyclic leak.
+
+Policy and client checklist: [`client-slave-recovery.md`](client-slave-recovery.md)
+§9. Normative ABI: [`uapi.md`](uapi.md).
+
 ## API 0.18 hang-failsafe output lease
 
 API 0.18 advertises `ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW` and extends the 0.14

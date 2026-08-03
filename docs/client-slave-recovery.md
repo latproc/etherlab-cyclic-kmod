@@ -118,10 +118,12 @@ flaps `pending` / `retrying`.
 4. Use a **short** PREOP hold (hundreds of ms for identity/mailbox), not
    multi-second holds that outlast the PREOP window.
 
-**Kernel gap (see §9):** today elc **cannot** force a configured slave to
-stay in PREOP until the client finishes setup while cyclic is active.
-Clients only **catch** the PREOP/SAFEOP window. A true “hold until setup
-complete” needs a module/UAPI feature (§9).
+**API 0.19 setup-hold (see §9):** when `ELC_CAP_SETUP_HOLD` is present, the
+client should **begin setup-hold** for the affected positions or domain
+**before** (or as soon as) return-online work is queued, run ordered
+`SETUP_*` while AL is PREOP/SAFEOP, then **release** hold so OP may proceed.
+Without the capability (older modules), clients only **catch** the short
+PREOP/SAFEOP window and use `waiting_preop` while OP.
 
 ### 3.1 Triggers (queue work; do not apply on the hard-RT path)
 
@@ -277,57 +279,49 @@ Tune per device family; keep values in the **client**, not the kernel.
 
 ---
 
-## 9. Kernel / elc requirement: hold PREOP–SAFEOP until setup complete
+## 9. Kernel / elc setup-hold: PREOP–SAFEOP until setup complete
 
-### 9.1 Problem
+### 9.1 Problem (why hold exists)
 
-While `CYCLE_ACTIVATE` is in force, EtherLab/elc drives attached configs
-toward **OP**. User space can run `SETUP_APPLY` (blocking mailbox) **while
-cyclic is active**, but it **cannot** today:
+While `CYCLE_ACTIVATE` is in force, EtherLab promotes attached configs toward
+**OP**. Ordered map CoE (`SETUP_APPLY`) is allowed while cyclic is active but
+only writes at the **current** AL — it does not by itself keep a slave in
+PREOP. Without hold, clients **race** a short PREOP/SAFEOP window after power
+return; miss it → map wrong or apply fails → long recovery or operator power
+cycle.
 
-- request a configured slave to remain in PREOP (or SAFEOP) until setup finishes;
-- inhibit OP promotion for a subset of positions (e.g. domain 2 servos only);
-- learn from the module that “setup hold is active for config_id X”.
+### 9.2 Implemented behaviour (API 0.19)
 
-Without that, clients only **race** the PREOP/SAFEOP window after power return.
-Miss the window → map wrong or apply fails → operator power-cycle or long
-recovery.
-
-### 9.2 Desired behaviour (requirement for elc)
-
-**Goal:** After a slave reattaches (or on client request), the module (via
-EtherLab slave config state machine) must **not** request OP for that
-configuration until user space has completed ordered setup CoE for it—or
-explicitly released the hold.
-
-Suggested semantics (API names illustrative; final ABI TBD in `uapi.md`):
+**Goal met:** client may inhibit OP for selected configured slaves until
+ordered setup CoE finishes or hold is released / times out.
 
 ```text
 Client (return online or recommission):
   1. ELC_IOC_SETUP_HOLD_BEGIN  { positions[] | domain_config_id | all }
-     → kernel/master: target AL PREOP (or keep SAFEOP), do not promote to OP
+     → kernel: target AL PREOP or SAFEOP; do not promote held configs to OP
   2. Client: debounce identity, SETUP_BEGIN / ADD_SDO / APPLY (as today)
   3. ELC_IOC_SETUP_HOLD_RELEASE { same scope }
      → master may proceed SAFEOP → OP under normal cyclic policy
+  Status: ELC_IOC_SETUP_HOLD_STATUS; per-slave setup_hold_active on
+          ELC_IOC_GET_CONFIG_SLAVE_STATUS
+  Capability: ELC_CAP_SETUP_HOLD
 ```
 
-Minimum viable capabilities:
+| Capability | Status |
+|------------|--------|
+| **Per-position, per-domain, or all** scope | **Yes** (`ELC_SETUP_HOLD_SCOPE_*`) |
+| **Hold target AL PREOP or SAFEOP** (not OP) | **Yes** |
+| **Status** hold active / counts | **Yes** (status ioctl + per-slave bit) |
+| **Timeout / force-release** | **Yes** (default 30 s wall; control-fd close) |
+| **Works while cycle active** | **Yes** |
 
-| Capability | Why |
-|------------|-----|
-| **Per-position or per-domain setup hold** | Servos (domain 2) without blocking primary IO OP |
-| **Hold target AL PREOP or SAFEOP** (not OP) | Mapping CoE requires PREOP/SAFEOP |
-| **Status bit** “setup_hold active / released” | Client + HMI / domain ready gates |
-| **Timeout / force-release** | Avoid permanent hold if client dies |
-| **Works while cycle active** | Same reason setup is allowed while active |
+Lib wrappers: `elc_setup_hold_begin` / `release` / `status` in
+`libelcethercat` (`elc_ethercat.h`). Details: [`uapi.md`](uapi.md).
 
-Optional:
+Optional later (not required for 0.19):
 
-- Auto-hold on reattach for configs that have non-empty client-owned setup
-  flag (if ever encoded in config) — still prefer **client-initiated** hold
-  so the kernel stays recipe-agnostic.
-- Combine with declarative `ecrt_slave_config_pdos()` path when the drive
-  allows EtherLab-owned PDO replay (§ `recommended-master-lifecycle.md`).
+- Auto-hold on reattach (prefer client-initiated so kernel stays recipe-free).
+- Declarative `ecrt_slave_config_pdos()` as sole map owner when the drive allows.
 
 ### 9.3 What must **not** go into the kernel
 
@@ -336,18 +330,20 @@ Optional:
 - Motion enable policy.
 
 Recipes, debounce, and backoff stay in the **client** (`client-slave-recovery`
-policy). The module only supplies **state hold + batch execution**.
+policy). The module supplies **state hold + batch execution** only.
 
-### 9.4 Status (implementation)
+### 9.4 Status and tests
 
 | Layer | Status |
 |-------|--------|
-| Client PREOP/SAFEOP gate + short hold + `waiting_preop` | **Required now** (e.g. iod `ElcSetupRecipe`) |
-| elc **setup hold** UAPI / master behaviour | **API 0.19** — `ELC_IOC_SETUP_HOLD_{BEGIN,RELEASE,STATUS}`, capability `ELC_CAP_SETUP_HOLD`, per-slave `setup_hold_active`, wall-time timeout and control-fd release |
+| Client PREOP/SAFEOP gate + short hold + `waiting_preop` | **Required** (fallback if no CAP; belt-and-braces with hold) |
+| Client **setup-hold begin → apply → release** | **Required** when `ELC_CAP_SETUP_HOLD` (e.g. iod still to wire) |
+| elc setup hold UAPI / master behaviour | **API 0.19 shipped** |
 | Full declarative PDO-only recovery (no ad-hoc map CoE) | Preferred long-term if drive allows |
 
-Hardware exercise: `tools/elc_test_setup_hold.sh` (hold/release, timeout,
-client death) with `ELC_MOTION_INHIBITED=YES`.
+Hardware exercise: `tools/elc_test_setup_hold.sh` (and `elc_config`
+`setup-hold` / `setup-hold-timeout` / `setup-hold-death`) with
+`ELC_MOTION_INHIBITED=YES`.
 
 **Layout regression:** setup-hold uses private EtherLab `requested_state`
 offsets (`kernel/elc_etherlab_layout.h`). Run `make test-etherlab-layout` on
