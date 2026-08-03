@@ -55,6 +55,11 @@ static void __exit elc_probe_exit(void)
 module_init(elc_probe_init);
 module_exit(elc_probe_exit);
 
+#ifndef ELC_MODULE_VERSION
+#define ELC_MODULE_VERSION "0.0.0"
+#endif
+
 MODULE_AUTHOR("latproc");
 MODULE_DESCRIPTION("Minimal EtherLab master acquisition/release probe");
 MODULE_LICENSE("GPL");
+MODULE_VERSION(ELC_MODULE_VERSION);

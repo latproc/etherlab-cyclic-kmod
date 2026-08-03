@@ -116,6 +116,7 @@ modules: check-build-env
 	$(MAKE) -C "$(KERNEL_BUILD)" M="$(CURDIR)/kernel" \
 		ETHERLAB_INCLUDE="$(ETHERLAB_INCLUDE)" \
 		ETHERLAB_SOURCE="$(ETHERLAB_SOURCE)" \
+		ELC_MODULE_VERSION="$(LIB_VERSION)" \
 		KBUILD_EXTRA_SYMBOLS="$(ETHERLAB_SYMVERS)" modules
 
 # Fail if private EtherLab layout offsets used by setup-hold do not match
@@ -247,11 +248,16 @@ dkms.conf: dkms.conf.in Makefile
 	sed -e 's|@VERSION@|$(ELC_DKMS_VERSION)|g' "$<" > "$@"
 
 # Stage a minimal source tree for DKMS (no tools, docs, or .git).
+# Include etherlab_layout_stub/ so setup-hold layout check can compile when
+# EtherLab DKMS sources provide master/slave_config.h (needs stub config.h).
 dkms-stage: dkms.conf
 	@test -f dkms.conf
-	install -d "$(ELC_DKMS_SRC)/kernel" "$(ELC_DKMS_SRC)/include"
+	install -d "$(ELC_DKMS_SRC)/kernel" "$(ELC_DKMS_SRC)/kernel/etherlab_layout_stub" \
+		"$(ELC_DKMS_SRC)/include"
 	install -m 0644 Makefile dkms.conf "$(ELC_DKMS_SRC)/"
 	install -m 0644 kernel/Kbuild kernel/*.c kernel/*.h "$(ELC_DKMS_SRC)/kernel/"
+	install -m 0644 kernel/etherlab_layout_stub/* \
+		"$(ELC_DKMS_SRC)/kernel/etherlab_layout_stub/"
 	install -m 0644 include/elc_ethercat_uapi.h "$(ELC_DKMS_SRC)/include/"
 	@printf 'staged %s\n' "$(ELC_DKMS_SRC)"
 
@@ -266,7 +272,10 @@ dkms-install: check-build-env dkms-stage
 		dkms remove -m $(ELC_DKMS_PACKAGE) -v $(ELC_DKMS_VERSION) --all || true; \
 	fi
 	dkms add -m $(ELC_DKMS_PACKAGE) -v $(ELC_DKMS_VERSION)
-	dkms install -m $(ELC_DKMS_PACKAGE) -v $(ELC_DKMS_VERSION) -k "$(KERNEL_RELEASE)"
+	# --force: replace a previously installed .ko that lacks MODULE_VERSION
+	# or carries the same empty version (otherwise DKMS leaves the old file).
+	dkms install -m $(ELC_DKMS_PACKAGE) -v $(ELC_DKMS_VERSION) \
+		-k "$(KERNEL_RELEASE)" --force
 	@dkms status -m $(ELC_DKMS_PACKAGE) -v $(ELC_DKMS_VERSION)
 
 dkms-uninstall:

@@ -2,6 +2,10 @@ obj-m += elc_ethercat_probe.o
 obj-m += elc_ethercat.o
 elc_ethercat-y := elc_ethercat_main.o
 
+# Matches Makefile LIB_VERSION / DKMS PACKAGE_VERSION (e.g. 0.19.0).
+ELC_MODULE_VERSION ?= 0.0.0
+ccflags-y += -DELC_MODULE_VERSION=\"$(ELC_MODULE_VERSION)\"
+
 ccflags-y += -I$(ETHERLAB_INCLUDE)
 ccflags-y += -I$(src)/../include
 

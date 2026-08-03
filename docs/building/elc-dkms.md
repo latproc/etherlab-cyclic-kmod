@@ -58,11 +58,26 @@ dkms status
 modinfo elc_ethercat
 ```
 
+### One-shot reinstall + reload
+
+After module source changes, rebuild, force-install, drop older DKMS package
+versions, and `modprobe` the new `.ko`:
+
+```sh
+sudo ./scripts/elc-dkms-reinstall.sh
+```
+
+Options: `--no-reload` (install only), `--keep-old` (leave prior package
+versions registered), `--check-only` (env + status). Same EtherLab path
+overrides as `make` (`ETHERLAB_*`, `local.mk`). Close control fds before
+reload if `/dev/elc_ethercat0` is open.
+
 `make dkms-install`:
 
 1. writes `dkms.conf` from `dkms.conf.in` (version = library/UAPI `0.x.0`);
 2. stages a minimal source tree under `/usr/src/elc-ethercat-<version>/`
-   (`Makefile`, `dkms.conf`, `kernel/` including `elc_kcompat.h`, `include/`);
+   (`Makefile`, `dkms.conf`, `kernel/` including `elc_kcompat.h` and
+   `etherlab_layout_stub/`, `include/`);
 3. runs `dkms add` (if needed) and `dkms install -k $(uname -r)`.
 
 Modules are registered as package **`elc-ethercat`**. Built objects:
@@ -105,7 +120,7 @@ if two copies exist; remove one before using the other.
 ## Versioning
 
 DKMS package version tracks `LIB_VERSION` in the top-level Makefile
-(currently `0.17.0`, aligned with UAPI major.minor). Bumping
+(currently `0.19.0`, aligned with UAPI major.minor). Bumping
 `LIB_VERSION_MINOR` and regenerating `dkms.conf` is required for a new DKMS
 package version; remove the old DKMS package before installing a different
 version if both would claim the same module names.

@@ -239,6 +239,12 @@ sudo make dkms-install
 dkms status
 ```
 
+Reinstall and reload after source changes:
+
+```sh
+sudo ./scripts/elc-dkms-reinstall.sh
+```
+
 Remove with `sudo make dkms-uninstall`. Details:
 [docs/building/elc-dkms.md](docs/building/elc-dkms.md). DKMS does not install
 `libelcethercat` or the userspace tools.

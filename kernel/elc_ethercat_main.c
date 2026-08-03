@@ -4970,6 +4970,11 @@ static void __exit elc_exit(void)
 module_init(elc_init);
 module_exit(elc_exit);
 
+#ifndef ELC_MODULE_VERSION
+#define ELC_MODULE_VERSION "0.0.0"
+#endif
+
 MODULE_AUTHOR("latproc");
 MODULE_DESCRIPTION("Generic EtherLab cyclic transport");
 MODULE_LICENSE("GPL");
+MODULE_VERSION(ELC_MODULE_VERSION);
