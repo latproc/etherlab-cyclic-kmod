@@ -31,6 +31,26 @@ The matching DKMS `Module.symvers` is retained by this package's
 `POST_BUILD="save_module_symvers $dkms_tree"` hook. It is not in the EtherLab
 source directory or the kernel's own `Module.symvers`.
 
+## Setup-hold private layout gate
+
+Setup-hold must write EtherLab's internal `requested_state` because public
+`ecrt` does not export a request-AL API. Offsets live in
+`kernel/elc_etherlab_layout.h` and are **compile-checked** against EtherLab
+private headers whenever `ETHERLAB_SOURCE/master/slave_config.h` exists
+(normal DKMS source layout: parent of `ETHERLAB_INCLUDE`).
+
+| Check | Command | Failure mode |
+|---|---|---|
+| Compile-time `offsetof` | `make test-etherlab-layout` | Wrong offsets → build error (negative array size) |
+| Gate still bites | same test, wrong-offset subcase | Deliberately broken constant must fail to compile |
+| Semantic hold | `ELC_MOTION_INHIBITED=YES ./tools/elc_test_setup_hold.sh` | Slave not PREOP under hold / not OP after release |
+
+On plant hosts with only `ecrt.h` and `Module.symvers` (no `master/*.h`),
+the module still builds but prints a warning and **cannot** compile-check
+layout. Prefer building against full EtherLab sources so the gate is always
+on. After any EtherLab upgrade: run `make test-etherlab-layout` before
+shipping; if it fails, re-measure offsets and re-prove setup-hold on hardware.
+
 ## Confirmed external API
 
 The installed EtherLab source and matching symbol file export the APIs needed

@@ -4,3 +4,26 @@ elc_ethercat-y := elc_ethercat_main.o
 
 ccflags-y += -I$(ETHERLAB_INCLUDE)
 ccflags-y += -I$(src)/../include
+
+#
+# Setup-hold uses private EtherLab layout offsets. When the EtherLab *source*
+# tree is available (DKMS or manual checkout with master/), compile a
+# BUILD_BUG_ON unit so offsetof drift fails the module build instead of
+# shipping a silent mis-write.
+#
+# ETHERLAB_SOURCE defaults to the parent of ETHERLAB_INCLUDE (…/include → …).
+#
+ETHERLAB_SOURCE ?= $(patsubst %/,%,$(dir $(ETHERLAB_INCLUDE)))
+ETHERLAB_LAYOUT_HDR := $(ETHERLAB_SOURCE)/master/slave_config.h
+
+ifneq ($(wildcard $(ETHERLAB_LAYOUT_HDR)),)
+elc_ethercat-y += elc_etherlab_layout_check.o
+ccflags-y += -DELC_HAVE_ETHERLAB_LAYOUT_CHECK=1
+CFLAGS_elc_etherlab_layout_check.o += \
+	-I$(src)/etherlab_layout_stub \
+	-I$(ETHERLAB_SOURCE) \
+	-I$(ETHERLAB_SOURCE)/master \
+	-I$(ETHERLAB_SOURCE)/include
+else
+$(warning EtherLab private headers not found at $(ETHERLAB_LAYOUT_HDR); setup-hold layout cannot be compile-checked. Run: make test-etherlab-layout after installing ethercat-dkms sources.)
+endif

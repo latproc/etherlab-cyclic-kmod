@@ -24,6 +24,7 @@
 #include <ecrt.h>
 
 #include "elc_ethercat_uapi.h"
+#include "elc_etherlab_layout.h"
 #include "elc_kcompat.h"
 
 #define ELC_NAME "elc_ethercat"
@@ -212,6 +213,16 @@ struct elc_slave_node {
 	atomic_t state_online;
 	atomic_t state_operational;
 	atomic_t state_al_state;
+	/*
+	 * Setup hold (API 0.19): inhibit OP until client release or timeout.
+	 * setup_hold_active and deadline are accessed from the cyclic path
+	 * with WRITE_ONCE/READ_ONCE; begin/release hold the control mutex.
+	 */
+	u8 setup_hold_active;
+	u8 setup_hold_target_al;
+	u32 setup_hold_timeout_ms;
+	unsigned long setup_hold_deadline_jiffies;
+	u64 setup_hold_started_ns;
 };
 
 struct elc_sync_node {
@@ -305,6 +316,10 @@ static void *elc_kvzalloc(size_t size)
 
 static struct elc_slave_node *elc_find_slave(struct elc_file *ctx,
 					      u32 config_id);
+static void elc_setup_hold_release_slave(struct elc_slave_node *slave,
+					 bool request_op);
+static void elc_setup_hold_release_all(struct elc_file *ctx, bool request_op);
+static void elc_setup_hold_maintain(struct elc_file *ctx);
 
 static void elc_authority_init(struct elc_output_authority *authority)
 {
@@ -756,6 +771,13 @@ static void elc_update_io_health(struct elc_file *ctx)
 		if (state.operational)
 			operational++;
 	}
+
+	/*
+	 * Setup hold: expire timed holds and re-assert PREOP/SAFEOP so a
+	 * post-rescan ec_master_request_op() does not steal the setup window.
+	 * Safe stores only; no mailbox or allocation.
+	 */
+	elc_setup_hold_maintain(ctx);
 
 	list_for_each_entry(domain, &ctx->config_domains, common.node) {
 		struct elc_output_authority *authority = &domain->authority;
@@ -1335,6 +1357,9 @@ static int elc_deactivate_locked(struct elc_file *ctx)
 	if (!ctx->active)
 		return -EINVAL;
 
+	/* Drop setup holds before teardown; master will request PREOP itself. */
+	elc_setup_hold_release_all(ctx, false);
+
 	list_for_each_entry(domain, &ctx->config_domains, common.node) {
 		struct elc_output_authority *authority = &domain->authority;
 
@@ -1476,6 +1501,8 @@ static int elc_release(struct inode *inode, struct file *file)
 
 	if (ctx) {
 		mutex_lock(&ctx->lock);
+		/* Client death: force-release holds then tear down cyclic. */
+		elc_setup_hold_release_all(ctx, true);
 		if (ctx->active)
 			elc_deactivate_locked(ctx);
 		elc_setup_clear(ctx);
@@ -1585,6 +1612,126 @@ elc_find_slave(struct elc_file *ctx, u32 config_id)
 			return slave;
 	}
 	return NULL;
+}
+
+static struct elc_slave_node *
+elc_find_slave_by_position(struct elc_file *ctx, u16 position)
+{
+	struct elc_slave_node *slave;
+
+	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+		if (slave->cfg.position == position)
+			return slave;
+	}
+	return NULL;
+}
+
+/*
+ * Request an application-layer state on the EtherLab slave attached to a
+ * configuration. See ELC_EC_*_OFFSET comments at file scope.
+ */
+static void elc_ec_request_slave_al(ec_slave_config_t *sc, u8 al_state)
+{
+	u8 *slave;
+
+	if (!sc)
+		return;
+	slave = *(u8 **)((u8 *)sc + ELC_EC_SC_SLAVE_OFFSET);
+	if (!slave)
+		return;
+	*(unsigned int *)(slave + ELC_EC_SLAVE_REQUESTED_STATE_OFFSET) =
+		al_state;
+	*(unsigned int *)(slave + ELC_EC_SLAVE_ERROR_FLAG_OFFSET) = 0;
+}
+
+static void elc_setup_hold_apply_slave(struct elc_slave_node *slave)
+{
+	u8 target;
+
+	if (!slave || !slave->ec_config)
+		return;
+	if (!READ_ONCE(slave->setup_hold_active))
+		return;
+	target = READ_ONCE(slave->setup_hold_target_al);
+	if (target != EC_AL_STATE_PREOP && target != EC_AL_STATE_SAFEOP)
+		return;
+	elc_ec_request_slave_al(slave->ec_config, target);
+}
+
+static void elc_setup_hold_release_slave(struct elc_slave_node *slave,
+					 bool request_op)
+{
+	if (!slave || !READ_ONCE(slave->setup_hold_active))
+		return;
+	WRITE_ONCE(slave->setup_hold_active, 0);
+	slave->setup_hold_target_al = 0;
+	slave->setup_hold_timeout_ms = 0;
+	WRITE_ONCE(slave->setup_hold_deadline_jiffies, 0);
+	slave->setup_hold_started_ns = 0;
+	if (request_op && slave->ec_config)
+		elc_ec_request_slave_al(slave->ec_config, EC_AL_STATE_OP);
+}
+
+static void elc_setup_hold_release_all(struct elc_file *ctx, bool request_op)
+{
+	struct elc_slave_node *slave;
+
+	list_for_each_entry(slave, &ctx->config_slaves, common.node)
+		elc_setup_hold_release_slave(slave, request_op);
+}
+
+static void elc_setup_hold_maintain(struct elc_file *ctx)
+{
+	struct elc_slave_node *slave;
+	unsigned long now = jiffies;
+
+	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+		unsigned long deadline;
+
+		if (!READ_ONCE(slave->setup_hold_active))
+			continue;
+		deadline = READ_ONCE(slave->setup_hold_deadline_jiffies);
+		if (deadline && time_after_eq(now, deadline)) {
+			/* Timeout force-release; promote toward OP. */
+			WRITE_ONCE(slave->setup_hold_active, 0);
+			slave->setup_hold_target_al = 0;
+			slave->setup_hold_timeout_ms = 0;
+			WRITE_ONCE(slave->setup_hold_deadline_jiffies, 0);
+			slave->setup_hold_started_ns = 0;
+			if (slave->ec_config)
+				elc_ec_request_slave_al(slave->ec_config,
+							EC_AL_STATE_OP);
+			continue;
+		}
+		/* Re-assert after EtherLab's post-scan request_op. */
+		elc_setup_hold_apply_slave(slave);
+	}
+}
+
+static bool elc_setup_hold_scope_matches(struct elc_slave_node *slave,
+					   u32 scope, u32 domain_config_id,
+					   u32 position_count,
+					   const u16 *positions)
+{
+	u32 i;
+
+	if (!slave)
+		return false;
+	switch (scope) {
+	case ELC_SETUP_HOLD_SCOPE_ALL:
+		return true;
+	case ELC_SETUP_HOLD_SCOPE_DOMAIN:
+		return slave->domain &&
+		       slave->domain->cfg.config_id == domain_config_id;
+	case ELC_SETUP_HOLD_SCOPE_POSITIONS:
+		for (i = 0; i < position_count; i++) {
+			if (positions[i] == slave->cfg.position)
+				return true;
+		}
+		return false;
+	default:
+		return false;
+	}
 }
 
 static struct elc_domain_node *
@@ -3559,8 +3706,8 @@ static long elc_get_config_slave_status(struct elc_file *ctx,
 				 sizeof(result));
 	if (ret)
 		return ret;
-	if (result.reserved1 || result.reserved0[0] ||
-	    result.reserved0[1] || result.reserved0[2])
+	if (result.reserved1 || result.reserved0[0] || result.reserved0[1] ||
+	    result.setup_hold_active)
 		return -EINVAL;
 	config_id = result.config_id;
 	requested_generation = result.config_generation;
@@ -3582,6 +3729,7 @@ static long elc_get_config_slave_status(struct elc_file *ctx,
 	result.config_id = config_id;
 	result.config_generation = ctx->config_generation;
 	result.active = ctx->active;
+	result.setup_hold_active = READ_ONCE(slave->setup_hold_active) ? 1 : 0;
 	if (ctx->active) {
 		result.state_result = atomic_read(&slave->state_result);
 		result.online = atomic_read(&slave->state_online);
@@ -4202,6 +4350,281 @@ out_copy:
 	return ret;
 }
 
+static int elc_setup_hold_validate_scope(u32 scope, u32 domain_config_id,
+					   u32 position_count,
+					   const u16 *positions)
+{
+	u32 i;
+
+	switch (scope) {
+	case ELC_SETUP_HOLD_SCOPE_ALL:
+		if (domain_config_id || position_count)
+			return -EINVAL;
+		return 0;
+	case ELC_SETUP_HOLD_SCOPE_DOMAIN:
+		if (!domain_config_id || position_count)
+			return -EINVAL;
+		return 0;
+	case ELC_SETUP_HOLD_SCOPE_POSITIONS:
+		if (domain_config_id || !position_count ||
+		    position_count > ELC_SETUP_HOLD_POSITION_MAX)
+			return -EINVAL;
+		for (i = 0; i < position_count; i++) {
+			u32 j;
+
+			for (j = i + 1; j < position_count; j++) {
+				if (positions[i] == positions[j])
+					return -EEXIST;
+			}
+		}
+		return 0;
+	default:
+		return -EINVAL;
+	}
+}
+
+static long elc_setup_hold_begin(struct elc_file *ctx, void __user *argp)
+{
+	struct elc_setup_hold_begin request;
+	struct elc_slave_node *slave;
+	u32 timeout_ms;
+	u32 held = 0;
+	u64 now_ns;
+	int ret;
+
+	if (copy_from_user(&request, argp, sizeof(request)))
+		return -EFAULT;
+	ret = elc_check_header(request.struct_size, request.api_major,
+				 sizeof(request));
+	if (ret)
+		return ret;
+	if (request.flags || memchr_inv(request.reserved0, 0,
+					sizeof(request.reserved0)) ||
+	    request.reserved1)
+		return -EINVAL;
+	if (request.target_al != EC_AL_STATE_PREOP &&
+	    request.target_al != EC_AL_STATE_SAFEOP)
+		return -EINVAL;
+	if (request.timeout_ms > ELC_SETUP_HOLD_TIMEOUT_MS_MAX)
+		return -EINVAL;
+	ret = elc_setup_hold_validate_scope(request.scope,
+					      request.domain_config_id,
+					      request.position_count,
+					      request.positions);
+	if (ret)
+		return ret;
+
+	timeout_ms = request.timeout_ms ? request.timeout_ms :
+					  ELC_SETUP_HOLD_TIMEOUT_MS_DEFAULT;
+	now_ns = ktime_get_ns();
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->config_applied || !ctx->domain_registered) {
+		ret = -EINVAL;
+		goto out_copy;
+	}
+	if (request.config_generation != ctx->config_generation) {
+		ret = -ESTALE;
+		goto out_copy;
+	}
+	if (request.scope == ELC_SETUP_HOLD_SCOPE_DOMAIN &&
+	    !elc_find_domain(ctx, request.domain_config_id)) {
+		ret = -ENOENT;
+		goto out_copy;
+	}
+	if (request.scope == ELC_SETUP_HOLD_SCOPE_POSITIONS) {
+		u32 i;
+
+		for (i = 0; i < request.position_count; i++) {
+			if (!elc_find_slave_by_position(ctx,
+							request.positions[i])) {
+				ret = -ENOENT;
+				goto out_copy;
+			}
+		}
+	}
+
+	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+		if (!elc_setup_hold_scope_matches(slave, request.scope,
+						    request.domain_config_id,
+						    request.position_count,
+						    request.positions))
+			continue;
+		slave->setup_hold_target_al = request.target_al;
+		slave->setup_hold_timeout_ms = timeout_ms;
+		slave->setup_hold_started_ns = now_ns;
+		WRITE_ONCE(slave->setup_hold_deadline_jiffies,
+			   jiffies + msecs_to_jiffies(timeout_ms));
+		WRITE_ONCE(slave->setup_hold_active, 1);
+		elc_setup_hold_apply_slave(slave);
+		held++;
+	}
+	if (!held) {
+		ret = -ENOENT;
+		goto out_copy;
+	}
+	ret = 0;
+
+out_copy:
+	request.held_count = held;
+	request.applied_timeout_ms = timeout_ms;
+	request.result = ret;
+	if (copy_to_user(argp, &request, sizeof(request)))
+		ret = -EFAULT;
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
+
+static long elc_setup_hold_release(struct elc_file *ctx, void __user *argp)
+{
+	struct elc_setup_hold_release request;
+	struct elc_slave_node *slave;
+	u32 released = 0;
+	u32 remaining = 0;
+	int ret;
+
+	if (copy_from_user(&request, argp, sizeof(request)))
+		return -EFAULT;
+	ret = elc_check_header(request.struct_size, request.api_major,
+				 sizeof(request));
+	if (ret)
+		return ret;
+	if (request.flags || request.reserved0 || request.reserved1)
+		return -EINVAL;
+	ret = elc_setup_hold_validate_scope(request.scope,
+					      request.domain_config_id,
+					      request.position_count,
+					      request.positions);
+	if (ret)
+		return ret;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->config_applied) {
+		ret = -EINVAL;
+		goto out_copy;
+	}
+	if (request.config_generation != ctx->config_generation) {
+		ret = -ESTALE;
+		goto out_copy;
+	}
+
+	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+		if (!elc_setup_hold_scope_matches(slave, request.scope,
+						    request.domain_config_id,
+						    request.position_count,
+						    request.positions))
+			continue;
+		if (READ_ONCE(slave->setup_hold_active)) {
+			elc_setup_hold_release_slave(slave, true);
+			released++;
+		}
+	}
+	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+		if (READ_ONCE(slave->setup_hold_active))
+			remaining++;
+	}
+	ret = 0;
+
+out_copy:
+	request.released_count = released;
+	request.remaining_held_count = remaining;
+	request.result = ret;
+	if (copy_to_user(argp, &request, sizeof(request)))
+		ret = -EFAULT;
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
+
+static long elc_setup_hold_status(struct elc_file *ctx, void __user *argp)
+{
+	struct elc_setup_hold_status request;
+	struct elc_slave_node *slave;
+	u32 held = 0;
+	u32 remaining_min = U32_MAX;
+	u64 started_min = 0;
+	u32 timeout_ms = 0;
+	unsigned long now = jiffies;
+	int ret;
+
+	if (copy_from_user(&request, argp, sizeof(request)))
+		return -EFAULT;
+	ret = elc_check_header(request.struct_size, request.api_major,
+				 sizeof(request));
+	if (ret)
+		return ret;
+	if (request.flags || request.reserved0 ||
+	    memchr_inv(request.reserved1, 0, sizeof(request.reserved1)) ||
+	    request.reserved2)
+		return -EINVAL;
+	/*
+	 * Default filter is ALL when scope/position_count are zero so a
+	 * zeroed status request returns the global hold picture.
+	 */
+	if (!request.scope && !request.position_count &&
+	    !request.domain_config_id)
+		request.scope = ELC_SETUP_HOLD_SCOPE_ALL;
+	ret = elc_setup_hold_validate_scope(request.scope,
+					      request.domain_config_id,
+					      request.position_count,
+					      request.positions);
+	if (ret)
+		return ret;
+
+	mutex_lock(&ctx->lock);
+	if (!ctx->config_applied) {
+		ret = -EINVAL;
+		goto out_copy;
+	}
+	if (request.config_generation &&
+	    request.config_generation != ctx->config_generation) {
+		ret = -ESTALE;
+		goto out_copy;
+	}
+
+	list_for_each_entry(slave, &ctx->config_slaves, common.node) {
+		unsigned long deadline;
+		u32 rem_ms;
+
+		if (!elc_setup_hold_scope_matches(slave, request.scope,
+						    request.domain_config_id,
+						    request.position_count,
+						    request.positions))
+			continue;
+		if (!READ_ONCE(slave->setup_hold_active))
+			continue;
+		held++;
+		deadline = READ_ONCE(slave->setup_hold_deadline_jiffies);
+		if (deadline && time_before(now, deadline))
+			rem_ms = jiffies_to_msecs(deadline - now);
+		else
+			rem_ms = 0;
+		if (rem_ms < remaining_min)
+			remaining_min = rem_ms;
+		if (!timeout_ms)
+			timeout_ms = slave->setup_hold_timeout_ms;
+		if (!started_min ||
+		    (slave->setup_hold_started_ns &&
+		     slave->setup_hold_started_ns < started_min))
+			started_min = slave->setup_hold_started_ns;
+	}
+	if (remaining_min == U32_MAX)
+		remaining_min = 0;
+	ret = 0;
+
+out_copy:
+	request.config_generation = ctx->config_generation;
+	request.held_count = held;
+	request.timeout_ms = timeout_ms;
+	request.remaining_ms_min = remaining_min;
+	request.any_active = held ? 1 : 0;
+	request.hold_started_ns = started_min;
+	request.result = ret;
+	if (copy_to_user(argp, &request, sizeof(request)))
+		ret = -EFAULT;
+	mutex_unlock(&ctx->lock);
+	return ret;
+}
+
 static long elc_sdo_upload(struct elc_file *ctx, void __user *argp)
 {
 	struct elc_sdo_upload result;
@@ -4288,7 +4711,8 @@ static long elc_get_capabilities(void __user *argp)
 			ELC_CAP_CYCLE_PERIOD_UPDATE |
 			ELC_CAP_INPUT_HISTORY |
 			ELC_CAP_CYCLE_DC_INFO |
-			ELC_CAP_DOMAIN_OUTPUT_AUTHORITY,
+			ELC_CAP_DOMAIN_OUTPUT_AUTHORITY |
+			ELC_CAP_SETUP_HOLD,
 	};
 	int ret;
 
@@ -4412,6 +4836,12 @@ static long elc_ioctl(struct file *file, unsigned int cmd,
 		return elc_setup_reset(ctx, argp);
 	case ELC_IOC_SDO_UPLOAD:
 		return elc_sdo_upload(ctx, argp);
+	case ELC_IOC_SETUP_HOLD_BEGIN:
+		return elc_setup_hold_begin(ctx, argp);
+	case ELC_IOC_SETUP_HOLD_RELEASE:
+		return elc_setup_hold_release(ctx, argp);
+	case ELC_IOC_SETUP_HOLD_STATUS:
+		return elc_setup_hold_status(ctx, argp);
 	case ELC_IOC_CYCLE_GET_STATUS:
 		return elc_cycle_get_status(ctx, argp);
 	case ELC_IOC_CYCLE_DEACTIVATE:

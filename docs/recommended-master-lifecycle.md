@@ -100,10 +100,17 @@ preferred final lifecycle.
 
 ## Power loss and automatic rescan
 
-Client-owned ad-hoc setup after return (debounce, PREOP gate, retry) is
-documented for **all** controllers in
+Client-owned ad-hoc setup after return (debounce, **PREOP/SAFEOP-only** gate
+for PDO map CoE, short hold, `waiting_preop` while OP, retry) is documented
+for **all** controllers in
 [`client-slave-recovery.md`](client-slave-recovery.md). Kernel rescan alone does
 not re-run those batches.
+
+**Field rule:** PDO mapping / SM assignment CoE must complete in PREOP or
+SAFEOP. Applying map recipes in OP fails. Clients must not treat OP as
+“setup-ready.” True **hold-in-PREOP until setup complete** while cyclic is
+active is a **module gap** — see
+[`client-slave-recovery.md` §9](client-slave-recovery.md#9-kernel--elc-requirement-hold-preopsafeop-until-setup-complete).
 
 In target EtherLab 1.6.9:
 

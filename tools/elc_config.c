@@ -193,13 +193,19 @@ static void usage(const char *program)
 		"  %s cycle-abi CONFIG PERIOD_NS DURATION_SECONDS [DEVICE]\n"
 		"  %s cycle-log CONFIG PERIOD_NS DURATION_SECONDS NAMES_FILE [LOG_FILE] [DEVICE]\n"
 		"  %s pulse-entry CONFIG PERIOD_NS ENTRY_ID PULSE_MS [DEVICE]\n"
+		"  %s setup-hold CONFIG PERIOD_NS POSITION [DEVICE]\n"
+		"  %s setup-hold-timeout CONFIG PERIOD_NS POSITION TIMEOUT_MS [DEVICE]\n"
+		"  %s setup-hold-death CONFIG PERIOD_NS POSITION TIMEOUT_MS [DEVICE]\n"
 		"\n"
 		"cycle-log: disarmed cycling; log process-data changes as \"name value\".\n"
 		"  NAMES_FILE lines: ENTRY_ID NAME...  or  object INDEX SUBINDEX NAME...\n"
-		"  LOG_FILE defaults to stdout (-). Outputs stay disarmed.\n",
+		"  LOG_FILE defaults to stdout (-). Outputs stay disarmed.\n"
+		"setup-hold*: while cyclic is active, hold POSITION in PREOP for setup CoE;\n"
+		"  setup-hold releases explicitly; setup-hold-timeout waits for force-release;\n"
+		"  setup-hold-death prints READY and sleeps (kill to test client death).\n",
 		program, program, program, program, program, program, program,
 		program, program, program, program, program, program, program,
-		program);
+		program, program, program, program);
 }
 
 static int expect_ioctl_errno(elc_handle *h, unsigned long request,
@@ -3122,6 +3128,313 @@ out:
 	return ret;
 }
 
+/*
+ * setup-hold modes:
+ *  0 = explicit hold / verify PREOP / release / wait OP
+ *  1 = short timeout auto-release
+ *  2 = hold and sleep forever (client-death harness)
+ */
+static int setup_hold_test(const char *path, uint32_t period_ns,
+			     uint16_t position, uint32_t timeout_ms, int mode,
+			     const char *device)
+{
+	struct elc_config_validate validate;
+	struct elc_cycle_activate activate = {
+		.struct_size = sizeof(activate),
+		.api_major = ELC_API_VERSION_MAJOR,
+		.cycle_period_ns = period_ns,
+	};
+	struct elc_io_status io_status = {
+		.struct_size = sizeof(io_status),
+		.api_major = ELC_API_VERSION_MAJOR,
+	};
+	struct elc_setup_hold_begin hold = {
+		.struct_size = sizeof(hold),
+		.api_major = ELC_API_VERSION_MAJOR,
+		.scope = ELC_SETUP_HOLD_SCOPE_POSITIONS,
+		.position_count = 1,
+		/* EC_AL_STATE_PREOP = 2 (EtherCAT AL encoding). */
+		.target_al = 2,
+		.timeout_ms = timeout_ms,
+	};
+	struct elc_setup_hold_status hold_status = {
+		.struct_size = sizeof(hold_status),
+		.api_major = ELC_API_VERSION_MAJOR,
+	};
+	struct elc_setup_hold_release release = {
+		.struct_size = sizeof(release),
+		.api_major = ELC_API_VERSION_MAJOR,
+		.scope = ELC_SETUP_HOLD_SCOPE_POSITIONS,
+		.position_count = 1,
+	};
+	struct elc_config_slave_status slave_status = {
+		.struct_size = sizeof(slave_status),
+		.api_major = ELC_API_VERSION_MAJOR,
+	};
+	struct elc_cycle_deactivate deactivate = {
+		.struct_size = sizeof(deactivate),
+		.api_major = ELC_API_VERSION_MAJOR,
+	};
+	struct elc_setup_begin setup_begin = {
+		.struct_size = sizeof(setup_begin),
+		.api_major = ELC_API_VERSION_MAJOR,
+	};
+
+	elc_handle *h = NULL;
+	bool active = false;
+	uint32_t slave_config_id = 0;
+	unsigned int attempts;
+	int ret = 1;
+	FILE *file;
+	char line[512];
+
+	hold.positions[0] = position;
+	release.positions[0] = position;
+
+	/* Resolve config_id for the physical position from the fixture. */
+	file = fopen(path, "r");
+	if (!file) {
+		fprintf(stderr, "elc_config: open %s: %s\n", path,
+			strerror(errno));
+		return 1;
+	}
+	while (fgets(line, sizeof(line), file)) {
+		unsigned int config_id = 0;
+		unsigned int alias = 0;
+		unsigned int pos = 0;
+		unsigned int vendor = 0;
+		unsigned int product = 0;
+		unsigned int revision = 0;
+
+		if (line[0] == '#' || line[0] == '\n')
+			continue;
+		if (sscanf(line,
+			   "slave %u %u %u %x %x %u",
+			   &config_id, &alias, &pos, &vendor, &product,
+			   &revision) == 6 &&
+		    pos == position) {
+			slave_config_id = config_id;
+			break;
+		}
+	}
+	fclose(file);
+	if (!slave_config_id) {
+		fprintf(stderr,
+			"elc_config: no slave at position %u in %s\n",
+			position, path);
+		return 2;
+	}
+
+	if (open_handle(device, &h) < 0) {
+		fprintf(stderr, "elc_config: cannot open %s: %s\n", device,
+			strerror(errno));
+		return 1;
+	}
+	if (configure_handle(h, path, &validate))
+		goto out;
+	if (lib_ret(elc_cycle_activate(h, activate.cycle_period_ns,
+				       activate.flags, &activate)) < 0) {
+		fprintf(stderr, "elc_config: activation failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	active = true;
+
+	for (attempts = 0; attempts < 100; attempts++) {
+		io_status.struct_size = sizeof(io_status);
+		io_status.api_major = ELC_API_VERSION_MAJOR;
+		if (lib_ret(elc_get_io_status(h, &io_status)) < 0) {
+			fprintf(stderr, "elc_config: IO status failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		if (io_status.configured_slaves_online)
+			break;
+		usleep(50000);
+	}
+
+	hold.config_generation = io_status.config_generation;
+	if (lib_ret(elc_setup_hold_begin(h, &hold)) < 0) {
+		fprintf(stderr, "elc_config: SETUP_HOLD_BEGIN failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	printf("setup-hold begin: position=%u held=%" PRIu32
+	       " timeout_ms=%" PRIu32 "\n",
+	       position, hold.held_count, hold.applied_timeout_ms);
+
+	/* Wait for AL PREOP under hold (master may still be transitioning). */
+	for (attempts = 0; attempts < 200; attempts++) {
+		slave_status.config_id = slave_config_id;
+		slave_status.config_generation = io_status.config_generation;
+		slave_status.setup_hold_active = 0;
+		if (lib_ret(elc_get_config_slave_status(h, &slave_status)) <
+		    0) {
+			fprintf(stderr,
+				"elc_config: slave status failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		/* PREOP=2 SAFEOP=4 OP=8 */
+		if (slave_status.setup_hold_active &&
+		    slave_status.online &&
+		    (slave_status.al_state == 2 ||
+		     slave_status.al_state == 4) &&
+		    !slave_status.operational)
+			break;
+		usleep(50000);
+	}
+	if (!slave_status.setup_hold_active) {
+		fprintf(stderr, "elc_config: setup_hold_active not set\n");
+		goto out;
+	}
+	if (slave_status.operational || slave_status.al_state == 8) {
+		fprintf(stderr,
+			"elc_config: slave still OP under hold (al=%u)\n",
+			slave_status.al_state);
+		goto out;
+	}
+	printf("held al_state=%u online=%u operational=%u\n",
+	       slave_status.al_state, slave_status.online,
+	       slave_status.operational);
+
+	/*
+	 * Prove ordered setup UAPI is allowed while held and cyclic-active.
+	 * Device-specific CoE recipes stay in the client; this only exercises
+	 * begin/reset under hold (no brand SDO content).
+	 */
+	if (lib_ret(elc_setup_begin(h)) < 0) {
+		fprintf(stderr, "elc_config: SETUP_BEGIN failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	(void)setup_begin;
+	if (lib_ret(elc_setup_reset(h)) < 0) {
+		fprintf(stderr, "elc_config: SETUP_RESET failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	printf("setup batch begin/reset under hold: ok\n");
+
+	/* Re-check hold still inhibits OP after mailbox activity. */
+	usleep(200000);
+	slave_status.config_id = slave_config_id;
+	slave_status.config_generation = io_status.config_generation;
+	slave_status.setup_hold_active = 0;
+	if (lib_ret(elc_get_config_slave_status(h, &slave_status)) < 0) {
+		fprintf(stderr, "elc_config: re-check status failed: %s\n",
+			strerror(errno));
+		goto out;
+	}
+	if (!slave_status.setup_hold_active || slave_status.operational ||
+	    slave_status.al_state == 8) {
+		fprintf(stderr,
+			"elc_config: hold lost after setup path (al=%u op=%u hold=%u)\n",
+			slave_status.al_state, slave_status.operational,
+			slave_status.setup_hold_active);
+		goto out;
+	}
+	printf("hold retained after setup path: al=%u\n",
+	       slave_status.al_state);
+
+	if (mode == 2) {
+		printf("READY: setup-hold active (client-death harness)\n");
+		fflush(stdout);
+		for (;;)
+			sleep(3600);
+	}
+
+	if (mode == 1) {
+		unsigned int wait_ms = timeout_ms + 2000;
+		unsigned int slept = 0;
+
+		printf("waiting for hold timeout (%u ms + slack)...\n",
+		       timeout_ms);
+		while (slept < wait_ms) {
+			hold_status.config_generation =
+				io_status.config_generation;
+			hold_status.scope = ELC_SETUP_HOLD_SCOPE_POSITIONS;
+			hold_status.position_count = 1;
+			hold_status.positions[0] = position;
+			if (lib_ret(elc_setup_hold_status(h, &hold_status)) <
+			    0) {
+				fprintf(stderr,
+					"elc_config: hold status failed: %s\n",
+					strerror(errno));
+				goto out;
+			}
+			if (!hold_status.any_active)
+				break;
+			usleep(100000);
+			slept += 100;
+		}
+		if (hold_status.any_active) {
+			fprintf(stderr,
+				"elc_config: hold did not expire (held=%u rem_ms=%u)\n",
+				hold_status.held_count,
+				hold_status.remaining_ms_min);
+			goto out;
+		}
+		printf("timeout force-release: hold cleared\n");
+	} else {
+		/* Hold a short settle window then explicit release. */
+		usleep(500000);
+		release.config_generation = io_status.config_generation;
+		if (lib_ret(elc_setup_hold_release(h, &release)) < 0) {
+			fprintf(stderr,
+				"elc_config: SETUP_HOLD_RELEASE failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		printf("setup-hold release: released=%" PRIu32
+		       " remaining=%" PRIu32 "\n",
+		       release.released_count, release.remaining_held_count);
+	}
+
+	/* After release, slave may return to OP. */
+	for (attempts = 0; attempts < 200; attempts++) {
+		slave_status.config_id = slave_config_id;
+		slave_status.config_generation = io_status.config_generation;
+		slave_status.setup_hold_active = 0;
+		if (lib_ret(elc_get_config_slave_status(h, &slave_status)) <
+		    0) {
+			fprintf(stderr,
+				"elc_config: post-release status failed: %s\n",
+				strerror(errno));
+			goto out;
+		}
+		if (!slave_status.setup_hold_active &&
+		    slave_status.operational)
+			break;
+		usleep(50000);
+	}
+	if (slave_status.setup_hold_active) {
+		fprintf(stderr, "elc_config: hold still active after release\n");
+		goto out;
+	}
+	printf("post-release: al_state=%u operational=%u setup_hold=%u\n",
+	       slave_status.al_state, slave_status.operational,
+	       slave_status.setup_hold_active);
+	if (!slave_status.operational) {
+		fprintf(stderr,
+			"elc_config: slave did not return to OP after release\n");
+		goto out;
+	}
+
+	ret = 0;
+	printf("PASS: setup-hold mode=%d position=%u\n", mode, position);
+
+out:
+	if (active) {
+		if (lib_ret(elc_cycle_deactivate(h, &deactivate)) < 0)
+			fprintf(stderr,
+				"elc_config: deactivation failed: %s\n",
+				strerror(errno));
+	}
+	elc_close(h);
+	return ret;
+}
+
 int main(int argc, char **argv)
 {
 	const char *device = "/dev/elc_ethercat0";
@@ -3131,6 +3444,8 @@ int main(int argc, char **argv)
 	uint64_t period;
 	uint64_t target_period;
 	uint64_t history_depth;
+	uint64_t position;
+	uint64_t timeout_ms;
 
 	if (argc < 3 || argc > 8) {
 		usage(argv[0]);
@@ -3241,6 +3556,42 @@ int main(int argc, char **argv)
 			     !strcmp(argv[1], "cycle-abi"),
 			     !strcmp(argv[1], "cycle-strict"), 0, false,
 			     0, device);
+	}
+	if (!strcmp(argv[1], "setup-hold") &&
+	    (argc == 5 || argc == 6)) {
+		if (parse_u64(argv[3], ELC_CYCLE_PERIOD_MAX_NS, &period) ||
+		    period < ELC_CYCLE_PERIOD_MIN_NS ||
+		    parse_u64(argv[4], UINT16_MAX, &position)) {
+			fprintf(stderr,
+				"elc_config: invalid period or position\n");
+			return 2;
+		}
+		if (argc == 6)
+			device = argv[5];
+		return setup_hold_test(argv[2], (uint32_t)period,
+				       (uint16_t)position, 30000, 0, device);
+	}
+	if ((!strcmp(argv[1], "setup-hold-timeout") ||
+	     !strcmp(argv[1], "setup-hold-death")) &&
+	    (argc == 6 || argc == 7)) {
+		if (parse_u64(argv[3], ELC_CYCLE_PERIOD_MAX_NS, &period) ||
+		    period < ELC_CYCLE_PERIOD_MIN_NS ||
+		    parse_u64(argv[4], UINT16_MAX, &position) ||
+		    parse_u64(argv[5], ELC_SETUP_HOLD_TIMEOUT_MS_MAX,
+			      &timeout_ms) ||
+		    !timeout_ms) {
+			fprintf(stderr,
+				"elc_config: invalid period, position, or timeout\n");
+			return 2;
+		}
+		if (argc == 7)
+			device = argv[6];
+		return setup_hold_test(argv[2], (uint32_t)period,
+				       (uint16_t)position, (uint32_t)timeout_ms,
+				       !strcmp(argv[1], "setup-hold-death") ?
+					       2 :
+					       1,
+				       device);
 	}
 	if (!strcmp(argv[1], "cycle-log") &&
 	    (argc == 6 || argc == 7 || argc == 8)) {

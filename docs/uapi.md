@@ -2,7 +2,7 @@
 
 ## Status
 
-The current experimental API is version 0.18. It supports discovery, a
+The current experimental API is version 0.19. It supports discovery, a
 provisional bounded commissioning SDO batch, transactional
 slave/Sync/PDO/entry/DC configuration, domain registration, configurable
 cyclic pumping, copied process images, distributed clocks, health/fault
@@ -10,8 +10,9 @@ status, explicit output arm/disarm, per-configured-slave validity, mandatory
 PDO padding, explicit multiple validity domains, coherent per-cycle timing,
 capability discovery, interruptible cycle notification, and optional
 authority-scoped output leases (publish/arm renew and optional timeout_ms),
-disarmed cycle-boundary period updates, and per-domain output authority
-(independent arm/health and scoped publish).
+disarmed cycle-boundary period updates, per-domain output authority
+(independent arm/health and scoped publish), and setup-hold (PREOP/SAFEOP
+inhibit for ordered setup CoE while cyclic may be active).
 
 ## Ownership and lifecycle
 
@@ -112,7 +113,10 @@ Minor versions add:
 - 0.18: hang-failsafe lease improvements — remaining seeded on configure,
   successful publish/arm refill the budget (`ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW`),
   optional `timeout_ms` wall-time budget, configure while cycling, and
-  per-domain lease via `flags` = domain_config_id.
+  per-domain lease via `flags` = domain_config_id;
+- 0.19: setup hold — `ELC_IOC_SETUP_HOLD_{BEGIN,RELEASE,STATUS}`, capability
+  `ELC_CAP_SETUP_HOLD`, per-slave `setup_hold_active`, PREOP/SAFEOP target AL,
+  wall-time timeout and control-fd force-release while cyclic may be active.
 
 Input/output structures that accept caller fields include `struct_size` and
 `api_major`. The kernel rejects an unexpected size with `EINVAL` and an
@@ -128,12 +132,12 @@ Returns `struct elc_api_version`.
 
 ### `ELC_IOC_GET_CAPABILITIES`
 
-Returns `struct elc_capabilities`. API 0.18 reports only implemented,
+Returns `struct elc_capabilities`. API 0.19 reports only implemented,
 documented features: coherent copied process images, cycle timing,
 wait-for-cycle, DC diagnostics, output leases (including publish/arm renew
-and `timeout_ms`), cycle-period updates, bounded input history, and
+and `timeout_ms`), cycle-period updates, bounded input history,
 per-domain output authority (`ELC_CAP_DOMAIN_OUTPUT_AUTHORITY`,
-`ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW`).
+`ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW`), and setup hold (`ELC_CAP_SETUP_HOLD`).
 Scheduled output and delegated domain connections are not currently reported.
 
 ### Input history
@@ -218,15 +222,40 @@ They are deliberately separate from the persistent declarative configuration
 transaction. The batch uses `ecrt_master_sdo_download()` and therefore applies
 only to online slaves; EtherLab does not retain or replay it after power loss.
 User-space clients that need the same ordered writes after control-power loss
-must re-submit a new batch themselves (mailbox-ready gate, debounce, retry) —
-see [`client-slave-recovery.md`](client-slave-recovery.md). The kernel will not
+must re-submit a new batch themselves (**PREOP/SAFEOP gate for PDO maps**,
+short hold, debounce, retry) — see
+[`client-slave-recovery.md`](client-slave-recovery.md). The kernel will not
 grow a plant-specific re-apply state machine.
 
-**Cyclic active:** `SETUP_*` and `SDO_UPLOAD` (and discovery status) are
-permitted while the cyclic task runs; they block in the calling context for
-mailbox completion and must not be invoked from hard RT. Declarative
-`CONFIG_*` mutation remains rejected with `EBUSY` until deactivate. Older
-builds rejected setup with `EBUSY` whenever cyclic was active.
+**PDO map CoE and AL state:** mapping / SM assignment objects are rewritten
+only in PREOP (or SAFEOP). `SETUP_APPLY` still only issues blocking downloads
+at the current AL; it does not itself force PREOP. Clients must not apply map
+batches in OP.
+
+**Setup hold (API 0.19 / `ELC_CAP_SETUP_HOLD`):** while configuration is
+applied (and typically while cyclic is active), the client may inhibit OP for
+selected configured slaves so ordered setup CoE has a stable PREOP or SAFEOP
+window:
+
+```text
+ELC_IOC_SETUP_HOLD_BEGIN
+ELC_IOC_SETUP_HOLD_RELEASE
+ELC_IOC_SETUP_HOLD_STATUS
+```
+
+Scope is positions[], a domain_config_id, or all configured slaves. Target AL
+is PREOP (2) or SAFEOP (4) only. The kernel re-asserts the hold after EtherLab
+post-scan `request_op`, reports `setup_hold_active` on
+`ELC_IOC_GET_CONFIG_SLAVE_STATUS`, and force-releases on `timeout_ms` (default
+30 s) or control-fd close. No plant recipes, debounce timers, or brand-specific
+SDO tables live in the module — see
+[`client-slave-recovery.md` §9](client-slave-recovery.md#9-kernel--elc-requirement-hold-preopsafeop-until-setup-complete).
+
+**Cyclic active:** `SETUP_*`, setup-hold, and `SDO_UPLOAD` (and discovery
+status) are permitted while the cyclic task runs; they block in the calling
+context for mailbox completion and must not be invoked from hard RT.
+Declarative `CONFIG_*` mutation remains rejected with `EBUSY` until deactivate.
+Older builds rejected setup with `EBUSY` whenever cyclic was active.
 
 Limits are:
 

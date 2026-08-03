@@ -300,7 +300,8 @@ int main(int argc, char **argv)
 		     ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW |
 		     ELC_CAP_CYCLE_PERIOD_UPDATE |
 		     ELC_CAP_INPUT_HISTORY |
-		     ELC_CAP_DOMAIN_OUTPUT_AUTHORITY)) !=
+		     ELC_CAP_DOMAIN_OUTPUT_AUTHORITY |
+		     ELC_CAP_SETUP_HOLD)) !=
 		   (ELC_CAP_COHERENT_PROCESS_IMAGE |
 		    ELC_CAP_CYCLE_TIMING | ELC_CAP_CYCLE_WAIT |
 		    ELC_CAP_DC_DIAGNOSTICS |
@@ -308,11 +309,12 @@ int main(int argc, char **argv)
 		    ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW |
 		    ELC_CAP_CYCLE_PERIOD_UPDATE |
 		    ELC_CAP_INPUT_HISTORY |
-		    ELC_CAP_DOMAIN_OUTPUT_AUTHORITY)) {
+		    ELC_CAP_DOMAIN_OUTPUT_AUTHORITY |
+		    ELC_CAP_SETUP_HOLD)) {
 		fprintf(stderr, "FAIL: required capability bits missing\n");
 		failures++;
 	} else {
-		printf("PASS: API 0.18 capabilities reported\n");
+		printf("PASS: API 0.19 capabilities reported\n");
 	}
 
 	cycle_info.flags = 1;

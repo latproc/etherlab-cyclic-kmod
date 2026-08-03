@@ -12,7 +12,7 @@ The transport contains no machine, servo, CiA 402, XML, or control-system
 policy. Those decisions remain in user space, so the same module can support
 different devices and control systems without recompiling kernel code.
 
-> **Development status:** experimental API 0.18. The standalone documentation
+> **Development status:** experimental API 0.19. The standalone documentation
 > gate passes, but the kernel-safety and production timing gates remain open.
 > Kernel faults can crash the host and EtherCAT outputs can move machinery.
 > Always use the site's hardware safety and commissioning procedures.
@@ -51,6 +51,9 @@ putting application policy in the kernel:
   interruption when another domain fails (power loss, cable damage, module
   failure). Ring/redundant Ethernet for mid-bus cable splits is a planned
   companion to multi-client domain interfaces.
+- **Setup hold (API 0.19):** client-initiated PREOP/SAFEOP inhibit for selected
+  positions or domains while cyclic is active, so ordered setup CoE can finish
+  without racing EtherLab OP promotion; timeout and control-fd force-release.
 - **Hang-failsafe lease (API 0.18):** optional wall-time or cycle budget;
   successful publish/arm refill the budget so a hung controller cannot keep
   last motion outputs without high-rate renew ioctls.
@@ -115,10 +118,11 @@ Details: [operator guide](docs/operator-guide.md#main-link-without-control-owner
 
 ## What is implemented?
 
-API 0.18 currently includes:
+API 0.19 currently includes:
 
 - exclusive EtherLab master lifecycle and raw bus discovery;
 - ordered typed setup SDOs;
+- setup-hold (PREOP/SAFEOP inhibit while cyclic may be active);
 - transactional slave, Sync Manager, PDO, entry, DC, and domain setup;
 - implicit single-domain compatibility and explicit multi-domain layouts;
 - configurable cyclic pumping, copied process-image exchange, and optional
@@ -328,7 +332,7 @@ layout is stable across a changed configuration.
   cycle timeline.
 - [UAPI](docs/uapi.md) — ioctl structures, validation, and exact semantics.
 - [Developer guide](docs/developer-guide.md) — implementing a new controller.
-- [Client slave recovery](docs/client-slave-recovery.md) — power-return setup CoE for any controller (not kernel policy).
+- [Client slave recovery](docs/client-slave-recovery.md) — power-return setup CoE for any controller (not kernel policy); **PREOP/SAFEOP-only** PDO map gate; API 0.19 **setup-hold** UAPI (§9).
 - [libelcethercat](docs/libelcethercat.md) — generic userspace library API
   (`make lib` / `make install-lib`) and optional consumer integration notes.
 - [IOD session handoff](docs/iod-session-handoff.md) — copy-pasteable prompt

@@ -10,6 +10,8 @@ ETHERLAB_DKMS_SOURCE_DIRS := $(wildcard /usr/src/$(ETHERLAB_DKMS_NAME)-*)
 ETHERLAB_VERSION ?= $(patsubst /usr/src/$(ETHERLAB_DKMS_NAME)-%,%,$(firstword \
 	$(ETHERLAB_DKMS_SOURCE_DIRS)))
 ETHERLAB_INCLUDE ?= /usr/src/$(ETHERLAB_DKMS_NAME)-$(ETHERLAB_VERSION)/include
+# Source tree root (parent of include/) for private headers used by layout check.
+ETHERLAB_SOURCE ?= $(patsubst %/,%,$(dir $(ETHERLAB_INCLUDE)))
 ETHERLAB_SYMVERS ?= /var/lib/dkms/$(ETHERLAB_DKMS_NAME)/$(ETHERLAB_VERSION)/$(KERNEL_RELEASE)/$(shell uname -m)/module/Module.symvers
 
 CPPFLAGS ?=
@@ -20,7 +22,7 @@ LIBDIR ?= $(PREFIX)/lib
 INCLUDEDIR ?= $(PREFIX)/include
 PKGCONFIGDIR ?= $(LIBDIR)/pkgconfig
 LIB_VERSION_MAJOR := 0
-LIB_VERSION_MINOR := 18
+LIB_VERSION_MINOR := 19
 LIB_VERSION := $(LIB_VERSION_MAJOR).$(LIB_VERSION_MINOR).0
 SONAME := libelcethercat.so.$(LIB_VERSION_MAJOR)
 
@@ -30,6 +32,7 @@ ELC_DKMS_VERSION := $(LIB_VERSION)
 ELC_DKMS_SRC := /usr/src/$(ELC_DKMS_PACKAGE)-$(ELC_DKMS_VERSION)
 
 .PHONY: all modules lib tools check-build-env save-build-env test-build-contract \
+	test-etherlab-layout \
 	install install-lib install-tools uninstall uninstall-lib uninstall-tools clean \
 	dkms.conf dkms-stage dkms-install dkms-uninstall
 
@@ -85,7 +88,12 @@ check-build-env:
 		"KERNEL_RELEASE=$(KERNEL_RELEASE)" \
 		"KERNEL_BUILD=$(KERNEL_BUILD)" \
 		"ETHERLAB_INCLUDE=$(ETHERLAB_INCLUDE)" \
+		"ETHERLAB_SOURCE=$(ETHERLAB_SOURCE)" \
 		"ETHERLAB_SYMVERS=$(ETHERLAB_SYMVERS)"
+	@if [ ! -f "$(ETHERLAB_SOURCE)/master/slave_config.h" ]; then \
+		echo "warning: EtherLab private headers missing at $(ETHERLAB_SOURCE)/master/slave_config.h" >&2; \
+		echo "warning: setup-hold layout will not be compile-checked (see make test-etherlab-layout)" >&2; \
+	fi
 
 # Write gitignored local.mk from the currently resolved build contract.
 # Example: make ETHERLAB_INCLUDE=... ETHERLAB_SYMVERS=... save-build-env
@@ -98,6 +106,7 @@ save-build-env: check-build-env
 		'KERNEL_RELEASE := $(KERNEL_RELEASE)' \
 		'KERNEL_BUILD := $(KERNEL_BUILD)' \
 		'ETHERLAB_INCLUDE := $(ETHERLAB_INCLUDE)' \
+		'ETHERLAB_SOURCE := $(ETHERLAB_SOURCE)' \
 		'ETHERLAB_SYMVERS := $(ETHERLAB_SYMVERS)' \
 		> local.mk
 	@echo "wrote $(CURDIR)/local.mk"
@@ -106,7 +115,13 @@ save-build-env: check-build-env
 modules: check-build-env
 	$(MAKE) -C "$(KERNEL_BUILD)" M="$(CURDIR)/kernel" \
 		ETHERLAB_INCLUDE="$(ETHERLAB_INCLUDE)" \
+		ETHERLAB_SOURCE="$(ETHERLAB_SOURCE)" \
 		KBUILD_EXTRA_SYMBOLS="$(ETHERLAB_SYMVERS)" modules
+
+# Fail if private EtherLab layout offsets used by setup-hold do not match
+# master/slave*.h of the configured EtherLab source tree.
+test-etherlab-layout: check-build-env
+	./tools/elc_test_etherlab_layout.sh
 
 lib: $(LIB_STATIC) $(LIB_SHARED) $(LIB_LINK) $(LIB_SONAME_LINK) $(PKGCONFIG)
 

@@ -18,7 +18,7 @@
 #endif
 
 #define ELC_API_VERSION_MAJOR 0U
-#define ELC_API_VERSION_MINOR 18U
+#define ELC_API_VERSION_MINOR 19U
 
 #define ELC_CYCLE_PERIOD_MIN_NS 100000U
 #define ELC_CYCLE_PERIOD_MAX_NS 1000000000U
@@ -28,6 +28,9 @@
 #define ELC_SETUP_SDO_MAX 256U
 #define ELC_SETUP_SDO_TOTAL_MAX 16384U
 #define ELC_CONFIG_SLAVE_MAX 256U
+#define ELC_SETUP_HOLD_POSITION_MAX ELC_CONFIG_SLAVE_MAX
+#define ELC_SETUP_HOLD_TIMEOUT_MS_DEFAULT 30000U
+#define ELC_SETUP_HOLD_TIMEOUT_MS_MAX 600000U
 #define ELC_CONFIG_SYNC_MAX 1024U
 #define ELC_CONFIG_PDO_MAX 4096U
 #define ELC_CONFIG_ENTRY_MAX 16384U
@@ -52,6 +55,15 @@
 #define ELC_CAP_DOMAIN_OUTPUT_AUTHORITY (1ULL << 8)
 /* API 0.18: publish/arm refill lease; timeout_ms; configure while active. */
 #define ELC_CAP_OUTPUT_LEASE_PUBLISH_RENEW (1ULL << 9)
+/* API 0.19: hold configured slaves in PREOP/SAFEOP for setup CoE. */
+#define ELC_CAP_SETUP_HOLD (1ULL << 10)
+
+/* Setup-hold scope (ELC_IOC_SETUP_HOLD_*). */
+enum elc_setup_hold_scope {
+	ELC_SETUP_HOLD_SCOPE_POSITIONS = 0,
+	ELC_SETUP_HOLD_SCOPE_DOMAIN = 1,
+	ELC_SETUP_HOLD_SCOPE_ALL = 2,
+};
 
 enum elc_sdo_type {
 	ELC_SDO_U8 = 1,
@@ -179,6 +191,80 @@ struct elc_setup_apply {
 	__u8 reserved0[3];
 	__s32 result;
 	__u32 abort_code;
+};
+
+/*
+ * Setup hold (API 0.19 / ELC_CAP_SETUP_HOLD): inhibit OP for selected
+ * configured slaves while cyclic may be active so client-owned ordered
+ * setup CoE can run in PREOP or SAFEOP. No recipes or plant timers in
+ * the kernel — only AL target hold, status, and force-release timeout.
+ *
+ * scope:
+ *   ELC_SETUP_HOLD_SCOPE_POSITIONS — positions[0..position_count-1]
+ *   ELC_SETUP_HOLD_SCOPE_DOMAIN    — all slaves assigned to domain_config_id
+ *   ELC_SETUP_HOLD_SCOPE_ALL       — every configured slave
+ *
+ * target_al: EC_AL_STATE_PREOP (2) or EC_AL_STATE_SAFEOP (4) only.
+ * timeout_ms: wall-time auto-release; 0 selects
+ * ELC_SETUP_HOLD_TIMEOUT_MS_DEFAULT. On expire or control-fd close, holds
+ * are released so the master may promote toward OP again.
+ */
+struct elc_setup_hold_begin {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 config_generation;
+	__u32 scope;
+	__u32 domain_config_id;
+	__u32 position_count;
+	__u32 timeout_ms;
+	__u8 target_al;
+	__u8 reserved0[3];
+	__u16 positions[ELC_SETUP_HOLD_POSITION_MAX];
+	/* outputs filled by kernel */
+	__u32 held_count;
+	__u32 applied_timeout_ms;
+	__s32 result;
+	__u32 reserved1;
+};
+
+struct elc_setup_hold_release {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 config_generation;
+	__u32 scope;
+	__u32 domain_config_id;
+	__u32 position_count;
+	__u32 reserved0;
+	__u16 positions[ELC_SETUP_HOLD_POSITION_MAX];
+	/* outputs filled by kernel */
+	__u32 released_count;
+	__u32 remaining_held_count;
+	__s32 result;
+	__u32 reserved1;
+};
+
+struct elc_setup_hold_status {
+	__u16 struct_size;
+	__u16 api_major;
+	__u32 flags;
+	__u64 config_generation;
+	/* Optional filter: scope ALL (default) or DOMAIN/POSITIONS. */
+	__u32 scope;
+	__u32 domain_config_id;
+	__u32 position_count;
+	__u32 reserved0;
+	__u16 positions[ELC_SETUP_HOLD_POSITION_MAX];
+	/* outputs */
+	__u32 held_count;
+	__u32 timeout_ms;
+	__u32 remaining_ms_min;
+	__u8 any_active;
+	__u8 reserved1[3];
+	__u64 hold_started_ns;
+	__s32 result;
+	__u32 reserved2;
 };
 
 struct elc_sdo_upload {
@@ -638,7 +724,9 @@ struct elc_config_slave_status {
 	__u8 operational;
 	__u8 data_valid;
 	__u8 al_state;
-	__u8 reserved0[3];
+	/* API 0.19: 1 when this slave is under setup hold. */
+	__u8 setup_hold_active;
+	__u8 reserved0[2];
 	__s32 state_result;
 	__u32 reserved1;
 	__u64 cycle_count;
@@ -684,6 +772,12 @@ struct elc_domain_status {
 	_IOW(ELC_IOC_MAGIC, 0x13, struct elc_setup_begin)
 #define ELC_IOC_SDO_UPLOAD \
 	_IOWR(ELC_IOC_MAGIC, 0x14, struct elc_sdo_upload)
+#define ELC_IOC_SETUP_HOLD_BEGIN \
+	_IOWR(ELC_IOC_MAGIC, 0x15, struct elc_setup_hold_begin)
+#define ELC_IOC_SETUP_HOLD_RELEASE \
+	_IOWR(ELC_IOC_MAGIC, 0x16, struct elc_setup_hold_release)
+#define ELC_IOC_SETUP_HOLD_STATUS \
+	_IOWR(ELC_IOC_MAGIC, 0x17, struct elc_setup_hold_status)
 #define ELC_IOC_CONFIG_BEGIN \
 	_IOW(ELC_IOC_MAGIC, 0x20, struct elc_config_begin)
 #define ELC_IOC_CONFIG_ADD_SLAVE \

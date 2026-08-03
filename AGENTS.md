@@ -16,12 +16,14 @@ decisions, risks, commands, or next steps change.
 
 - Current phase: standalone Phase 3 hardening after the first architecture
   review. IOD integration remains blocked.
-- Current UAPI is 0.18. It covers discovery, ordered setup SDOs, declarative
+- Current UAPI is 0.19. It covers discovery, ordered setup SDOs, declarative
   PDO/DC configuration, domain registration, cyclic pumping, copied input and
   masked output images, explicit arm/disarm, health, timing/DC statistics, and
   per-configured-slave validity, coherent cycle timing, capability discovery,
-  interruptible cycle notification, acknowledged disarmed period updates, and
-  hang-failsafe output leases with publish/arm renew and optional timeout_ms.
+  interruptible cycle notification, acknowledged disarmed period updates,
+  hang-failsafe output leases with publish/arm renew and optional timeout_ms,
+  and setup-hold (PREOP/SAFEOP inhibit for client setup CoE while cyclic is
+  active, with timeout and control-fd force-release).
 - Target is Debian RT kernel `6.1.0-49-rt-amd64` with EtherLab DKMS 1.6.9.
   Exact build artifacts are documented. Multi-kernel policy: support kernels
   where EtherLab builds (compile floor ≥ 4.19); keep shims only in
@@ -78,6 +80,11 @@ decisions, risks, commands, or next steps change.
   and low-overhead status.
 - Detailed milestones and evidence live in `docs/project-history.md` and
   `docs/testing.md`. Do not duplicate them here.
+- **Setup CoE after power return:** PDO map batches must run in PREOP/SAFEOP
+  only (not OP). API 0.19 setup-hold lets the client inhibit OP for selected
+  positions/domains while cyclic is active, run ordered setup CoE, then
+  release (or timeout / fd close force-releases). Recipes and debounce stay
+  in the client — `docs/client-slave-recovery.md` §9.
 - `docs/operator-guide.md` is the end-to-end build, test, zero-output
   operation, teardown, and cleanup sequence.
 - `README.md` is the concise project entry point: generic-interface benefits,
@@ -287,7 +294,13 @@ Keep this section concise. Historical milestones and validation evidence are in
 `docs/project-history.md`; focused details belong in the relevant design,
 testing, safety, and build documents.
 
-- Current API: 0.18.
+- Current API: 0.19.
+- API 0.19 setup-hold: `ELC_IOC_SETUP_HOLD_{BEGIN,RELEASE,STATUS}`,
+  `ELC_CAP_SETUP_HOLD`, per-slave `setup_hold_active`. Holds re-assert PREOP
+  or SAFEOP against EtherLab post-scan OP promotion; default 30 s timeout;
+  control-fd close force-releases. No plant recipes in the kernel.
+  Private layout offsets: `kernel/elc_etherlab_layout.h`, compile-checked by
+  `make test-etherlab-layout` when EtherLab `master/*.h` sources are present.
 - Deactivation synchronously gates outputs and joins the cyclic thread, then
   waits for configured slaves to leave SAFEOP/OP before invalidating
   EtherLab-owned pointers. The public EtherLab lifecycle can still expose

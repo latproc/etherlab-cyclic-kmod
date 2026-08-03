@@ -1,6 +1,6 @@
 # libelcethercat — Generic User-Space Library API
 
-**Status:** Phase 7 library tracks UAPI 0.18. Sources live under `lib/`
+**Status:** Phase 7 library tracks UAPI 0.19. Sources live under `lib/`
 and `include/elc_ethercat.h`. This document remains the public contract;
 keep it aligned when the API changes.
 

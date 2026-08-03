@@ -78,6 +78,21 @@ that recipe. They can appear and reach OP with the two-entry position mapping
 recorded above. This directly demonstrates why restoration must use persistent
 EtherLab configuration rather than a one-time pre-IOD script.
 
+## 2026-08 plant note (iod-elc + ordered setup reapply)
+
+Plant path now uses iod `ECSETUPRECIPE` / `ElcSetupRecipe` (same ordered CoE
+as the velocity PDO recipe) at configure time and on offline→online. Field
+result:
+
+- Map rewrite in **OP** fails or is rejected; status flapped
+  `pending` / `retrying` if the client treated OP as “mailbox ready.”
+- Correct client policy: apply map batches only in **PREOP or SAFEOP**;
+  short hold; while OP keep `waiting_preop` without burning attempts.
+- **API 0.19 setup-hold** can keep a configured slave in PREOP/SAFEOP while
+  cyclic is active until the client releases (or timeout / fd close); see
+  [`client-slave-recovery.md` §9](client-slave-recovery.md#9-kernel--elc-requirement-hold-preopsafeop-until-setup-complete)
+  for the module requirement.
+
 The known-good velocity baseline still needs to be captured after deliberately
 running the legacy recipe with motion safely inhibited.
 

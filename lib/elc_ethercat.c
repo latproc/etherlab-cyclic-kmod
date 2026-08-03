@@ -255,6 +255,45 @@ int elc_setup_reset(elc_handle *h)
 	return elc_ioctl(h, ELC_IOC_SETUP_RESET, &req);
 }
 
+int elc_setup_hold_begin(elc_handle *h, struct elc_setup_hold_begin *req)
+{
+	int ret;
+
+	if ((ret = elc_check_ptr(req)))
+		return ret;
+	if (!req->struct_size)
+		req->struct_size = sizeof(*req);
+	if (!req->api_major)
+		req->api_major = ELC_API_VERSION_MAJOR;
+	return elc_ioctl(h, ELC_IOC_SETUP_HOLD_BEGIN, req);
+}
+
+int elc_setup_hold_release(elc_handle *h, struct elc_setup_hold_release *req)
+{
+	int ret;
+
+	if ((ret = elc_check_ptr(req)))
+		return ret;
+	if (!req->struct_size)
+		req->struct_size = sizeof(*req);
+	if (!req->api_major)
+		req->api_major = ELC_API_VERSION_MAJOR;
+	return elc_ioctl(h, ELC_IOC_SETUP_HOLD_RELEASE, req);
+}
+
+int elc_setup_hold_status(elc_handle *h, struct elc_setup_hold_status *st)
+{
+	int ret;
+
+	if ((ret = elc_check_ptr(st)))
+		return ret;
+	if (!st->struct_size)
+		st->struct_size = sizeof(*st);
+	if (!st->api_major)
+		st->api_major = ELC_API_VERSION_MAJOR;
+	return elc_ioctl(h, ELC_IOC_SETUP_HOLD_STATUS, st);
+}
+
 int elc_sdo_upload(elc_handle *h, struct elc_sdo_upload *req)
 {
 	int ret;

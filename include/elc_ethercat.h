@@ -88,6 +88,15 @@ int elc_setup_apply(elc_handle *h, struct elc_setup_apply *result);
 int elc_setup_reset(elc_handle *h);
 int elc_sdo_upload(elc_handle *h, struct elc_sdo_upload *req);
 
+/*
+ * Setup hold (API 0.19 / ELC_CAP_SETUP_HOLD): inhibit OP for selected
+ * configured slaves so ordered setup CoE can run in PREOP/SAFEOP while
+ * cyclic may be active. No recipes in the library — pack and dispatch only.
+ */
+int elc_setup_hold_begin(elc_handle *h, struct elc_setup_hold_begin *req);
+int elc_setup_hold_release(elc_handle *h, struct elc_setup_hold_release *req);
+int elc_setup_hold_status(elc_handle *h, struct elc_setup_hold_status *st);
+
 /* ---- transactional configuration ---- */
 
 int elc_config_begin(elc_handle *h);
